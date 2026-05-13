@@ -138,12 +138,22 @@ class CooccurrenceGraph:
         self._execute("DELETE FROM commit_nodes WHERE commit_id = ?", (memory_id,))
 
         # Clean up orphan file nodes (files that no longer have any edges).
-        for fp in file_paths:
-            remaining = self._execute(
-                "SELECT 1 FROM edges WHERE file_path = ? LIMIT 1", (fp,)
-            ).fetchone()
-            if remaining is None:
-                self._execute("DELETE FROM file_nodes WHERE file_path = ?", (fp,))
+        if file_paths:
+            # Use chunks to avoid SQLite's parameter limit (usually 999).
+            unique_paths = list(set(file_paths))
+            for i in range(0, len(unique_paths), 900):
+                chunk = unique_paths[i : i + 900]
+                placeholders = ",".join("?" for _ in chunk)
+                self._execute(
+                    f"""
+                    DELETE FROM file_nodes
+                    WHERE file_path IN ({placeholders})
+                      AND NOT EXISTS (
+                          SELECT 1 FROM edges WHERE edges.file_path = file_nodes.file_path
+                      )
+                    """,
+                    tuple(chunk),
+                )
 
         self._conn.commit()
 
