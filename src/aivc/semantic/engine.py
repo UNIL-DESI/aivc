@@ -378,10 +378,14 @@ class SemanticEngine:
                 for p in current_paths:
                     tmp.write(p + "\n")
                 tmp.close()
+                # Use xargs -a to read from the temp file directly, avoiding cat | xargs.
+                # Use shell=False and pass arguments as a list to prevent command injection.
+                cmd = ["xargs", "-a", tmp.name, "-d", "\n", "grep"] + grep_flags + ["--", term]
                 result = subprocess.run(
-                    f"cat {tmp.name} | xargs -d '\\n' grep {' '.join(grep_flags)} -- {self._shell_escape(term)} 2>/dev/null",
-                    shell=True,
-                    capture_output=True,
+                    cmd,
+                    shell=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
                     text=True,
                     timeout=30,
                 )
@@ -395,11 +399,6 @@ class SemanticEngine:
                     pass
 
         return current_paths
-
-    @staticmethod
-    def _shell_escape(s: str) -> str:
-        """Escape a string for safe use in a shell command."""
-        return "'" + s.replace("'", "'\\''") + "'"
 
     def search_files(
         self,
