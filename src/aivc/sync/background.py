@@ -2,7 +2,6 @@
 BackgroundSyncer: Daemon thread to pull commits periodically (or at startup).
 """
 
-import sys
 import threading
 import logging
 from pathlib import Path
