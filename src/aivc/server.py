@@ -496,30 +496,48 @@ def get_recent_memories(limit: int = 10, offset: int = 0, only_local: bool = Fal
         return "No memories found in this range."
 
     lines = [f"Showing memories {offset + 1}–{offset + len(page)} (newest first)\n"]
-    for i, memory in enumerate(page, offset + 1):
-        try:
-            files = _get_engine().get_memory_files(memory.id)
-            if files:
-                paths = []
-                extras = {}
-                for f in files:
-                    paths.append(f)
-                    if memory.machine_id and memory.machine_id != _local_machine_id:
-                        local_match = _get_engine().find_local_equivalent(f)
-                        if local_match:
-                            extras[f] = f" (local: {Path(local_match).name})"
-                files_str = "\n" + _render_file_tree(paths, extras, indent_prefix="        ")
-            else:
-                files_str = "—"
-        except KeyError:
-            files_str = "—"
 
+    file_counter: Counter[str] = Counter()
+    all_remote_paths = set()
+
+    for i, memory in enumerate(page, offset + 1):
         m_tag = f" [Remote: {memory.machine_id}]" if memory.machine_id and memory.machine_id != _local_machine_id else ""
         lines.append(
             f"{i:>3}. [{memory.timestamp[:10]}] {memory.title}{m_tag}\n"
-            f"      ID    : {memory.id}\n"
-            f"      Files : {files_str}"
+            f"      ID    : {memory.id}"
         )
+
+        # Collect files for aggregation
+        try:
+            m_files = _get_engine().get_memory_files(memory.id)
+            file_counter.update(m_files)
+            if memory.machine_id and memory.machine_id != _local_machine_id:
+                all_remote_paths.update(m_files)
+        except KeyError:
+            pass
+
+    # Heatmap of modified files
+    if file_counter:
+        # Show top 10 or proportional to limit (but at least 10)
+        num_files = max(10, limit // 2) if limit > 20 else 10
+        top_files = file_counter.most_common(num_files)
+
+        paths = []
+        extras = {}
+        for fp, count in top_files:
+            paths.append(fp)
+            extra_parts = [f"({count}x)"]
+
+            # Maintenance of hints (probablement ...)
+            if fp in all_remote_paths:
+                local_match = _get_engine().find_local_equivalent(fp)
+                if local_match:
+                    extra_parts.append(f"(probablement `{local_match}` localement)")
+
+            extras[fp] = " " + " ".join(extra_parts)
+
+        lines.append("\n## Recent Activity Heatmap")
+        lines.append(_render_file_tree(paths, extras, indent_prefix="  "))
 
     lines.append("\n💡 Use `consult_memory(memory_id)` to read a full memory note.")
     return "\n".join(lines)
