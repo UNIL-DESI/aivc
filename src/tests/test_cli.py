@@ -77,3 +77,80 @@ def test_cli_no_env_var(mock_engine, capsys):
     
     captured = capsys.readouterr()
     assert "No files are currently tracked" in captured.out
+
+
+def test_cmd_sync_push_disabled(capsys):
+    with patch("aivc.config.get_aivc_config") as mock_cfg:
+        mock_cfg.return_value = {"sync": {"enabled": False}}
+        from aivc.cli import cmd_sync_push
+        cmd_sync_push(MagicMock())
+
+    captured = capsys.readouterr()
+    assert "Cloud sync is currently disabled" in captured.out
+
+
+def test_cmd_sync_push_no_token(capsys):
+    with patch("aivc.config.get_aivc_config") as mock_cfg, \
+         patch("aivc.config.get_token_path") as mock_token:
+        mock_cfg.return_value = {"sync": {"enabled": True}}
+        mock_token.return_value.exists.return_value = False
+        from aivc.cli import cmd_sync_push
+        cmd_sync_push(MagicMock())
+
+    captured = capsys.readouterr()
+    assert "Google Drive authentication missing" in captured.out
+
+
+def test_cmd_sync_push_success_no_changes(capsys):
+    with patch("aivc.config.get_aivc_config") as mock_cfg, \
+         patch("aivc.config.get_token_path") as mock_token, \
+         patch("aivc.sync.drive.NativeDriveSyncManager") as mock_mgr_cls:
+
+        mock_cfg.return_value = {"sync": {"enabled": True}}
+        mock_token.return_value.exists.return_value = True
+
+        mock_mgr = mock_mgr_cls.return_value
+        mock_mgr.push_missing.return_value = {"memories_pushed": 0}
+
+        from aivc.cli import cmd_sync_push
+        cmd_sync_push(MagicMock())
+
+    captured = capsys.readouterr()
+    assert "Everything is up-to-date" in captured.out
+
+
+def test_cmd_sync_push_success_with_changes(capsys):
+    with patch("aivc.config.get_aivc_config") as mock_cfg, \
+         patch("aivc.config.get_token_path") as mock_token, \
+         patch("aivc.sync.drive.NativeDriveSyncManager") as mock_mgr_cls:
+
+        mock_cfg.return_value = {"sync": {"enabled": True}}
+        mock_token.return_value.exists.return_value = True
+
+        mock_mgr = mock_mgr_cls.return_value
+        mock_mgr.push_missing.return_value = {"memories_pushed": 3}
+
+        from aivc.cli import cmd_sync_push
+        cmd_sync_push(MagicMock())
+
+    captured = capsys.readouterr()
+    assert "Sync Push complete" in captured.out
+    assert "Pushed 3 missing memory/ies" in captured.out
+
+
+def test_cmd_sync_push_error(capsys):
+    with patch("aivc.config.get_aivc_config") as mock_cfg, \
+         patch("aivc.config.get_token_path") as mock_token, \
+         patch("aivc.sync.drive.NativeDriveSyncManager") as mock_mgr_cls:
+
+        mock_cfg.return_value = {"sync": {"enabled": True}}
+        mock_token.return_value.exists.return_value = True
+
+        mock_mgr = mock_mgr_cls.return_value
+        mock_mgr.push_missing.side_effect = Exception("API Error")
+
+        from aivc.cli import cmd_sync_push
+        cmd_sync_push(MagicMock())
+
+    captured = capsys.readouterr()
+    assert "Error during sync push: API Error" in captured.out

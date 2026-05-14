@@ -348,8 +348,7 @@ def cmd_sync_push(args: argparse.Namespace) -> None:
         manager = NativeDriveSyncManager(Path.home() / ".aivc" / "storage")
         result = manager.push_missing()
         
-        commits = result["commits_pushed"]
-        blobs = result["blobs_attempted"]
+        commits = result.get("memories_pushed", 0)
         
         if commits == 0:
             print(f"\n{GREEN}✓ Everything is up-to-date! No missing local memories found.{RESET}")
