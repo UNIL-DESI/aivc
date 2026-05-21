@@ -318,13 +318,42 @@ class SemanticEngine:
             A list of :class:`~aivc.semantic.searcher.SearchResult` sorted by
             relevance (descending).
         """
-        if filter_glob:
-            memory_ids = self._graph.get_memories_by_glob(filter_glob)
-            if not memory_ids:
-                return []
-            return self._searcher.search(query, top_k=top_k, top_n=top_n, filter_ids=memory_ids)
-        
-        return self._searcher.search(query, top_k=top_k, top_n=top_n)
+        try:
+            if filter_glob:
+                memory_ids = self._graph.get_memories_by_glob(filter_glob)
+                if not memory_ids:
+                    return []
+                return self._searcher.search(query, top_k=top_k, top_n=top_n, filter_ids=memory_ids)
+            
+            return self._searcher.search(query, top_k=top_k, top_n=top_n)
+        except Exception as e:
+            err_str = str(e)
+            if "Nothing found on disk" in err_str or "segment" in err_str.lower() or "hnsw" in err_str.lower():
+                import sys
+                print("[aivc] HNSW index missing or corrupt, rebuilding...", file=sys.stderr)
+                try:
+                    all_memories = []
+                    commits_dir = self._workspace._commits_dir
+                    if commits_dir.exists():
+                        for json_file in commits_dir.glob("*.json"):
+                            try:
+                                memory = self._workspace._load_memory(json_file.stem)
+                                all_memories.append(memory)
+                            except Exception:
+                                pass
+                    self._indexer.reindex_all(all_memories)
+                    
+                    # Retry search
+                    if filter_glob:
+                        memory_ids = self._graph.get_memories_by_glob(filter_glob)
+                        if not memory_ids:
+                            return []
+                        return self._searcher.search(query, top_k=top_k, top_n=top_n, filter_ids=memory_ids)
+                    return self._searcher.search(query, top_k=top_k, top_n=top_n)
+                except Exception as rebuild_err:
+                    print(f"[aivc] Rebuild failed: {rebuild_err}", file=sys.stderr)
+                    raise
+            raise
 
     # Extensions known to be binary or useless for code/text search
     _SKIP_EXTS: set[str] = {

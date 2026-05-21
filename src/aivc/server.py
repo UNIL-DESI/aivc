@@ -640,12 +640,18 @@ def get_status(path: str = "") -> str:
     Args:
         path: Optional subdirectory path to explore (e.g. "src/").
     """
+    import os
+    import getpass
+    from aivc.config import get_storage_root
+    storage_root = get_storage_root(allow_fallback=True)
+    diag_info = f"[AIVC Diag] Storage Root: {storage_root} | User: {getpass.getuser()} | Env Root: {os.environ.get('AIVC_STORAGE_ROOT')}\n"
+
     # Use get_tracked_paths (fast) + metadata (fast, from memory)
     tracked_paths = _get_engine().get_tracked_paths()
     metadata = _get_engine().get_tracked_files_metadata()
     
     if not tracked_paths:
-        return "No files are currently tracked by AIVC."
+        return diag_info + "No files are currently tracked by AIVC."
 
     # Determine virtual root for display
     if path:
