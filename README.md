@@ -8,7 +8,7 @@ AIVC transforms **memories** (formerly commits) into a searchable knowledge base
 2. **Recall**: Semantic indexing (Bi-encoder + Cross-encoder) operates on these notes to retrieve past context by meaning.
 3. **Recursive Context**: File history is preserved locally, allowing agents to see what changed and how.
 4. **Metadata-only Sync**: Reasoning is shared across machines via Google Drive, while file contents (blobs) remain local for privacy and performance.
-5. **Windows Native**: Engineered with zero-lock SQLite structures, synchronous main-thread ML warmups to prevent thread deadlocks, proper redirection of background sync stdout logging to `sys.stderr` to avoid JSON-RPC protocol corruption, lightning-fast file observers, and automatic physical commit scanning during warmup to instantly index synchronized multi-machine memories.
+5. **Windows Native**: Engineered with zero-lock SQLite structures, lightning-fast lightweight background warmup with 100% lazy Cross-Encoder model loading to prevent multi-thread import deadlocks and satisfy strict IDE server timeouts, proper redirection of background sync stdout logging to `sys.stderr` to avoid JSON-RPC protocol corruption, ultra-fast file observers, and automatic physical commit scanning during warmup to instantly index synchronized multi-machine memories.
 
 ---
 
