@@ -244,7 +244,18 @@ exec "${VENV_PYTHON}" -m aivc.cli "\$@"
 EOF
 chmod +x "${AIVC_WRAPPER}"
 
-echo "  CLI Command  : aivc (wrapper in ${USER_BIN_DIR})"
+if [[ "$WINDOWS" == "1" ]]; then
+    AIVC_CMD_WRAPPER="${USER_BIN_DIR}/aivc.cmd"
+    info "Windows detected — creating CMD wrapper at ${AIVC_CMD_WRAPPER} ..."
+    NATIVE_PYTHON=$("${VENV_PYTHON}" -c "import sys, os; print(os.path.normpath(sys.executable))" | tr -d '\r')
+    cat <<EOF > "${AIVC_CMD_WRAPPER}"
+@echo off
+"${NATIVE_PYTHON}" -m aivc.cli %*
+EOF
+    echo "  CLI Command  : aivc (wrappers in ${USER_BIN_DIR}: aivc, aivc.cmd)"
+else
+    echo "  CLI Command  : aivc (wrapper in ${USER_BIN_DIR})"
+fi
 echo "  MCP config   : ${MCP_CONFIG}"
 
 # 8. Run migration
