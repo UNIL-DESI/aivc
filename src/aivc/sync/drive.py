@@ -322,8 +322,8 @@ class NativeDriveSyncManager:
         pulled_count = 0
         max_workers = min(16, len(missing_files))
 
-        print(f"Starting parallel download of {len(missing_files)} files using {max_workers} threads...")
-        sys.stdout.flush()
+        print(f"Starting parallel download of {len(missing_files)} files using {max_workers} threads...", file=sys.stderr)
+        sys.stderr.flush()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_file = {
@@ -337,11 +337,11 @@ class NativeDriveSyncManager:
                     future.result()
                     pulled_count += 1
                     if pulled_count % 10 == 0 or pulled_count == len(missing_files):
-                        print(f"Downloaded {pulled_count}/{len(missing_files)} files...")
-                        sys.stdout.flush()
+                        print(f"Downloaded {pulled_count}/{len(missing_files)} files...", file=sys.stderr)
+                        sys.stderr.flush()
                 except Exception as e:
-                    print(f"Error downloading {filename}: {e}")
-                    sys.stdout.flush()
+                    print(f"Error downloading {filename}: {e}", file=sys.stderr)
+                    sys.stderr.flush()
 
         return pulled_count
 
