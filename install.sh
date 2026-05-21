@@ -141,13 +141,21 @@ else:
 if "mcpServers" not in config:
     config["mcpServers"] = {}
 
-# Use sys.executable for the exact absolute path to this python
+aivc_env = {
+    "AIVC_STORAGE_ROOT": str(home / ".aivc" / "storage"),
+    "HOME": str(home),
+    "USERPROFILE": str(home)
+}
+if sys.platform == "win32":
+    aivc_env.update({
+        "SystemRoot": "C:\\Windows",
+        "PATH": "C:\\Windows\\system32;C:\\Windows"
+    })
+
 config["mcpServers"]["aivc"] = {
     "command": sys.executable,
     "args": ["-m", "aivc.server"],
-    "env": {
-        "AIVC_STORAGE_ROOT": str(home / ".aivc" / "storage")
-    },
+    "env": aivc_env,
 }
 
 config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")

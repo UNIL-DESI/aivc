@@ -8,10 +8,26 @@ import os
 import sys
 from pathlib import Path
 
+def get_home_dir() -> Path:
+    try:
+        return Path.home()
+    except RuntimeError:
+        userprofile = os.environ.get("USERPROFILE")
+        if userprofile:
+            return Path(userprofile)
+        home = os.environ.get("HOME")
+        if home:
+            return Path(home)
+        homedrive = os.environ.get("HOMEDRIVE")
+        homepath = os.environ.get("HOMEPATH")
+        if homedrive and homepath:
+            return Path(homedrive) / homepath
+        return Path(r"C:\Users\Jamet")
+
 _STORAGE_ROOT_ENV = "AIVC_STORAGE_ROOT"
-_CONFIG_PATH = Path.home() / ".aivc" / "config.json"
-_CREDENTIALS_PATH = Path.home() / ".aivc" / "credentials.json"
-_TOKEN_PATH = Path.home() / ".aivc" / "token.json"
+_CONFIG_PATH = get_home_dir() / ".aivc" / "config.json"
+_CREDENTIALS_PATH = get_home_dir() / ".aivc" / "credentials.json"
+_TOKEN_PATH = get_home_dir() / ".aivc" / "token.json"
 
 # Disable network telemetry that causes massive latency spikes on Windows
 os.environ["ANONYMIZED_TELEMETRY"] = "False"  # ChromaDB
@@ -81,7 +97,7 @@ def get_storage_root(allow_fallback: bool = False) -> Path:
     if not path_str:
         # Default to ~/.aivc/storage gracefully instead of crashing,
         # which provides much better stability for MCP and CLI environments.
-        fallback_path = Path.home() / ".aivc" / "storage"
+        fallback_path = get_home_dir() / ".aivc" / "storage"
         fallback_path.mkdir(parents=True, exist_ok=True)
         return fallback_path
             

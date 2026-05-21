@@ -917,7 +917,7 @@ def start_background_watchers():
     if count > 0:
         _observer.daemon = True
         _observer.start()
-        print(f"🔭 Started background surveillance on {count} directory/ies.", file=sys.stderr)
+        # print(f"🔭 Started background surveillance on {count} directory/ies.", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -931,7 +931,7 @@ if __name__ == "__main__":
     
     # Start the ML warmup in a background thread to prevent blocking the main thread.
     # This ensures the MCP server starts instantly and avoids client connection timeouts.
-    print("[*] Scheduling lazy ML warmup in the background...", file=sys.stderr)
+    # print("[*] Scheduling lazy ML warmup in the background...", file=sys.stderr)
     threading.Thread(target=lambda: _get_engine().warmup(), daemon=True).start()
 
     def _on_sync_pull():
