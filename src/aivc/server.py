@@ -860,8 +860,8 @@ class AIVCWatcherHandler(FileSystemEventHandler):
             
         # Dynamically check if this directory is still watched
         watched_dirs = self.engine.get_watched_dirs()
-        abs_watched_path = str(self.watched_path.resolve())
-        if abs_watched_path not in watched_dirs:
+        watched_paths = {str(Path(k).resolve()) for k in watched_dirs}
+        if str(self.watched_path.resolve()) not in watched_paths:
             return
         
         path = Path(event.src_path)
