@@ -30,6 +30,16 @@ BOLD = "\033[1m"
 MAGENTA = "\033[0;35m"
 RESET = "\033[0m"
 
+# Unicode symbols fallback for Windows terminals lacking UTF-8 support
+try:
+    "✓".encode(sys.stdout.encoding or "utf-8")
+    CHECK_MARK = "✓"
+    CROSS_MARK = "✗"
+except (UnicodeEncodeError, AttributeError):
+    CHECK_MARK = "[OK]"
+    CROSS_MARK = "[Error]"
+
+
 
 def _format_bytes(n: int | None) -> str:
     if n is None:
@@ -237,7 +247,7 @@ def cmd_sync_setup(args: argparse.Namespace) -> None:
     # Step 1: Check if already authenticated
     token_path = get_token_path()
     if token_path.exists():
-        print(f"{GREEN}✓ Existing authentication found at {token_path}{RESET}")
+        print(f"{GREEN}{CHECK_MARK} Existing authentication found at {token_path}{RESET}")
         reauth = input("Re-authenticate? (y/n, default: n): ").strip().lower()
         if reauth != "y":
             config["sync"]["enabled"] = True
@@ -317,7 +327,7 @@ Follow these steps (takes ~2 minutes):
     config["sync"]["enabled"] = True
     save_aivc_config(config)
 
-    print(f"\n{GREEN}{BOLD}✓ Authentication successful!{RESET}")
+    print(f"\n{GREEN}{BOLD}{CHECK_MARK} Authentication successful!{RESET}")
     print(f"  Token saved to: {token_path}")
     print("  Config saved to: ~/.aivc/config.json")
     print(f"\n{YELLOW}Cloud sync is now ENABLED.{RESET}")
@@ -351,9 +361,9 @@ def cmd_sync_push(args: argparse.Namespace) -> None:
         commits = result.get("memories_pushed", 0)
         
         if commits == 0:
-            print(f"\n{GREEN}✓ Everything is up-to-date! No missing local memories found.{RESET}")
+            print(f"\n{GREEN}{CHECK_MARK} Everything is up-to-date! No missing local memories found.{RESET}")
         else:
-            print(f"\n{GREEN}✓ Sync Push complete!{RESET}")
+            print(f"\n{GREEN}{CHECK_MARK} Sync Push complete!{RESET}")
             print(f"  Pushed {commits} missing memory/ies.")
             
     except Exception as e:
@@ -371,7 +381,7 @@ def cmd_sync_status(args: argparse.Namespace) -> None:
     print(f"{CYAN}{BOLD}AIVC Sync Status:{RESET}")
     print(f"  {BOLD}Local Machine ID:{RESET}  {m_id}")
     print(f"  {BOLD}Sync Enabled:{RESET}      {GREEN if sync_cfg.get('enabled') else YELLOW}{sync_cfg.get('enabled', False)}{RESET}")
-    print(f"  {BOLD}Auth Token:{RESET}        {'✓ present' if get_token_path().exists() else '✗ missing (run aivc sync setup)'}")
+    print(f"  {BOLD}Auth Token:{RESET}        {f'{CHECK_MARK} present' if get_token_path().exists() else f'{CROSS_MARK} missing (run aivc sync setup)'}")
 
     if sync_cfg.get("enabled"):
         try:
