@@ -24,6 +24,9 @@ AIVC transforms **memories** (formerly commits) into a searchable knowledge base
 curl -fsSL "https://raw.githubusercontent.com/hjamet/aivc/main/install.sh" | bash
 ```
 
+> [!NOTE]
+> On Windows, running `install.sh` generates a `aivc.cmd` wrapper script inside `~/.local/bin/` alongside the standard `aivc` bash script. This ensures the CLI runs flawlessly inside Windows Command Prompt (CMD) and PowerShell without triggering the OS "Open with..." dialog for the extensionless file.
+
 ```bash
 # Local development installation
 uv pip install -e .
