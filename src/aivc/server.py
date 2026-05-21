@@ -837,10 +837,7 @@ def track(path: list[str], ignores: list[str] = []) -> str:
 
 try:
     import sys
-    if sys.platform == "win32":
-        from watchdog.observers.polling import PollingObserver as Observer
-    else:
-        from watchdog.observers import Observer
+    from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
     _WATCHDOG_AVAILABLE = True
 except ImportError:
