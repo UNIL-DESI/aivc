@@ -170,32 +170,47 @@ class SemanticEngine:
         _ = self._searcher._cross_encoder
 
         # Step 2: Reindex orphaned memories (on-disk JSON but not in ChromaDB)
-        all_memories = self._workspace.get_log(limit=999999)
-        indexed_count = self._indexer._collection.count()
+        # Instead of self._workspace.get_log() which relies on linear chain from local HEAD (None on new machines),
+        # we physically scan the commits directory to find all available memories.
+        all_memories = []
+        commits_dir = self._workspace._commits_dir
+        if commits_dir.exists():
+            for json_file in commits_dir.glob("*.json"):
+                try:
+                    memory_id = json_file.stem
+                    memory = self._workspace._load_memory(memory_id)
+                    all_memories.append(memory)
+                except Exception as e:
+                    print(
+                        f"[aivc] Failed to load physical memory {json_file.name}: {e}",
+                        file=sys.stderr,
+                    )
 
-        if len(all_memories) > indexed_count:
-            missing = []
-            for memory in all_memories:
-                if not self._indexer.is_indexed(memory.id):
-                    missing.append(memory)
+        # Fetch all indexed IDs in a single, lightning-fast query
+        try:
+            indexed_ids = set(self._indexer._collection.get(include=[])["ids"])
+        except Exception:
+            indexed_ids = set()
 
-            if missing:
-                print(
-                    f"[aivc] Reindexing {len(missing)} orphaned memory(ies)...",
-                    file=sys.stderr,
-                )
-                for memory in missing:
-                    try:
-                        self._indexer.index_memory(memory)
-                    except Exception as e:
-                        print(
-                            f"[aivc] Failed to reindex {memory.id}: {e}",
-                            file=sys.stderr,
-                        )
-                print(
-                    f"[aivc] Warmup complete. Index now has {self._indexer._collection.count()} memory(ies).",
-                    file=sys.stderr,
-                )
+        missing = [m for m in all_memories if m.id not in indexed_ids]
+
+        if missing:
+            print(
+                f"[aivc] Reindexing {len(missing)} orphaned memory(ies)...",
+                file=sys.stderr,
+            )
+            for memory in missing:
+                try:
+                    self._indexer.index_memory(memory)
+                except Exception as e:
+                    print(
+                        f"[aivc] Failed to reindex {memory.id}: {e}",
+                        file=sys.stderr,
+                    )
+            print(
+                f"[aivc] Warmup complete. Index now has {self._indexer._collection.count()} memory(ies).",
+                file=sys.stderr,
+            )
 
 
     # ------------------------------------------------------------------
