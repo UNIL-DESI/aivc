@@ -131,3 +131,4 @@ Utilities for installation, data maintenance, and migrations:
 - `[x]` Phase 30: System Unification & Debt Cleanup. [[Spec](docs/tasks/phase30_debt_cleanup.md)]
 - `[x]` Phase 31: Ultra-Fast Parallel Search (Obsidian-like).
 - `[x]` Phase 32: Windows Portability & Performance. [[Spec](docs/tasks/phase32_windows_portability.md)]
+- `[x]` Phase 33: Windows Bulk Warmup & Physical Sync. [[Spec](docs/tasks/phase33_bulk_warmup.md)]
