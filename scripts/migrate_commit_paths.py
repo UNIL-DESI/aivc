@@ -35,7 +35,7 @@ def detect_project_root(workspace_path: Path) -> Path:
     data = json.loads(workspace_path.read_text(encoding="utf-8"))
     tracked: dict[str, object] = data.get("tracked_files", {})
 
-    absolute_paths = [p for p in tracked if PurePosixPath(p).is_absolute()]
+    absolute_paths = [p for p in tracked if Path(p).is_absolute() or p.startswith('/') or p.startswith('\\')]
     if not absolute_paths:
         raise RuntimeError(
             "No absolute paths in workspace.json — cannot infer project root. "
@@ -85,9 +85,9 @@ def migrate_commit(
     fixed = 0
     for change in changes:
         original = change["path"]
-        p = PurePosixPath(original)
+        p = Path(original)
 
-        if not p.is_absolute():
+        if not (p.is_absolute() or original.startswith('/') or original.startswith('\\')):
             # Relative path → prepend project root
             change["path"] = str(project_root / original)
             fixed += 1
