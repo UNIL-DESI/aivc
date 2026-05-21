@@ -179,48 +179,18 @@ MARKER_END="<!-- AIVC:END -->"
 AIVC_BLOCK="${MARKER_START}
 # AIVC — AI Version Control (Long-Term Memory)
 
-You have access to a persistent, versioned memory system called **AIVC**.
-AIVC is your **long-term memory**. Use it actively — it is the only way to
-preserve context beyond a single conversation.
-
 > [!IMPORTANT]
 > **USE MCP TOOLS ONLY — NEVER RUN CLI SHELL COMMANDS:**
 > As an AI assistant, you MUST interact with AIVC **exclusively** through its registered MCP tools (\`remember\`, \`recall\`, \`get_recent_memories\`, \`consult_memory\`, \`get_status\`, etc.).
 > **NEVER execute \`aivc\` CLI shell commands in the terminal (e.g. \`aivc sync\`, \`aivc status\`, \`aivc recall\`)** under any circumstances. Running the CLI in the terminal spawns separate process environments, misses the current session context, and is strictly reserved for the human user.
 
-## CRITICAL: Memory Discipline
+## Rules
 
-### 1. Remember After EVERY Modification
-- Call \`remember\` (the MCP tool, NOT git) after **every meaningful step**.
-- A memory is required after: completing a sub-task, creating/modifying any file,
-  making a decision, discovering something, encountering an error, or any checkpoint.
-- **If you did something worth remembering, commit it NOW.**
-
-### 2. Start Every Session with Context Recovery
-Before doing ANY work, you MUST reconstruct your working context:
-1. Call \`get_recent_memories\` to see what was done recently.
-2. Perform **at least 1 \`recall\` call** with varied queries to explore
-   relevant past memories (e.g. the current topic, related files, similar problems).
-3. Use \`consult_memory\` on the most relevant results to read the full details.
-4. Use \`consult_file\` to understand the history of files you will modify.
-
-### 3. Explore Before You Act
-- **Never attempt a modification that was already done in the past.** Search your
-  memory first to check.
-- Understand the links between files and their shared history.
-- Explore broadly — your memory contains solutions, patterns, and lessons learned.
-
-### 4. Write Extremely Detailed Memory Notes
-Your memory notes are your future self's lifeline. They must include:
-- **What was done** and why
-- **Errors encountered** and how they were resolved
-- **Decisions made** and the reasoning behind them
-- **Observations and surprises** discovered during the work
-- **Recommendations for the future** — what should be done next, what to watch out for
-- **Links to related memories or files** when relevant
-
-> A one-liner memory note is a **failure**. Write as if briefing a colleague
-> who has zero context but needs to continue your work tomorrow.
+1. **Remember often.** Call \`remember\` after every meaningful step (sub-task done, file created/modified, decision made, error resolved, checkpoint reached). Notes must be **detailed**: what, why, errors, decisions, observations, next steps. A one-liner is a failure.
+2. **Start sessions with context recovery.** Before any work: \`get_recent_memories\` → \`recall\` (≥1 query) → \`consult_memory\` on relevant hits → \`consult_file\` on files you'll modify.
+3. **Explore before you act.** Search memory first — never redo past work. Your memory contains solutions, patterns, and lessons.
+4. **Track files you work on.** Use \`track\` to add untracked files, directories, or subtrees you create or modify so AIVC can snapshot them in future memories.
+5. **Write for your future self.** Memory notes are handover memos — include reasoning, context, and recommendations as if briefing a colleague with zero context.
 ${MARKER_END}"
 
 info "Injecting AIVC best practices into ${GEMINI_MD} ..."
