@@ -415,6 +415,11 @@ class CooccurrenceGraph:
 
         return [{"source": r[0], "target": r[1], "weight": r[2]} for r in rows]
 
+    def get_indexed_commit_ids(self) -> set[str]:
+        """Return a set of all commit IDs currently in the graph."""
+        rows = self._execute("SELECT commit_id FROM commit_nodes").fetchall()
+        return {r[0] for r in rows}
+
     def close(self) -> None:
         """Close the database connection."""
         self._conn.close()

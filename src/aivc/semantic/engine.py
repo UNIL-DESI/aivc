@@ -194,6 +194,39 @@ class SemanticEngine:
                             file=sys.stderr,
                         )
 
+            # Step 3: Automatically initialize head_commit_id if None and memories exist
+            if self._workspace._state.get("head_commit_id") is None and all_memories:
+                sorted_memories = sorted(all_memories, key=lambda m: m.timestamp, reverse=True)
+                latest_memory = sorted_memories[0]
+                self._workspace._state["head_commit_id"] = latest_memory.id
+                self._workspace._save_state()
+                print(
+                    f"[aivc] Automatically initialized head_commit_id to latest physical commit: {latest_memory.id}",
+                    file=sys.stderr,
+                )
+
+            # Step 4: Index missing physical commits in the co-occurrence graph
+            try:
+                existing_graph_ids = self._graph.get_indexed_commit_ids()
+            except Exception as e:
+                print(f"[aivc] Failed to read indexed commit IDs from graph: {e}", file=sys.stderr)
+                existing_graph_ids = set()
+
+            missing_graph = [m for m in all_memories if m.id not in existing_graph_ids]
+            if missing_graph:
+                print(
+                    f"[aivc] Indexing {len(missing_graph)} physical memory(ies) in co-occurrence graph...",
+                    file=sys.stderr,
+                )
+                for memory in missing_graph:
+                    try:
+                        self._graph.add_memory(memory)
+                    except Exception as e:
+                        print(
+                            f"[aivc] Failed to add memory {memory.id} to co-occurrence graph: {e}",
+                            file=sys.stderr,
+                        )
+
             # Fetch all indexed IDs in a single, lightning-fast query
             try:
                 indexed_ids = set(self._indexer._collection.get(include=[])["ids"])
