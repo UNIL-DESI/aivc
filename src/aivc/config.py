@@ -79,15 +79,10 @@ def get_storage_root(allow_fallback: bool = False) -> Path:
     path_str = os.environ.get(_STORAGE_ROOT_ENV)
     
     if not path_str:
-        if allow_fallback:
-            path = Path.home() / ".aivc" / "storage"
-            return path
-        else:
-            # For CLI and Server, we want a hard exit with a clear message.
-            msg = (
-                f"\033[31m[aivc] ERROR:\033[0m Environment variable {_STORAGE_ROOT_ENV!r} is not set.\n"
-                "Cannot proceed. Please run install.sh or export the variable."
-            )
-            sys.exit(msg)
+        # Default to ~/.aivc/storage gracefully instead of crashing,
+        # which provides much better stability for MCP and CLI environments.
+        fallback_path = Path.home() / ".aivc" / "storage"
+        fallback_path.mkdir(parents=True, exist_ok=True)
+        return fallback_path
             
     return Path(path_str)
