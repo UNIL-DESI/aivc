@@ -19,9 +19,15 @@ AIVC transforms **memories** (formerly commits) into a searchable knowledge base
 - **uv** (recommended package installer): `curl -fsSL https://astral.sh/uv/install.sh | sh` or `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
 ### Installing AIVC
+
+#### Unix / macOS / Windows (Git Bash)
 ```bash
-# Automated install (configures the MCP server)
 curl -fsSL "https://raw.githubusercontent.com/hjamet/aivc/main/install.sh" | bash
+```
+
+#### Windows (PowerShell)
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/hjamet/aivc/main/install.sh -OutFile install.sh; & 'C:\Program Files\Git\bin\bash.exe' install.sh; Remove-Item install.sh"
 ```
 
 > [!NOTE]
