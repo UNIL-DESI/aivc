@@ -183,6 +183,11 @@ You have access to a persistent, versioned memory system called **AIVC**.
 AIVC is your **long-term memory**. Use it actively — it is the only way to
 preserve context beyond a single conversation.
 
+> [!IMPORTANT]
+> **USE MCP TOOLS ONLY — NEVER RUN CLI SHELL COMMANDS:**
+> As an AI assistant, you MUST interact with AIVC **exclusively** through its registered MCP tools (\`remember\`, \`recall\`, \`get_recent_memories\`, \`consult_memory\`, \`get_status\`, etc.).
+> **NEVER execute \`aivc\` CLI shell commands in the terminal (e.g. \`aivc sync\`, \`aivc status\`, \`aivc recall\`)** under any circumstances. Running the CLI in the terminal spawns separate process environments, misses the current session context, and is strictly reserved for the human user.
+
 ## CRITICAL: Memory Discipline
 
 ### 1. Remember After EVERY Modification
