@@ -175,7 +175,7 @@ class SemanticEngine:
 
             # Step 1: Force lazy evaluation of the heavy ML components
             _ = self._indexer._collection
-            _ = self._searcher._cross_encoder
+            # _ = self._searcher._cross_encoder  # Commented out to prevent PyTorch background thread import deadlocks under Windows
 
             # Step 2: Reindex orphaned memories (on-disk JSON but not in ChromaDB)
             # Instead of self._workspace.get_log() which relies on linear chain from local HEAD (None on new machines),
