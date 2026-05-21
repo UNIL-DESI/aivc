@@ -17,6 +17,9 @@
 
 set -euo pipefail
 
+# Ensure local bin is in PATH (especially for uv on Windows)
+export PATH="${HOME}/.local/bin:${PATH}"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -96,7 +99,7 @@ pushd "${SOURCE_DIR}" >/dev/null
 EXTRA_ARGS=""
 if [[ "$WINDOWS" == "1" ]]; then
     info "Windows detected — adding CUDA 12.1 index for GPU acceleration..."
-    EXTRA_ARGS="--extra-index-url https://download.pytorch.org/whl/cu121"
+    EXTRA_ARGS="--extra-index-url https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match"
 fi
 
 uv pip install $EXTRA_ARGS --python "${VENV_PYTHON}" -e ".[all]"
