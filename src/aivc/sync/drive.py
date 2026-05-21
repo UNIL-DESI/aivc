@@ -30,8 +30,9 @@ class NativeDriveSyncManager:
         self.sync_blobs = self.config.get("sync_blobs", False)
         self.machine_id = get_machine_id()
 
-        # Lazy Google Drive service
-        self._service = None
+        # Lazy Google Drive service (using thread local to ensure thread safety during parallel downloads)
+        import threading
+        self._thread_local = threading.local()
 
         # Folder ID cache to avoid repeated API lookups
         self._folder_cache: dict[str, str] = {}
@@ -41,9 +42,9 @@ class NativeDriveSyncManager:
     # ------------------------------------------------------------------
 
     def _get_service(self):
-        """Lazy-load and authenticate with Google Drive API."""
-        if self._service is not None:
-            return self._service
+        """Lazy-load and authenticate with Google Drive API (thread-local)."""
+        if getattr(self._thread_local, "service", None) is not None:
+            return self._thread_local.service
 
         try:
             from google.oauth2.credentials import Credentials
@@ -71,8 +72,9 @@ class NativeDriveSyncManager:
                     "Run 'aivc sync setup' to re-authenticate."
                 )
 
-        self._service = build("drive", "v3", credentials=creds)
-        return self._service
+        service = build("drive", "v3", credentials=creds)
+        self._thread_local.service = service
+        return service
 
     # ------------------------------------------------------------------
     # Folder management (cached)
@@ -269,7 +271,8 @@ class NativeDriveSyncManager:
         local_memories_dir.mkdir(parents=True, exist_ok=True)
         existing_memories = {f.name for f in local_memories_dir.iterdir() if f.suffix == ".json"}
 
-        pulled_count = 0
+        # Collect all missing files to download in parallel
+        missing_files = []
 
         for mf in machine_folders:
             if mf["name"] == self.machine_id or mf["name"] == "blobs":
@@ -302,13 +305,43 @@ class NativeDriveSyncManager:
                 for remote_file in files_result.get("files", []):
                     if remote_file["name"] in existing_memories:
                         continue
-                    self._download_file(remote_file["id"], local_memories_dir / remote_file["name"])
-                    pulled_count += 1
+                    missing_files.append((remote_file["id"], local_memories_dir / remote_file["name"]))
                     existing_memories.add(remote_file["name"])
 
                 page_token = files_result.get("nextPageToken")
                 if not page_token:
                     break
+
+        if not missing_files:
+            return 0
+
+        # Perform parallel download using ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import sys
+
+        pulled_count = 0
+        max_workers = min(16, len(missing_files))
+
+        print(f"Starting parallel download of {len(missing_files)} files using {max_workers} threads...")
+        sys.stdout.flush()
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_file = {
+                executor.submit(self._download_file, file_id, dest_path): dest_path.name
+                for file_id, dest_path in missing_files
+            }
+
+            for future in as_completed(future_to_file):
+                filename = future_to_file[future]
+                try:
+                    future.result()
+                    pulled_count += 1
+                    if pulled_count % 10 == 0 or pulled_count == len(missing_files):
+                        print(f"Downloaded {pulled_count}/{len(missing_files)} files...")
+                        sys.stdout.flush()
+                except Exception as e:
+                    print(f"Error downloading {filename}: {e}")
+                    sys.stdout.flush()
 
         return pulled_count
 
