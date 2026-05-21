@@ -352,12 +352,42 @@ class SemanticEngine:
     ) -> list[str]:
         """Use GNU grep subprocess to find files matching ALL terms (AND logic).
         
-        Each term is piped through a separate grep invocation so only files
-        containing every term survive.  This is dramatically faster than
-        reading files in Python because grep uses mmap + C-level matching.
+        Falls back to a pure Python implementation if grep/xargs is not available
+        (e.g., on Windows).
         """
         import subprocess
         import tempfile
+        import shutil
+
+        # Fallback pure Python matcher
+        def _python_fallback_search(candidate_paths: list[str], search_terms: list[str]) -> list[str]:
+            import re
+            matched = []
+            for path_str in candidate_paths:
+                try:
+                    p = Path(path_str)
+                    if not p.is_file():
+                        continue
+                    
+                    content = p.read_text(encoding="utf-8", errors="ignore")
+                    all_match = True
+                    for term in search_terms:
+                        if is_regex:
+                            flags = re.IGNORECASE if not case_sensitive else 0
+                            if not re.search(term, content, flags):
+                                all_match = False
+                                break
+                        else:
+                            t = term if case_sensitive else term.lower()
+                            c = content if case_sensitive else content.lower()
+                            if t not in c:
+                                all_match = False
+                                break
+                    if all_match:
+                        matched.append(path_str)
+                except Exception:
+                    continue
+            return matched
 
         current_paths = paths
         grep_flags = ["-l"]  # list matching file names only
@@ -365,6 +395,10 @@ class SemanticEngine:
             grep_flags.append("-i")
         if not is_regex:
             grep_flags.append("-F")  # fixed-string (faster)
+
+        # Quick check if xargs and grep are available in PATH
+        if not shutil.which("xargs") or not shutil.which("grep"):
+            return _python_fallback_search(paths, terms)
 
         for term in terms:
             if not current_paths:
@@ -392,6 +426,9 @@ class SemanticEngine:
                 current_paths = [
                     l for l in result.stdout.strip().split("\n") if l
                 ]
+            except (FileNotFoundError, OSError, subprocess.SubprocessError):
+                # If command fails due to environment mismatch (e.g. missing xargs/grep on Windows)
+                return _python_fallback_search(current_paths, [term])
             finally:
                 try:
                     os.unlink(tmp.name)
