@@ -924,16 +924,19 @@ def start_background_watchers():
 # Entry point
 # ---------------------------------------------------------------------------
 
-def _trigger_ml_warmup():
+if __name__ == "__main__":
+    import threading
+    import sys
+    from aivc.sync.background import BackgroundSyncer
+    
+    # Force eager ML warmup on the main thread BEFORE starting the MCP server loop.
+    # This prevents any Windows LoaderLock / thread import deadlocks during subsequent tool calls.
+    print("[*] Performing synchronous ML warmup on the main thread...", file=sys.stderr)
     try:
         _get_engine().warmup()
     except Exception as e:
-        print(f"Background ML warmup failed: {e}", file=sys.stderr)
+        print(f"⚠️ Main thread ML warmup failed: {e}", file=sys.stderr)
 
-if __name__ == "__main__":
-    import threading
-    from aivc.sync.background import BackgroundSyncer
-    
     def _on_sync_pull():
         try:
             _get_engine().migrate_index()
@@ -943,10 +946,6 @@ if __name__ == "__main__":
             print(f"Error during sync post-processing: {e}", file=sys.stderr)
 
     _syncer = BackgroundSyncer(_storage_root, on_pull_callback=_on_sync_pull)
-    
-    # Pre-load heavy ML models in background to mask the cold startup latency
-    # without blocking the Cursor JSON-RPC `initialize` handshake
-    threading.Thread(target=_trigger_ml_warmup, daemon=True, name="AIVC-ML-Warmup").start()
     
     # Start background tasks
     start_background_watchers()

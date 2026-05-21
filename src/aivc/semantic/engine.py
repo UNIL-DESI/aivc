@@ -62,6 +62,7 @@ class SemanticEngine:
         
         # Prevent PyTorch/Chroma multithreading import gridlocks
         self._ml_lock = threading.RLock()
+        self._warmed_up = False
 
         # Async Indexing & Sync
         self._index_queue = queue.Queue()
@@ -87,6 +88,9 @@ class SemanticEngine:
             if memory is None: # Shutdown signal
                 break
             try:
+                if not self._warmed_up:
+                    self.warmup()
+
                 # 1. Semantic indexing (triggers lazy load of indexer if needed)
                 indexer = self._indexer
                 if indexer is not None:
@@ -163,54 +167,60 @@ class SemanticEngine:
         Safe to call from a background thread; Python's import lock prevents
         race conditions with concurrent tool calls.
         """
-        import sys
+        with self._ml_lock:
+            if self._warmed_up:
+                return
 
-        # Step 1: Force lazy evaluation of the heavy ML components
-        _ = self._indexer._collection
-        _ = self._searcher._cross_encoder
+            import sys
 
-        # Step 2: Reindex orphaned memories (on-disk JSON but not in ChromaDB)
-        # Instead of self._workspace.get_log() which relies on linear chain from local HEAD (None on new machines),
-        # we physically scan the commits directory to find all available memories.
-        all_memories = []
-        commits_dir = self._workspace._commits_dir
-        if commits_dir.exists():
-            for json_file in commits_dir.glob("*.json"):
-                try:
-                    memory_id = json_file.stem
-                    memory = self._workspace._load_memory(memory_id)
-                    all_memories.append(memory)
-                except Exception as e:
-                    print(
-                        f"[aivc] Failed to load physical memory {json_file.name}: {e}",
-                        file=sys.stderr,
-                    )
+            # Step 1: Force lazy evaluation of the heavy ML components
+            _ = self._indexer._collection
+            _ = self._searcher._cross_encoder
 
-        # Fetch all indexed IDs in a single, lightning-fast query
-        try:
-            indexed_ids = set(self._indexer._collection.get(include=[])["ids"])
-        except Exception:
-            indexed_ids = set()
+            # Step 2: Reindex orphaned memories (on-disk JSON but not in ChromaDB)
+            # Instead of self._workspace.get_log() which relies on linear chain from local HEAD (None on new machines),
+            # we physically scan the commits directory to find all available memories.
+            all_memories = []
+            commits_dir = self._workspace._commits_dir
+            if commits_dir.exists():
+                for json_file in commits_dir.glob("*.json"):
+                    try:
+                        memory_id = json_file.stem
+                        memory = self._workspace._load_memory(memory_id)
+                        all_memories.append(memory)
+                    except Exception as e:
+                        print(
+                            f"[aivc] Failed to load physical memory {json_file.name}: {e}",
+                            file=sys.stderr,
+                        )
 
-        missing = [m for m in all_memories if m.id not in indexed_ids]
+            # Fetch all indexed IDs in a single, lightning-fast query
+            try:
+                indexed_ids = set(self._indexer._collection.get(include=[])["ids"])
+            except Exception:
+                indexed_ids = set()
 
-        if missing:
-            print(
-                f"[aivc] Reindexing {len(missing)} orphaned memory(ies)...",
-                file=sys.stderr,
-            )
-            for memory in missing:
-                try:
-                    self._indexer.index_memory(memory)
-                except Exception as e:
-                    print(
-                        f"[aivc] Failed to reindex {memory.id}: {e}",
-                        file=sys.stderr,
-                    )
-            print(
-                f"[aivc] Warmup complete. Index now has {self._indexer._collection.count()} memory(ies).",
-                file=sys.stderr,
-            )
+            missing = [m for m in all_memories if m.id not in indexed_ids]
+
+            if missing:
+                print(
+                    f"[aivc] Reindexing {len(missing)} orphaned memory(ies)...",
+                    file=sys.stderr,
+                )
+                for memory in missing:
+                    try:
+                        self._indexer.index_memory(memory)
+                    except Exception as e:
+                        print(
+                            f"[aivc] Failed to reindex {memory.id}: {e}",
+                            file=sys.stderr,
+                        )
+                print(
+                    f"[aivc] Warmup complete. Index now has {self._indexer._collection.count()} memory(ies).",
+                    file=sys.stderr,
+                )
+            
+            self._warmed_up = True
 
 
     # ------------------------------------------------------------------
@@ -318,6 +328,9 @@ class SemanticEngine:
             A list of :class:`~aivc.semantic.searcher.SearchResult` sorted by
             relevance (descending).
         """
+        if not self._warmed_up:
+            self.warmup()
+
         try:
             if filter_glob:
                 memory_ids = self._graph.get_memories_by_glob(filter_glob)
