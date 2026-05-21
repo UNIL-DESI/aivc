@@ -31,7 +31,7 @@ powershell -c "irm https://raw.githubusercontent.com/hjamet/aivc/main/install.sh
 ```
 
 > [!NOTE]
-> On Windows, running `install.sh` generates a `aivc.cmd` wrapper script inside `~/.local/bin/` alongside the standard `aivc` bash script. This ensures the CLI runs flawlessly inside Windows Command Prompt (CMD) and PowerShell without triggering the OS "Open with..." dialog for the extensionless file. It also configures standard paths, resolves Git Bash line endings (LF), and uses appropriate package index strategies for PyTorch/CUDA dependencies.
+> On Windows, running `install.sh` generates a `aivc.cmd` wrapper script inside `~/.local/bin/` alongside the standard `aivc` bash script. This ensures the CLI runs flawlessly inside Windows Command Prompt (CMD) and PowerShell without triggering the OS "Open with..." dialog for the extensionless file. It also configures standard paths, registers the MCP server in the active `~/.gemini/config/mcp_config.json` configuration, resolves Git Bash line endings (LF), and uses appropriate package index strategies for PyTorch/CUDA dependencies.
 
 ```bash
 # Local development installation

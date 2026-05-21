@@ -26,7 +26,7 @@ uv venv "${VENV_DIR}" --python python3
 info "Installing aivc[all] into the local venv ..."
 uv pip install --python "${VENV_DIR}/bin/python" -e ".[all]"
 
-MCP_CONFIG="${HOME}/.gemini/antigravity/mcp_config.json"
+MCP_CONFIG="${HOME}/.gemini/config/mcp_config.json"
 info "Configuring MCP server entry in ${MCP_CONFIG} ..."
 
 "${VENV_DIR}/bin/python" - <<PYEOF
@@ -34,14 +34,19 @@ import json
 import pathlib
 import sys
 
-config_path = pathlib.Path("${MCP_CONFIG}")
+# Use pathlib to get native home (handles ~ correctly on both OS)
+home = pathlib.Path.home()
+config_path = home / ".gemini" / "config" / "mcp_config.json"
 config_path.parent.mkdir(parents=True, exist_ok=True)
 
 if config_path.exists():
-    raw = config_path.read_text(encoding="utf-8")
     try:
-        config = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        raw = config_path.read_text(encoding="utf-8").strip()
+        if not raw:
+            config = {}
+        else:
+            config = json.loads(raw)
+    except Exception as exc:
         sys.exit(f"[aivc-dev] ERROR: {config_path} contains invalid JSON: {exc}")
 else:
     config = {}
@@ -53,7 +58,7 @@ config["mcpServers"]["aivc"] = {
     "command": "${VENV_DIR}/bin/python",
     "args": ["-m", "aivc.server"],
     "env": {
-        "AIVC_STORAGE_ROOT": str(pathlib.Path.home() / ".aivc" / "storage")
+        "AIVC_STORAGE_ROOT": str(home / ".aivc" / "storage")
     },
 }
 

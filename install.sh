@@ -106,10 +106,10 @@ uv pip install $EXTRA_ARGS --python "${VENV_PYTHON}" -e ".[all]"
 popd >/dev/null
 
 # ---------------------------------------------------------------------------
-# 5. Inject AIVC into ~/.gemini/antigravity/mcp_config.json
+# 5. Inject AIVC into ~/.gemini/config/mcp_config.json
 # ---------------------------------------------------------------------------
 
-MCP_CONFIG="${HOME}/.gemini/antigravity/mcp_config.json"
+MCP_CONFIG="${HOME}/.gemini/config/mcp_config.json"
 info "Configuring MCP server entry in ${MCP_CONFIG} ..."
 
 # Use Python's json module to safely read, update, and write the config.
@@ -122,7 +122,7 @@ import os
 
 # Use pathlib to get native home (handles ~ correctly on both OS)
 home = pathlib.Path.home()
-config_path = home / ".gemini" / "antigravity" / "mcp_config.json"
+config_path = home / ".gemini" / "config" / "mcp_config.json"
 config_path.parent.mkdir(parents=True, exist_ok=True)
 
 if config_path.exists():
