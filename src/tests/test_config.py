@@ -85,18 +85,16 @@ def test_get_storage_root_env_set():
         assert get_storage_root() == Path("/tmp/aivc_root")
 
 def test_get_storage_root_fallback_allowed():
-    with patch.dict(os.environ, clear=True):
-        if "AIVC_STORAGE_ROOT" in os.environ:
-            del os.environ["AIVC_STORAGE_ROOT"]
-
-        expected_path = Path.home() / ".aivc" / "storage"
+    expected_path = Path.home() / ".aivc" / "storage"
+    env_copy = os.environ.copy()
+    env_copy.pop("AIVC_STORAGE_ROOT", None)
+    with patch.dict(os.environ, env_copy, clear=True):
         assert get_storage_root(allow_fallback=True) == expected_path
 
 def test_get_storage_root_no_fallback_exits():
-    with patch.dict(os.environ, clear=True):
-        if "AIVC_STORAGE_ROOT" in os.environ:
-            del os.environ["AIVC_STORAGE_ROOT"]
-
+    env_copy = os.environ.copy()
+    env_copy.pop("AIVC_STORAGE_ROOT", None)
+    with patch.dict(os.environ, env_copy, clear=True):
         with pytest.raises(SystemExit) as excinfo:
             get_storage_root(allow_fallback=False)
 
