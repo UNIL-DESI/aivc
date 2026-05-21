@@ -42,6 +42,7 @@ def run_benchmark():
 
         duration = end_time - start_time
         print(f"Removed memory with {num_files} orphans in {duration:.4f} seconds.")
+        graph.close()
 
         # Case 2: Files do NOT become orphans (already have other edges)
         graph = CooccurrenceGraph(storage) # Reset or just keep going
@@ -74,6 +75,7 @@ def run_benchmark():
         end_time = time.perf_counter()
         duration = end_time - start_time
         print(f"Removed memory with {num_files} non-orphans in {duration:.4f} seconds.")
+        graph.close()
 
 if __name__ == "__main__":
     run_benchmark()

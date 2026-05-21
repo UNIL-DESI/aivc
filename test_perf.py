@@ -60,6 +60,7 @@ def run_benchmark():
 
         duration = end_time - start_time
         print(f"Removed memory with {num_files} files in {duration:.4f} seconds.")
+        graph.close()
 
 if __name__ == "__main__":
     run_benchmark()
