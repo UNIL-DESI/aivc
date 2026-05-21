@@ -930,12 +930,18 @@ if __name__ == "__main__":
     from aivc.sync.background import BackgroundSyncer
     
     # Force eager ML warmup on the main thread BEFORE starting the MCP server loop.
-    # This prevents any Windows LoaderLock / thread import deadlocks during subsequent tool calls.
+    # We temporarily redirect sys.stdout to sys.stderr during warmup to capture and reroute 
+    # any accidental third-party library prints (e.g. Hugging Face, PyTorch, tqdm, ChromaDB warnings)
+    # which would otherwise corrupt the stdio JSON-RPC protocol transport.
     print("[*] Performing synchronous ML warmup on the main thread...", file=sys.stderr)
+    real_stdout = sys.stdout
+    sys.stdout = sys.stderr
     try:
         _get_engine().warmup()
     except Exception as e:
         print(f"⚠️ Main thread ML warmup failed: {e}", file=sys.stderr)
+    finally:
+        sys.stdout = real_stdout
 
     def _on_sync_pull():
         try:
