@@ -31,3 +31,5 @@
 | [Phase 28 — I/O Optimization](tasks/phase28_io_optimizations.md) | Batching & Fast Diff for local indexing | 2026-03-24 | `Up to date` |
 | [Phase 29 — Memory Refactor](tasks/phase29.md) | Remember tool, Blob sync removal, Tree Status | 2026-03-30 | `Up to date` |
 | [Phase 30 — Debt Cleanup](tasks/phase30_debt_cleanup.md) | Unification du backend (Commit -> Memory) et purge drive.py | 2026-03-30 | `Up to date` |
+| [Phase 32 — Windows Portability & Perf](tasks/phase32_windows_portability.md) | Native Windows fixes, file lock resolutions, clean tests | 2026-05-21 | `Up to date` |
+
