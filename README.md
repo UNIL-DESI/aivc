@@ -141,3 +141,5 @@ Utilities for installation, data maintenance, and migrations:
 - `[x]` Phase 31: Ultra-Fast Parallel Search (Obsidian-like).
 - `[x]` Phase 32: Windows Portability & Performance. [[Spec](docs/tasks/phase32_windows_portability.md)]
 - `[x]` Phase 33: Windows Bulk Warmup & Physical Sync. [[Spec](docs/tasks/phase33_bulk_warmup.md)]
+- `[x]` Phase 34: Windows Threading Deadlock & Cross-Encoder Bypass. [[Spec](docs/tasks/phase34_windows_deadlocks.md)]
+
