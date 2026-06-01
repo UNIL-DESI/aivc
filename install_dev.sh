@@ -164,6 +164,20 @@ echo "  MCP config   : ${MCP_CONFIG}"
 info "Running CoreIndex migration..."
 AIVC_STORAGE_ROOT="${HOME}/.aivc/storage" "${VENV_DIR}/bin/aivc" migrate || info "Migration skipped (or not needed)."
 
+info "Pre-downloading FastEmbed model..."
+AIVC_STORAGE_ROOT="${HOME}/.aivc/storage" "${VENV_DIR}/bin/python" -c "
+from pathlib import Path
+import os
+storage_root = Path(os.environ['AIVC_STORAGE_ROOT'])
+storage_root.mkdir(parents=True, exist_ok=True)
+cache_dir = storage_root / 'fastembed_cache'
+cache_dir.mkdir(parents=True, exist_ok=True)
+from aivc.semantic.indexer import _get_shared_model
+print(f'Downloading model to {cache_dir}...')
+_get_shared_model(cache_dir)
+print('Model ready!')
+" || info "FastEmbed model download failed, will retry later."
+
 echo "  Agent rules  : ${GEMINI_MD}"
 echo ""
 echo "Restart Gemini Antigravity to pick up the changes."

@@ -30,12 +30,15 @@ _COLLECTION_NAME = "aivc_memories"
 _shared_model: TextEmbedding | None = None
 
 
-def _get_shared_model() -> TextEmbedding:
+def _get_shared_model(cache_dir: Path | None = None) -> TextEmbedding:
     """Return the shared TextEmbedding model (lazy singleton)."""
     global _shared_model
     if _shared_model is None:
         # Use FastEmbed's TextEmbedding for faster embeddings and no torch dependency
-        _shared_model = TextEmbedding(BI_ENCODER_MODEL)
+        _shared_model = TextEmbedding(
+            BI_ENCODER_MODEL,
+            cache_dir=str(cache_dir) if cache_dir else None
+        )
     return _shared_model
 
 
@@ -85,7 +88,10 @@ class Indexer:
         self._chroma_dir = storage_root / self._CHROMA_DIR
         self._chroma_dir.mkdir(parents=True, exist_ok=True)
 
-        self._model = _get_shared_model()
+        self._fastembed_cache_dir = storage_root / "fastembed_cache"
+        self._fastembed_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        self._model = _get_shared_model(self._fastembed_cache_dir)
         self._ef = _FastEmbedEF(self._model)
 
         self._client = chromadb.PersistentClient(path=str(self._chroma_dir))
