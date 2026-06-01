@@ -127,7 +127,7 @@ Utilities for installation, data maintenance, and migrations:
 |------------------|--------|-------------|
 | `scripts/migrate_commit_paths.py` | Data Migration | Scans database memory structures to convert POSIX/WSL absolute paths to Windows-compatible structures during host migrations. |
 | `test_perf.py` & `test_perf_v2.py` | Benchmarking | Comprehensive performance harness targeting database IO and concurrent vector lookup. |
-| `scripts/install.sh` | Setup | Shell-based automated system setup, Python environment bootstrapping, and MCP linkage. |
+| `scripts/install.sh` | Setup | Shell-based automated system setup, Python environment bootstrapping, MCP linkage, and FastEmbed model pre-downloading. |
 
 ---
 
