@@ -112,7 +112,10 @@ class Searcher:
             return []
 
         import os
+        import re
         disable_cross = os.environ.get("AIVC_DISABLE_CROSS_ENCODER", "False").lower() == "true"
+        word_pattern = re.compile(r'\w+')
+        query_words = set(word_pattern.findall(query.lower()))
 
         if disable_cross:
             # Bypass Stage 2 (Cross-Encoder reranking) and use Bi-Encoder results directly
@@ -125,30 +128,27 @@ class Searcher:
                 note_part = note_part.strip()
                 
                 snippet = note_part[:200]
-                if note_part:
-                    import re
-                    query_words = set(re.findall(r'\w+', query.lower()))
-                    if query_words:
-                        best_score = -1
-                        best_idx = 0
-                        max_len = 200
-                        step = 50
-                        for idx in range(0, max(1, len(note_part) - max_len + step), step):
-                            window = note_part[idx:idx+max_len]
-                            window_words = set(re.findall(r'\w+', window.lower()))
-                            window_score = len(query_words & window_words)
-                            if window_score > best_score:
-                                best_score = window_score
-                                best_idx = idx
-                        
-                        if best_score > 0:
-                            start = best_idx
-                            end = start + max_len
-                            snippet = note_part[start:end].strip()
-                            if start > 0:
-                                snippet = "…" + snippet
-                            if end < len(note_part):
-                                snippet = snippet + "…"
+                if note_part and query_words:
+                    best_score = -1
+                    best_idx = 0
+                    max_len = 200
+                    step = 50
+                    for idx in range(0, max(1, len(note_part) - max_len + step), step):
+                        window = note_part[idx:idx+max_len]
+                        window_words = set(word_pattern.findall(window.lower()))
+                        window_score = len(query_words & window_words)
+                        if window_score > best_score:
+                            best_score = window_score
+                            best_idx = idx
+
+                    if best_score > 0:
+                        start = best_idx
+                        end = start + max_len
+                        snippet = note_part[start:end].strip()
+                        if start > 0:
+                            snippet = "…" + snippet
+                        if end < len(note_part):
+                            snippet = snippet + "…"
 
                 score = 1.0 - (i * 0.05)  # Assign a mock descending score
                 results.append(
@@ -186,32 +186,29 @@ class Searcher:
             note_part = note_part.strip()
             
             snippet = note_part[:200]
-            if note_part:
-                import re
-                query_words = set(re.findall(r'\w+', query.lower()))
-                if query_words:
-                    best_score = -1
-                    best_idx = 0
-                    max_len = 200
-                    step = 50
-                    for i in range(0, max(1, len(note_part) - max_len + step), step):
-                        window = note_part[i:i+max_len]
-                        window_words = set(re.findall(r'\w+', window.lower()))
-                        window_score = len(query_words & window_words)
-                        if window_score > best_score:
-                            best_score = window_score
-                            best_idx = i
-                    
-                    if best_score > 0:
-                        start = best_idx
-                        end = start + max_len
-                        snippet = note_part[start:end].strip()
-                        if start > 0:
-                            snippet = "…" + snippet
-                        if end < len(note_part):
-                            snippet = snippet + "…"
-                        else:
-                            snippet = snippet
+            if note_part and query_words:
+                best_score = -1
+                best_idx = 0
+                max_len = 200
+                step = 50
+                for i in range(0, max(1, len(note_part) - max_len + step), step):
+                    window = note_part[i:i+max_len]
+                    window_words = set(word_pattern.findall(window.lower()))
+                    window_score = len(query_words & window_words)
+                    if window_score > best_score:
+                        best_score = window_score
+                        best_idx = i
+
+                if best_score > 0:
+                    start = best_idx
+                    end = start + max_len
+                    snippet = note_part[start:end].strip()
+                    if start > 0:
+                        snippet = "…" + snippet
+                    if end < len(note_part):
+                        snippet = snippet + "…"
+                    else:
+                        snippet = snippet
 
             results.append(
                 SearchResult(
