@@ -260,20 +260,28 @@ class CooccurrenceGraph:
         if not matched_files:
             return []
 
-        memory_ids = set()
-        chunk_size = 900  # Safe limit for SQLite `IN` clause parameters
+        # For small numbers of matched files, we can just use a simple IN clause chunked by 999 (the lowest common denominator limit for SQLite).
+        # But for large numbers of files, building a huge string of placeholders and compiling a massive IN clause is slower than
+        # using a temporary table and doing a JOIN. The temporary table + JOIN approach is universally safe regardless of SQLite parameter limits,
+        # avoids Python overhead of string concatenation for large lists, and completely eliminates the N+1 query issue inside the loop.
 
-        for i in range(0, len(matched_files), chunk_size):
-            chunk = tuple(matched_files[i : i + chunk_size])
-            placeholders = ",".join("?" for _ in chunk)
-            rows = self._execute(
-                f"SELECT DISTINCT commit_id FROM edges WHERE file_path IN ({placeholders})",
-                chunk,
-            ).fetchall()
-            for r in rows:
-                memory_ids.add(r[0])
+        self._execute("CREATE TEMP TABLE IF NOT EXISTS tmp_matched_files (file_path TEXT)")
+        self._execute("DELETE FROM tmp_matched_files")
 
-        return list(memory_ids)
+        self._conn.executemany(
+            "INSERT INTO tmp_matched_files (file_path) VALUES (?)",
+            ((f,) for f in matched_files)
+        )
+
+        rows = self._execute(
+            """
+            SELECT DISTINCT e.commit_id
+            FROM edges e
+            JOIN tmp_matched_files t ON e.file_path = t.file_path
+            """
+        ).fetchall()
+
+        return [r[0] for r in rows]
 
     def get_related_files(
         self, file_path: str, top_n: int = 10
