@@ -118,18 +118,40 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
     async def test_delegates_to_engine(self):
         import asyncio
         _mock_engine.create_memory.return_value = _make_memory()
+        _mock_engine.get_tracked_paths.return_value = []
         await _remember("T", "N")
         # Let the background task execute
         await asyncio.sleep(0.01)
-        _mock_engine.create_memory.assert_called_once_with("T", "N", [])
+        _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=[], edited_files=[])
 
     async def test_delegates_to_engine_with_consulted(self):
         import asyncio
+        from pathlib import Path
         _mock_engine.create_memory.return_value = _make_memory()
-        await _remember("T", "N", consulted_files=["f1.py"])
+        # Since f1.py is passed, it must either exist or be tracked.
+        # We'll mock get_tracked_paths to return it so it doesn't fail validation.
+        _mock_engine.get_tracked_paths.return_value = [str(Path("f1.py").resolve())]
+        await _remember("T", "N", read_files=["f1.py"])
         # Let the background task execute
         await asyncio.sleep(0.01)
-        _mock_engine.create_memory.assert_called_once_with("T", "N", ["f1.py"])
+        _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=["f1.py"], edited_files=[])
+
+    async def test_remember_validation_errors(self):
+        _mock_engine.get_tracked_paths.return_value = []
+        
+        # Test directory error
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(ValueError):
+                await _remember("T", "N", read_files=[tmpdir])
+            with self.assertRaises(ValueError):
+                await _remember("T", "N", edited_files=[tmpdir])
+
+        # Test untracked non-existent file error
+        with self.assertRaises(ValueError):
+            await _remember("T", "N", read_files=["non_existent.txt"])
+        with self.assertRaises(ValueError):
+            await _remember("T", "N", edited_files=["non_existent.txt"])
 
     async def test_runtime_error_propagates(self):
         import asyncio
@@ -146,37 +168,37 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
         self.assertIn("creation scheduled in background", result)
 
 
-class TestRecall(unittest.TestCase):
+class TestRecall(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         _mock_engine.reset_mock(return_value=True, side_effect=True)
         _mock_engine.get_index_queue_size.return_value = 0
 
-    def test_returns_memory_list_without_note(self):
+    async def test_returns_memory_list_without_note(self):
         _mock_engine.search.return_value = [_make_search_result()]
-        result = _recall("find something")
+        result = await _recall("find something")
         self.assertIn("abc-123", result)
         self.assertIn("Old memory", result)
         self.assertIn("> short snippet", result)
         # Must NOT contain the full note content
         self.assertNotIn("Detailed note", result)
 
-    def test_includes_aggregated_files(self):
+    async def test_includes_aggregated_files(self):
         results = [
             _make_search_result("m1", "M1"),
             _make_search_result("m2", "M2"),
         ]
         _mock_engine.search.return_value = results
-        result = _recall("find")
+        result = await _recall("find")
         self.assertIn("foo.py", result)
 
-    def test_no_results_returns_graceful_message(self):
+    async def test_no_results_returns_graceful_message(self):
         _mock_engine.search.return_value = []
-        result = _recall("nothing")
+        result = await _recall("nothing")
         self.assertIn("No matching memories", result)
 
-    def test_top_n_capped_at_20(self):
+    async def test_top_n_capped_at_20(self):
         _mock_engine.search.return_value = []
-        _recall("x", top_n=100)
+        await _recall("x", top_n=100)
         # top_n is capped to 20 before passing to engine
         _mock_engine.search.assert_called_once_with("x", top_n=20, filter_glob="")
 

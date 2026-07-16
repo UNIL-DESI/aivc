@@ -105,18 +105,39 @@ def test_workspace_create_memory_autotrack_consulted(tmp_path):
 
 
 def test_workspace_create_memory_nonexistent_consulted(tmp_path):
-    """Consulted files that don't exist on disk should be silently skipped."""
+    """Consulted files that don't exist on disk and are untracked should raise ValueError."""
     ws = Workspace(tmp_path)
     fake_path = tmp_path / "does_not_exist.txt"
     
-    # Need at least one real change to avoid RuntimeError
+    with pytest.raises(ValueError, match="Validation error in read_files"):
+        ws.create_memory("Skip", "Note", consulted_files=[str(fake_path)])
+
+def test_workspace_create_memory_strict_validation(tmp_path):
+    ws = Workspace(tmp_path)
+    # 1. Test directory raises ValueError
+    dir_path = tmp_path / "subdir"
+    dir_path.mkdir()
+    with pytest.raises(ValueError, match="is a directory"):
+        ws.create_memory("Title", "Note", read_files=[str(dir_path)])
+    with pytest.raises(ValueError, match="is a directory"):
+        ws.create_memory("Title", "Note", edited_files=[str(dir_path)])
+
+    # 2. Test untracked non-existent file raises ValueError
+    fake_file = tmp_path / "does_not_exist.txt"
+    with pytest.raises(ValueError, match="is an untracked non-existent file"):
+        ws.create_memory("Title", "Note", read_files=[str(fake_file)])
+    with pytest.raises(ValueError, match="is an untracked non-existent file"):
+        ws.create_memory("Title", "Note", edited_files=[str(fake_file)])
+
+    # 3. Test tracked non-existent file (deleted file) does NOT raise ValueError
     real_file = tmp_path / "real.txt"
-    real_file.write_text("data")
+    real_file.write_text("hello")
     ws.track(str(real_file))
-    
-    memory = ws.create_memory("Skip", "Note", consulted_files=[str(fake_path)])
-    # Only the real file change should be present, no consulted entry for fake_path
-    assert all(c.path != str(fake_path.resolve()) for c in memory.changes)
+    ws.create_memory("Initial", "Note")
+    real_file.unlink() # Delete it
+    # Since it is tracked, it should not raise ValueError
+    memory = ws.create_memory("Deleted", "Note")
+    assert any(c.path == str(real_file.resolve()) and c.action == "deleted" for c in memory.changes)
 
 def test_semantic_engine_graph_updates(tmp_path):
     engine = SemanticEngine(tmp_path)

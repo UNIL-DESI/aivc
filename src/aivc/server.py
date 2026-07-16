@@ -250,7 +250,12 @@ def _format_changes_compressed(changes, machine_id=None) -> str:
 
 
 @mcp.tool()
-async def remember(title: str, note: str, consulted_files: list[str] = []) -> str:
+async def remember(
+    title: str,
+    note: str,
+    read_files: list[str] = [],
+    edited_files: list[str] = []
+) -> str:
     """Persist a memory checkpoint in AIVC.
 
     Call this tool after EVERY meaningful step: task completion, artefact creation,
@@ -263,21 +268,49 @@ async def remember(title: str, note: str, consulted_files: list[str] = []) -> st
         title: Short, descriptive title (e.g. "Implemented user auth module").
         note: Detailed Markdown note documenting what was done, why, how, and any
               important context. The more detail, the better the future recall.
-        consulted_files: Optional list of files that were consulted and
-                         provided CRUCIAL context for this task, but not modified.
-                         Files not yet tracked will be auto-tracked if they exist.
+        read_files: Optional list of files that were consulted and
+                    provided CRUCIAL context for this task, but not modified.
+                    Files not yet tracked will be auto-tracked if they exist on disk.
+                    Directories or untracked non-existent files will raise strict validation errors.
+        edited_files: Optional list of file paths that were modified/created for this task.
+                      Files not yet tracked will be auto-tracked if they exist on disk.
+                      Directories or untracked non-existent files will raise strict validation errors.
 
     Returns:
         Confirmation with the memory ID and the list of files that were snapshotted.
 
     Raises:
-        RuntimeError: If no tracked file has changed and no files were consulted.
+        ValueError: If any paths in read_files or edited_files are directories or
+                    untracked non-existent files.
+        RuntimeError: If no tracked file has changed and no files were read/edited.
     """
     import asyncio
+    from pathlib import Path
+
+    # Synchronous validation to raise strict validation errors immediately
+    engine = _get_engine()
+    tracked_paths = set(engine.get_tracked_paths())
+
+    for files_list, list_name in [(read_files, "read_files"), (edited_files, "edited_files")]:
+        for path_str in files_list:
+            p = Path(path_str)
+            abs_path = str(p.resolve())
+
+            if p.is_dir():
+                raise ValueError(f"Validation error in {list_name}: '{path_str}' is a directory.")
+
+            if not p.is_file() and abs_path not in tracked_paths:
+                raise ValueError(f"Validation error in {list_name}: '{path_str}' is an untracked non-existent file.")
 
     # Run the heavy vector encoding and DB insertion in a background thread
     asyncio.create_task(
-        asyncio.to_thread(_get_engine().create_memory, title, note, consulted_files)
+        asyncio.to_thread(
+            engine.create_memory,
+            title,
+            note,
+            read_files=read_files,
+            edited_files=edited_files
+        )
     )
 
     return (
