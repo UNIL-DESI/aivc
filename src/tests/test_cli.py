@@ -8,7 +8,6 @@ import os
 
 from aivc.cli import main, _format_bytes
 
-
 @pytest.fixture
 def mock_engine():
     with patch("aivc.cli._get_engine") as mock_get:
@@ -16,13 +15,11 @@ def mock_engine():
         mock_get.return_value = engine
         yield engine
 
-
 def test_format_bytes():
     assert _format_bytes(None) == "missing"
     assert _format_bytes(500) == "500 B"
     assert _format_bytes(1024) == "1.0 KB"
     assert _format_bytes(10 * 1024**2) == "10.0 MB"
-
 
 def test_cli_status(mock_engine, capsys):
     mock_engine.get_status.return_value = []
@@ -31,14 +28,12 @@ def test_cli_status(mock_engine, capsys):
     captured = capsys.readouterr()
     assert "No files are currently tracked" in captured.out
 
-
 def test_cli_log(mock_engine, capsys):
     mock_engine.get_log.return_value = []
     with patch("sys.argv", ["aivc", "log"]):
         main()
     captured = capsys.readouterr()
     assert "No memories found" in captured.out
-
 
 def test_cli_search(mock_engine, capsys):
     mock_engine.search.return_value = []
@@ -47,22 +42,6 @@ def test_cli_search(mock_engine, capsys):
     captured = capsys.readouterr()
     assert "No matching memories found" in captured.out
 
-
-def test_cli_track_single_file(mock_engine, capsys):
-    mock_engine.track.return_value = {"newly_tracked": ["/home/user/project/src/app.py"], "hidden_skipped": 0}
-    with patch("sys.argv", ["aivc", "track", "src/app.py"]):
-        main()
-    captured = capsys.readouterr()
-    assert "Tracked 1 new file(s)" in captured.out
-    mock_engine.track.assert_called_once_with("src/app.py", ignores=[])
-
-
-def test_cli_track_already_tracked(mock_engine, capsys):
-    mock_engine.track.return_value = {"newly_tracked": [], "hidden_skipped": 0}
-    with patch("sys.argv", ["aivc", "track", "src/app.py"]):
-        main()
-    captured = capsys.readouterr()
-    assert "No new files to track" in captured.out
 
 
 def test_cli_no_env_var(mock_engine, capsys):
@@ -78,7 +57,6 @@ def test_cli_no_env_var(mock_engine, capsys):
     captured = capsys.readouterr()
     assert "No files are currently tracked" in captured.out
 
-
 def test_cmd_sync_push_disabled(capsys):
     with patch("aivc.config.get_aivc_config") as mock_cfg:
         mock_cfg.return_value = {"sync": {"enabled": False}}
@@ -87,7 +65,6 @@ def test_cmd_sync_push_disabled(capsys):
 
     captured = capsys.readouterr()
     assert "Cloud sync is currently disabled" in captured.out
-
 
 def test_cmd_sync_push_no_token(capsys):
     with patch("aivc.config.get_aivc_config") as mock_cfg, \
@@ -99,7 +76,6 @@ def test_cmd_sync_push_no_token(capsys):
 
     captured = capsys.readouterr()
     assert "Google Drive authentication missing" in captured.out
-
 
 def test_cmd_sync_push_success_no_changes(capsys):
     with patch("aivc.config.get_aivc_config") as mock_cfg, \
@@ -118,7 +94,6 @@ def test_cmd_sync_push_success_no_changes(capsys):
     captured = capsys.readouterr()
     assert "Everything is up-to-date" in captured.out
 
-
 def test_cmd_sync_push_success_with_changes(capsys):
     with patch("aivc.config.get_aivc_config") as mock_cfg, \
          patch("aivc.config.get_token_path") as mock_token, \
@@ -136,7 +111,6 @@ def test_cmd_sync_push_success_with_changes(capsys):
     captured = capsys.readouterr()
     assert "Sync Push complete" in captured.out
     assert "Pushed 3 missing memory/ies" in captured.out
-
 
 def test_cmd_sync_push_error(capsys):
     with patch("aivc.config.get_aivc_config") as mock_cfg, \

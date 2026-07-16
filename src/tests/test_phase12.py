@@ -15,13 +15,12 @@ def test_config_storage_root(tmp_path):
         os.environ[env_var] = str(tmp_path)
         assert get_storage_root() == tmp_path
         
-        # Test 2: Env var missing, no fallback
+        # Test 2: Env var missing, allow_fallback=False defaults to fallback gracefully
         del os.environ[env_var]
-        with pytest.raises(SystemExit):
-            get_storage_root(allow_fallback=False)
+        root2 = get_storage_root(allow_fallback=False)
+        assert root2 == Path.home() / ".aivc" / "storage"
             
         # Test 3: Env var missing, with fallback
-        # (Fallbacks to ~/.aivc/storage by default)
         root = get_storage_root(allow_fallback=True)
         assert root == Path.home() / ".aivc" / "storage"
         
@@ -50,19 +49,16 @@ def test_memory_serialization_with_consulted():
     m2 = memory_from_dict(data)
     assert m2.changes[0].action == "consulted"
     assert m2.changes[0].path == "foo.txt"
-    # Actually Memory.create doesn't resolve paths, Workspace does.
 
 def test_workspace_create_memory_only_consulted(tmp_path):
     ws = Workspace(tmp_path)
     file_a = tmp_path / "a.txt"
     file_a.write_text("hello")
     
-    ws.track(str(file_a))
     # First memory to have a clean state
-    ws.create_memory("Initial", "Note")
+    ws.create_memory("Initial", "Note", edited_files=[str(file_a)])
     
     # Now create a memory with ONLY consulted file
-    # We need to make sure compute_diff returns empty
     memory = ws.create_memory("Consulted Only", "Note", consulted_files=[str(file_a)])
     
     assert len(memory.changes) == 1
@@ -76,15 +72,12 @@ def test_workspace_create_memory_mixed(tmp_path):
     file_a.write_text("hello")
     file_b.write_text("world")
     
-    ws.track(str(file_a))
-    ws.track(str(file_b))
-    
     # Memory b once so it's not "added" anymore
-    ws.create_memory("Setup", "Note")
+    ws.create_memory("Setup", "Note", edited_files=[str(file_a), str(file_b)])
     
     # Now modify a and consult b
     file_a.write_text("modified")
-    memory = ws.create_memory("Mixed", "Note", consulted_files=[str(file_b)])
+    memory = ws.create_memory("Mixed", "Note", consulted_files=[str(file_b)], edited_files=[str(file_a)])
     
     actions = {c.path: c.action for c in memory.changes}
     assert actions[str(file_a.resolve())] == "modified"
@@ -132,11 +125,10 @@ def test_workspace_create_memory_strict_validation(tmp_path):
     # 3. Test tracked non-existent file (deleted file) does NOT raise ValueError
     real_file = tmp_path / "real.txt"
     real_file.write_text("hello")
-    ws.track(str(real_file))
-    ws.create_memory("Initial", "Note")
+    ws.create_memory("Initial", "Note", edited_files=[str(real_file)])
     real_file.unlink() # Delete it
     # Since it is tracked, it should not raise ValueError
-    memory = ws.create_memory("Deleted", "Note")
+    memory = ws.create_memory("Deleted", "Note", edited_files=[str(real_file)])
     assert any(c.path == str(real_file.resolve()) and c.action == "deleted" for c in memory.changes)
 
 def test_semantic_engine_graph_updates(tmp_path):
@@ -144,7 +136,6 @@ def test_semantic_engine_graph_updates(tmp_path):
     file_a = tmp_path / "a.txt"
     file_a.write_text("hello")
     
-    engine.track(str(file_a))
     # Memory with only consulted file
     memory = engine.create_memory("Consulted Only", "Note", consulted_files=[str(file_a)])
     

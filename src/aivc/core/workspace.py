@@ -363,6 +363,12 @@ class Workspace:
 
             all_changes = changes + consulted_changes
 
+        if not all_changes:
+            raise RuntimeError(
+                "No changes detected in tracked files and no files consulted. "
+                "Nothing to remember."
+            )
+
         memory = Memory.create(
             title=title,
             note=note,

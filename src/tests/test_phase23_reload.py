@@ -13,7 +13,7 @@ def test_workspace_jit_reload(tmp_path):
     # Create a real file to track so len > 0
     tfile = tmp_path / "exists.txt"
     tfile.write_text("data")
-    ws.track(str(tfile))
+    ws.create_memory("Initial", "Note", edited_files=[str(tfile)])
     
     original_paths = ws.get_tracked_paths()
     assert len(original_paths) > 0
@@ -45,7 +45,7 @@ def test_semantic_engine_cache_invalidation_on_reload(tmp_path):
     test_file.write_text("hello")
     
     engine = SemanticEngine(storage_root)
-    engine.track(str(test_file))
+    engine.create_memory("Initial", "Note", edited_files=[str(test_file)])
     
     # Trigger lazy build of hints index
     hints = engine._get_local_hints_index()
@@ -58,6 +58,7 @@ def test_semantic_engine_cache_invalidation_on_reload(tmp_path):
     fake_file_path = str(tmp_path / "fake.txt")
     state["tracked_files"][fake_file_path] = None
     
+    # Wait to ensure mtime changes
     time.sleep(0.1)
     workspace_json.write_text(json.dumps(state))
     

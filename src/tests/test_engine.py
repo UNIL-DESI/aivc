@@ -33,8 +33,7 @@ def engine(tmp_path: Path):
 def test_create_memory_returns_memory(engine, tmp_path) -> None:
     f = tmp_path / "test.py"
     _write(f, "x = 1")
-    engine.track(str(f))
-    memory = engine.create_memory("First memory", "Initialised x to 1.")
+    memory = engine.create_memory("First memory", "Initialised x to 1.", edited_files=[str(f)])
     assert memory.id
     assert memory.title == "First memory"
 
@@ -42,8 +41,7 @@ def test_create_memory_returns_memory(engine, tmp_path) -> None:
 def test_create_memory_is_indexed(engine, tmp_path) -> None:
     f = tmp_path / "test.py"
     _write(f, "x = 1")
-    engine.track(str(f))
-    memory = engine.create_memory("Indexed memory", "This note should be vectorised.")
+    memory = engine.create_memory("Indexed memory", "This note should be vectorised.", edited_files=[str(f)])
     assert engine.wait_until_indexed()
     assert engine._indexer.is_indexed(memory.id)
 
@@ -51,18 +49,16 @@ def test_create_memory_is_indexed(engine, tmp_path) -> None:
 def test_create_memory_updates_graph(engine, tmp_path) -> None:
     f = tmp_path / "test.py"
     _write(f, "x = 1")
-    engine.track(str(f))
-    memory = engine.create_memory("Graph memory", "This should appear in the graph.")
+    memory = engine.create_memory("Graph memory", "This should appear in the graph.", edited_files=[str(f)])
     assert str(f) in engine._graph.get_memory_files(memory.id)
 
 
 def test_create_memory_raises_if_no_changes(engine, tmp_path) -> None:
     f = tmp_path / "test.py"
     _write(f, "x = 1")
-    engine.track(str(f))
-    engine.create_memory("First", "Initial note.")
+    engine.create_memory("First", "Initial note.", edited_files=[str(f)])
     with pytest.raises(RuntimeError, match="No changes detected"):
-        engine.create_memory("Second", "Should fail — nothing changed.")
+        engine.create_memory("Second", "Should fail — nothing changed.", edited_files=[str(f)])
 
 
 # ---------------------------------------------------------------------------
@@ -72,10 +68,10 @@ def test_create_memory_raises_if_no_changes(engine, tmp_path) -> None:
 def test_search_finds_relevant_memory(engine, tmp_path) -> None:
     f = tmp_path / "sort.py"
     _write(f, "def quicksort(arr): pass")
-    engine.track(str(f))
     engine.create_memory(
         "Implement quicksort",
         "Implemented an in-place quicksort algorithm for sorting integer arrays.",
+        edited_files=[str(f)]
     )
     assert engine.wait_until_indexed()
     results = engine.search("sorting algorithm", top_k=10, top_n=1)
@@ -92,9 +88,7 @@ def test_get_related_files(engine, tmp_path) -> None:
     fb = tmp_path / "b.py"
     _write(fa, "a = 1")
     _write(fb, "b = 2")
-    engine.track(str(fa))
-    engine.track(str(fb))
-    engine.create_memory("Co-occur memory", "Both a and b changed.")
+    engine.create_memory("Co-occur memory", "Both a and b changed.", edited_files=[str(fa), str(fb)])
     related = dict(engine.get_related_files(str(fa)))
     assert str(fb) in related
 
@@ -103,19 +97,10 @@ def test_get_related_files(engine, tmp_path) -> None:
 # Workspace pass-throughs
 # ---------------------------------------------------------------------------
 
-def test_track_and_get_status(engine, tmp_path) -> None:
-    f = tmp_path / "x.py"
-    _write(f, "x = 42")
-    engine.track(str(f))
-    statuses = engine.get_status()
-    assert any(s.path == str(f) for s in statuses)
-
-
 def test_get_log_returns_memories(engine, tmp_path) -> None:
     f = tmp_path / "x.py"
     _write(f, "x = 1")
-    engine.track(str(f))
-    engine.create_memory("Log test", "First entry in log.")
+    engine.create_memory("Log test", "First entry in log.", edited_files=[str(f)])
     log = engine.get_log()
     assert len(log) == 1
     assert log[0].title == "Log test"

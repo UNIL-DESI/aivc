@@ -92,10 +92,9 @@ def test_get_storage_root_fallback_allowed():
         assert get_storage_root(allow_fallback=True) == expected_path
 
 def test_get_storage_root_no_fallback_exits():
+    # Since allow_fallback=False now also defaults to ~/.aivc/storage gracefully
+    expected_path = Path.home() / ".aivc" / "storage"
     env_copy = os.environ.copy()
     env_copy.pop("AIVC_STORAGE_ROOT", None)
     with patch.dict(os.environ, env_copy, clear=True):
-        with pytest.raises(SystemExit) as excinfo:
-            get_storage_root(allow_fallback=False)
-
-        assert "Environment variable 'AIVC_STORAGE_ROOT' is not set" in str(excinfo.value)
+        assert get_storage_root(allow_fallback=False) == expected_path
