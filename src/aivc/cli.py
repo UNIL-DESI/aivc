@@ -164,28 +164,6 @@ def cmd_search_files(args: argparse.Namespace) -> None:
         print(f"{CYAN}{BOLD}{i}. {r['path']}{RESET} {DIM}(score: {r['score']:.3f}){RESET}")
         print(f"   {r['snippet']}\n")
 
-def cmd_track(args: argparse.Namespace) -> None:
-    """Track a file, directory, or glob pattern."""
-    engine = _get_engine()
-    result = engine.track(args.path, ignores=args.ignore)
-    newly_tracked = result["newly_tracked"]
-    hidden_skipped = result["hidden_skipped"]
-
-    if not newly_tracked:
-        msg = f"{YELLOW}No new files to track{RESET} (already tracked or no match)."
-        if hidden_skipped > 0:
-            msg += f" {DIM}({hidden_skipped} hidden files ignored){RESET}"
-        print(msg)
-        return
-
-    print(f"{GREEN}{BOLD}Tracked {len(newly_tracked)} new file(s):{RESET}")
-    for f in newly_tracked:
-        print(f"  {CYAN}+{RESET} {f}")
-    
-    if hidden_skipped > 0:
-        print(f"{DIM}Note: {hidden_skipped} hidden files/folders were ignored.{RESET}")
-
-
 def cmd_migrate(args: argparse.Namespace) -> None:
     """Explicitly migrate JSON commits to SQLite index."""
     print(f"{DIM}Checking for JSON commits to migrate to SQLite index...{RESET}")
@@ -413,19 +391,7 @@ def main() -> None:
         help="Explicitly migrate JSON commits to SQLite index"
     )
 
-    # track
-    parser_track = subparsers.add_parser(
-        "track",
-        help="Track a file, directory, or glob pattern"
-    )
-    parser_track.add_argument(
-        "path", type=str,
-        help="File path, directory, or glob pattern to track"
-    )
-    parser_track.add_argument(
-        "--ignore", type=str, nargs="+", default=[],
-        help="Optional glob patterns to ignore (only when tracking a directory)"
-    )
+
 
     # memories (log)
     parser_log = subparsers.add_parser(
@@ -505,8 +471,7 @@ def main() -> None:
         cmd_status(args)
     elif args.command == "migrate":
         cmd_migrate(args)
-    elif args.command == "track":
-        cmd_track(args)
+
     elif args.command in ("memories", "log"):
         cmd_log(args)
     elif args.command in ("recall", "search"):
