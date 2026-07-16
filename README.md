@@ -8,7 +8,7 @@ AIVC transforms **memories** (formerly commits) into a searchable knowledge base
 2. **Recall**: Semantic indexing (Bi-encoder + Cross-encoder) operates on these notes to retrieve past context by meaning.
 3. **Recursive Context**: File history is preserved locally, allowing agents to see what changed and how.
 4. **Metadata-only Sync**: Reasoning is shared across machines via Google Drive, while file contents (blobs) remain local for privacy and performance.
-5. **Windows Native**: Engineered with zero-lock SQLite structures, synchronous main-thread ML warmups to prevent thread deadlocks, proper redirection of background sync stdout logging to `sys.stderr` to avoid JSON-RPC protocol corruption, lightning-fast file observers, and automatic physical commit scanning during warmup to instantly index synchronized multi-machine memories.
+5. **Windows Native**: Engineered with zero-lock SQLite structures, lightning-fast lightweight background warmup with 100% lazy Cross-Encoder model loading to prevent multi-thread import deadlocks and satisfy strict IDE server timeouts, proper redirection of background sync stdout logging to `sys.stderr` to avoid JSON-RPC protocol corruption, ultra-fast file observers, and automatic physical commit scanning during warmup to instantly index synchronized multi-machine memories.
 
 ---
 
@@ -19,10 +19,19 @@ AIVC transforms **memories** (formerly commits) into a searchable knowledge base
 - **uv** (recommended package installer): `curl -fsSL https://astral.sh/uv/install.sh | sh` or `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`
 
 ### Installing AIVC
+
+#### Unix / macOS / Windows (Git Bash)
 ```bash
-# Automated install (configures the MCP server)
 curl -fsSL "https://raw.githubusercontent.com/hjamet/aivc/main/install.sh" | bash
 ```
+
+#### Windows (PowerShell)
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/hjamet/aivc/main/install.sh -OutFile install.sh; & 'C:\Program Files\Git\bin\bash.exe' install.sh; Remove-Item install.sh"
+```
+
+> [!NOTE]
+> On Windows, running `install.sh` generates a `aivc.cmd` wrapper script inside `~/.local/bin/` alongside the standard `aivc` bash script. This ensures the CLI runs flawlessly inside Windows Command Prompt (CMD) and PowerShell without triggering the OS "Open with..." dialog for the extensionless file. It also configures standard paths, registers the MCP server in the active `~/.gemini/config/mcp_config.json` configuration, resolves Git Bash line endings (LF), and uses appropriate package index strategies for PyTorch/CUDA dependencies.
 
 ```bash
 # Local development installation
@@ -132,3 +141,5 @@ Utilities for installation, data maintenance, and migrations:
 - `[x]` Phase 31: Ultra-Fast Parallel Search (Obsidian-like).
 - `[x]` Phase 32: Windows Portability & Performance. [[Spec](docs/tasks/phase32_windows_portability.md)]
 - `[x]` Phase 33: Windows Bulk Warmup & Physical Sync. [[Spec](docs/tasks/phase33_bulk_warmup.md)]
+- `[x]` Phase 34: Windows Threading Deadlock & Cross-Encoder Bypass. [[Spec](docs/tasks/phase34_windows_deadlocks.md)]
+

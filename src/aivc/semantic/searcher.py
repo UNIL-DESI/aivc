@@ -111,6 +111,59 @@ class Searcher:
         if not candidates:
             return []
 
+        import os
+        disable_cross = os.environ.get("AIVC_DISABLE_CROSS_ENCODER", "False").lower() == "true"
+
+        if disable_cross:
+            # Bypass Stage 2 (Cross-Encoder reranking) and use Bi-Encoder results directly
+            results = []
+            # ChromaDB candidates are already sorted by distance (cosine similarity)
+            for i, hit in enumerate(candidates[:top_n]):
+                doc: str = hit["document"]
+                lines = doc.split("\n", 2)
+                note_part = lines[2] if len(lines) >= 3 else doc
+                note_part = note_part.strip()
+                
+                snippet = note_part[:200]
+                if note_part:
+                    import re
+                    query_words = set(re.findall(r'\w+', query.lower()))
+                    if query_words:
+                        best_score = -1
+                        best_idx = 0
+                        max_len = 200
+                        step = 50
+                        for idx in range(0, max(1, len(note_part) - max_len + step), step):
+                            window = note_part[idx:idx+max_len]
+                            window_words = set(re.findall(r'\w+', window.lower()))
+                            window_score = len(query_words & window_words)
+                            if window_score > best_score:
+                                best_score = window_score
+                                best_idx = idx
+                        
+                        if best_score > 0:
+                            start = best_idx
+                            end = start + max_len
+                            snippet = note_part[start:end].strip()
+                            if start > 0:
+                                snippet = "…" + snippet
+                            if end < len(note_part):
+                                snippet = snippet + "…"
+
+                score = 1.0 - (i * 0.05)  # Assign a mock descending score
+                results.append(
+                    SearchResult(
+                        memory_id=hit["memory_id"],
+                        title=hit["title"],
+                        timestamp=hit["timestamp"],
+                        score=score,
+                        snippet=snippet,
+                        file_paths=hit["file_paths"],
+                        machine_id=hit.get("machine_id", ""),
+                    )
+                )
+            return results
+
         # ----------------------------------------------------------------
         # Stage 2: Cross-Encoder reranking
         # ----------------------------------------------------------------

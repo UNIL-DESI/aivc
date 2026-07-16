@@ -1,8 +1,3 @@
----
-trigger: always_on
-glob: "**/*"
-description: "documentation"
----
 # Documentation & README Rule
 
 Cette règle définit la gouvernance de la documentation et du README du projet. L'agent doit maintenir une documentation structurée, vivante et parfaitement indexée.

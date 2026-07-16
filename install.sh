@@ -17,6 +17,9 @@
 
 set -euo pipefail
 
+# Ensure local bin is in PATH (especially for uv on Windows)
+export PATH="${HOME}/.local/bin:${PATH}"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -96,17 +99,17 @@ pushd "${SOURCE_DIR}" >/dev/null
 EXTRA_ARGS=""
 if [[ "$WINDOWS" == "1" ]]; then
     info "Windows detected — adding CUDA 12.1 index for GPU acceleration..."
-    EXTRA_ARGS="--extra-index-url https://download.pytorch.org/whl/cu121"
+    EXTRA_ARGS="--extra-index-url https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match"
 fi
 
 uv pip install $EXTRA_ARGS --python "${VENV_PYTHON}" -e ".[all]"
 popd >/dev/null
 
 # ---------------------------------------------------------------------------
-# 5. Inject AIVC into ~/.gemini/antigravity/mcp_config.json
+# 5. Inject AIVC into ~/.gemini/config/mcp_config.json
 # ---------------------------------------------------------------------------
 
-MCP_CONFIG="${HOME}/.gemini/antigravity/mcp_config.json"
+MCP_CONFIG="${HOME}/.gemini/config/mcp_config.json"
 info "Configuring MCP server entry in ${MCP_CONFIG} ..."
 
 # Use Python's json module to safely read, update, and write the config.
@@ -119,7 +122,7 @@ import os
 
 # Use pathlib to get native home (handles ~ correctly on both OS)
 home = pathlib.Path.home()
-config_path = home / ".gemini" / "antigravity" / "mcp_config.json"
+config_path = home / ".gemini" / "config" / "mcp_config.json"
 config_path.parent.mkdir(parents=True, exist_ok=True)
 
 if config_path.exists():
@@ -138,13 +141,21 @@ else:
 if "mcpServers" not in config:
     config["mcpServers"] = {}
 
-# Use sys.executable for the exact absolute path to this python
+aivc_env = {
+    "AIVC_STORAGE_ROOT": str(home / ".aivc" / "storage"),
+    "HOME": str(home),
+    "USERPROFILE": str(home)
+}
+if sys.platform == "win32":
+    aivc_env.update({
+        "SystemRoot": "C:\\Windows",
+        "PATH": "C:\\Windows\\system32;C:\\Windows"
+    })
+
 config["mcpServers"]["aivc"] = {
     "command": sys.executable,
     "args": ["-m", "aivc.server"],
-    "env": {
-        "AIVC_STORAGE_ROOT": str(home / ".aivc" / "storage")
-    },
+    "env": aivc_env,
 }
 
 config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
@@ -244,7 +255,18 @@ exec "${VENV_PYTHON}" -m aivc.cli "\$@"
 EOF
 chmod +x "${AIVC_WRAPPER}"
 
-echo "  CLI Command  : aivc (wrapper in ${USER_BIN_DIR})"
+if [[ "$WINDOWS" == "1" ]]; then
+    AIVC_CMD_WRAPPER="${USER_BIN_DIR}/aivc.cmd"
+    info "Windows detected — creating CMD wrapper at ${AIVC_CMD_WRAPPER} ..."
+    NATIVE_PYTHON=$("${VENV_PYTHON}" -c "import sys, os; print(os.path.normpath(sys.executable))" | tr -d '\r')
+    cat <<EOF > "${AIVC_CMD_WRAPPER}"
+@echo off
+"${NATIVE_PYTHON}" -m aivc.cli %*
+EOF
+    echo "  CLI Command  : aivc (wrappers in ${USER_BIN_DIR}: aivc, aivc.cmd)"
+else
+    echo "  CLI Command  : aivc (wrapper in ${USER_BIN_DIR})"
+fi
 echo "  MCP config   : ${MCP_CONFIG}"
 
 # 8. Run migration
