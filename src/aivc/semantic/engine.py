@@ -299,7 +299,9 @@ class SemanticEngine:
         self,
         title: str,
         note: str,
-        consulted_files: list[str] | None = None
+        read_files: list[str] | None = None,
+        edited_files: list[str] | None = None,
+        consulted_files: list[str] | None = None,
     ) -> Memory:
         """Create a versioning memory and index it semantically (asynchronously).
 
@@ -311,19 +313,28 @@ class SemanticEngine:
         Args:
             title: Short memory title.
             note: Detailed Markdown note (the 'memory').
-            consulted_files: Optional list of file paths consulted.
+            read_files: Optional list of file paths consulted.
+            edited_files: Optional list of file paths modified/created.
+            consulted_files: Legacy parameter, mapped to read_files.
 
         Returns:
             The newly created :class:`~aivc.core.memory.Memory`.
 
         Raises:
-            RuntimeError: if no changes detected and no files consulted.
+            ValueError: If any paths in read_files or edited_files are directories
+                        or untracked non-existent files.
+            RuntimeError: if no changes detected and no files read or edited.
         """
         # Step 1: core versioning (may raise RuntimeError if no changes)
         # Inject machine_id
         machine_id = get_machine_id()
         memory = self._workspace.create_memory(
-            title, note, consulted_files=consulted_files, machine_id=machine_id
+            title,
+            note,
+            read_files=read_files,
+            edited_files=edited_files,
+            machine_id=machine_id,
+            consulted_files=consulted_files,
         )
 
         # Step 2: graph update (SQLite, always fast)

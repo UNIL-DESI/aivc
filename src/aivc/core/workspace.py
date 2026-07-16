@@ -353,43 +353,75 @@ class Workspace:
         self,
         title: str,
         note: str,
-        consulted_files: list[str] | None = None,
+        read_files: list[str] | None = None,
+        edited_files: list[str] | None = None,
         machine_id: str = "",
+        consulted_files: list[str] | None = None,
     ) -> Memory:
         """Detect changes in tracked files and create a new memory.
 
         Args:
             title: Short title for the memory.
             note: Detailed Markdown note (the LLM's 'memory').
-            consulted_files: Optional list of file paths that were consulted
-                             but not modified. Files that exist on disk but
-                             aren't tracked will be auto-tracked. Non-existent
-                             files are silently skipped.
+            read_files: Optional list of file paths that were consulted
+                        but not modified.
+            edited_files: Optional list of file paths that were modified/created.
             machine_id: ID of the machine where the memory was created.
+            consulted_files: Legacy parameter, mapped to read_files.
 
         Returns:
             The newly created Memory.
 
         Raises:
-            RuntimeError: if no changes are detected and no files were consulted.
+            ValueError: If any paths in read_files or edited_files are directories
+                        or untracked non-existent files.
+            RuntimeError: If no changes are detected and no files were read/edited.
         """
         self._reload_state_if_needed()
+
+        # Normalize and merge consulted_files into read_files
+        actual_read_files = list(read_files) if read_files is not None else []
+        if consulted_files:
+            actual_read_files.extend(consulted_files)
+
+        actual_edited_files = list(edited_files) if edited_files is not None else []
+
+        # Strict validation
+        for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
+            for path_str in files_list:
+                p = Path(path_str)
+                abs_path = str(p.resolve())
+
+                # Check for directories
+                if p.is_dir():
+                    raise ValueError(f"Validation error in {list_name}: '{path_str}' is a directory.")
+
+                # Check for untracked non-existent files
+                if not p.is_file() and abs_path not in self._state["tracked_files"]:
+                    raise ValueError(f"Validation error in {list_name}: '{path_str}' is an untracked non-existent file.")
+
+        # Auto-track existing untracked files in edited_files BEFORE compute_diff
+        for path_str in actual_edited_files:
+            p = Path(path_str)
+            abs_path = str(p.resolve())
+            if p.is_file() and abs_path not in self._state["tracked_files"]:
+                self._state["tracked_files"][abs_path] = {"hash": None, "mtime": None, "size": None}
+
         with self._blob_store.batch():
             changes = compute_diff(self._state["tracked_files"], self._blob_store)
-            
-            # Handle consulted files
+
+            # Auto-track existing untracked files in read_files AFTER compute_diff
+            for path_str in actual_read_files:
+                p = Path(path_str)
+                abs_path = str(p.resolve())
+                if p.is_file() and abs_path not in self._state["tracked_files"]:
+                    self._state["tracked_files"][abs_path] = {"hash": None, "mtime": None, "size": None}
+
+            # Handle read files (formerly consulted files)
             consulted_changes = []
-            if consulted_files:
-                for path in consulted_files:
+            if actual_read_files:
+                for path in actual_read_files:
                     abs_path = str(Path(path).resolve())
-                    if abs_path not in self._state["tracked_files"]:
-                        # Auto-track consulted files if they exist on disk
-                        if Path(abs_path).is_file():
-                            self._state["tracked_files"][abs_path] = {"hash": None, "mtime": None, "size": None}
-                        else:
-                            # File doesn't exist — skip silently
-                            continue
-                    
                     # Check if it was already modified/added/deleted.
                     # If it's already in 'changes', we don't add it as 'consulted'.
                     if any(c.path == abs_path for c in changes):
@@ -404,14 +436,8 @@ class Workspace:
                             bytes_removed=0,
                         )
                     )
-            
-            all_changes = changes + consulted_changes
 
-        if not all_changes:
-            raise RuntimeError(
-                "No changes detected in tracked files and no files consulted. "
-                "Nothing to remember."
-            )
+            all_changes = changes + consulted_changes
 
         memory = Memory.create(
             title=title,
