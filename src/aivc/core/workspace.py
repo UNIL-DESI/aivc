@@ -84,13 +84,9 @@ class Workspace:
             if migrated:
                 self._state["tracked_files"] = new_tracked
 
-            # Ensure watched_dirs exists and is a dict (Phase 17)
-            if "watched_dirs" not in self._state:
-                self._state["watched_dirs"] = {}
-                migrated = True
-            elif isinstance(self._state["watched_dirs"], list):
-                # Migration from previous draft if any
-                self._state["watched_dirs"] = {d: {"ignores": []} for d in self._state["watched_dirs"]}
+            # Migration: delete watched_dirs if present (Chantier 1)
+            if "watched_dirs" in self._state:
+                del self._state["watched_dirs"]
                 migrated = True
             
             if migrated:
@@ -99,7 +95,6 @@ class Workspace:
             self._state: dict[str, Any] = {
                 "tracked_files": {},
                 "head_commit_id": None,
-                "watched_dirs": {},
             }
             self._save_state()
             # _save_state updates _last_mtime
@@ -282,10 +277,6 @@ class Workspace:
             "hidden_skipped": hidden_count
         }
 
-    def get_watched_dirs(self) -> dict[str, dict[str, Any]]:
-        """Return the dictionary of watched directories."""
-        self._reload_state_if_needed()
-        return self._state.get("watched_dirs", {})
 
     def untrack(self, path_or_glob: str) -> None:
         """Remove a file, directory, or glob from tracking and garbage-collect history.
