@@ -52,6 +52,8 @@ def compute_diff(
             actual_hash = last_hash
             if isinstance(actual_hash, dict):
                 actual_hash = actual_hash.get("hash")
+            if actual_hash is None:
+                continue
             # File was deleted from disk since last commit.
             old_size = blob_store.get_size(actual_hash) if actual_hash else 0
             changes.append(

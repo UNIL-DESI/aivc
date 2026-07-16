@@ -112,7 +112,7 @@ Exposed tools available to LLM assistants when configuring the AIVC MCP server:
 
 | Command | Type | Description |
 |---------|------|-------------|
-| `remember` | Write | Records a memory (Title + Markdown Note) and snapshots current files. **Call after major milestones.** |
+| `remember` | Write | Records a memory (Title + Markdown Note) and snapshots current files (ignoring previously deleted files). **Call after major milestones.** |
 | `recall` | Read | Semantic search over memories. Returns ranked results (ID, title, score) + contextual snippets. |
 | `get_recent_memories`| Read | Retrospective chronological journal of the last N memories. |
 | `consult_memory`| Read | Retrieve the complete Markdown note and modified file diffs for a specific memory. |

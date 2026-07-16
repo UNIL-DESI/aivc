@@ -97,3 +97,13 @@ def test_multiple_files_mixed_changes(tmp_path: Path, store: BlobStore) -> None:
     assert actions[str(fa)] == "added"
     assert actions[str(tmp_path / "c.py")] == "deleted"
     assert str(fb) not in actions  # unchanged
+
+
+def test_deleted_file_with_no_hash_is_ignored(tmp_path: Path, store: BlobStore) -> None:
+    ghost_path = tmp_path / "ghost.py"
+    # File does NOT exist on disk and was never committed (hash is None)
+
+    changes = compute_diff({str(ghost_path): None}, store)
+
+    assert changes == []
+
