@@ -215,69 +215,6 @@ class Workspace:
     # Public API
     # ------------------------------------------------------------------
 
-    def track(self, path: str, ignores: list[str] | None = None) -> dict[str, Any]:
-        """Add a file, directory, or glob pattern to tracking.
-
-        If the path is a directory, it is automatically added to the continuous
-        surveillance list (watched_dirs).
-
-        Args:
-            path: A file path, directory path, or glob pattern.
-            ignores: Optional list of globs to ignore (only applicable if watching a dir).
-
-        Returns:
-            A dict with:
-            - "newly_tracked": list of file paths newly added.
-            - "hidden_skipped": count of hidden files ignored.
-
-        Raises:
-            ValueError: if no matching files are found.
-        """
-        self._reload_state_if_needed()
-        p = Path(path).resolve()
-        abs_p = str(p)
-
-        # 1. Register for surveillance if it's a directory
-        if p.is_dir():
-            self._state["watched_dirs"][abs_p] = {"ignores": ignores or []}
-
-        # 2. Expand and track existing files
-        files, hidden_count = self._expand_path(path)
-        newly_tracked = []
-        import fnmatch
-
-        for f in files:
-            abs_f = str(Path(f).resolve())
-            skip = False
-
-            # Check explicit ignores
-            if ignores:
-                if any(fnmatch.fnmatch(f, pat) or fnmatch.fnmatch(Path(f).name, pat) for pat in ignores):
-                    skip = True
-
-            # Check ignores from watched directories
-            if not skip:
-                for wdir, info in self._state.get("watched_dirs", {}).items():
-                    if abs_f.startswith(wdir + os.sep):
-                        w_ignores = info.get("ignores", [])
-                        if any(fnmatch.fnmatch(abs_f, pat) or fnmatch.fnmatch(Path(abs_f).name, pat) for pat in w_ignores):
-                            skip = True
-                            break
-
-            if skip:
-                continue
-
-            if abs_f not in self._state["tracked_files"]:
-                # Initialize with richer format
-                self._state["tracked_files"][abs_f] = {"hash": None, "mtime": None, "size": None}
-                newly_tracked.append(abs_f)
-        self._save_state()
-        return {
-            "newly_tracked": newly_tracked,
-            "hidden_skipped": hidden_count
-        }
-
-
     def untrack(self, path_or_glob: str) -> None:
         """Remove a file, directory, or glob from tracking and garbage-collect history.
 
@@ -291,11 +228,7 @@ class Workspace:
         """
         self._reload_state_if_needed()
         abs_p = str(Path(path_or_glob).resolve())
-        removed_watch = False
 
-        if abs_p in self._state.get("watched_dirs", {}):
-            del self._state["watched_dirs"][abs_p]
-            removed_watch = True
 
         to_untrack = set()
         p_is_dir = Path(abs_p).is_dir()
@@ -308,8 +241,8 @@ class Workspace:
             elif fnmatch.fnmatch(tracked_file, abs_p):
                 to_untrack.add(tracked_file)
 
-        if not to_untrack and not removed_watch:
-            raise KeyError(f"Path {path_or_glob!r} is not tracked or watched.")
+        if not to_untrack:
+            raise KeyError(f"Path {path_or_glob!r} is not tracked.")
 
         for file_path in to_untrack:
             # Collect memories referencing this file via the index (fast).

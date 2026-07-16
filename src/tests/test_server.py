@@ -49,7 +49,7 @@ _consult_file = _server.consult_file
 _read_hist = _server.read_historical_file
 _get_status = _server.get_status
 _untrack = _server.untrack
-_track = _server.track
+
 
 
 # ---------------------------------------------------------------------------
@@ -379,35 +379,6 @@ class TestUntrack(unittest.TestCase):
         result = _untrack(["src/ok.py", "src/unknown.py"])
         self.assertIn("1 path(s)", result)  # 1 success
         self.assertIn("could not be untracked", result)
-
-
-class TestTrack(unittest.TestCase):
-    def setUp(self):
-        _mock_engine.reset_mock()
-
-    def test_delegates_and_lists_new_files(self):
-        _mock_engine.track.return_value = {"newly_tracked": ["/abs/path/foo.py"], "hidden_skipped": 0}
-        result = _track(["src/*.py"])
-        _mock_engine.track.assert_called_once_with("src/*.py", [])
-        self.assertIn("✅ Tracked 1 new file(s)", result)
-        self.assertIn("/abs/path/foo.py", result)
-
-    def test_multiple_paths(self):
-        _mock_engine.track.return_value = {"newly_tracked": ["/abs/a.py"], "hidden_skipped": 0}
-        result = _track(["src/a.py", "src/b.py"])
-        self.assertEqual(_mock_engine.track.call_count, 2)
-        self.assertIn("2 new file(s)", result)
-
-    def test_already_tracked_returns_message(self):
-        _mock_engine.track.return_value = {"newly_tracked": [], "hidden_skipped": 0}
-        result = _track(["src/stable.py"])
-        self.assertIn("No new files", result)
-
-    def test_partial_failure(self):
-        _mock_engine.track.side_effect = [ValueError("No files found"), {"newly_tracked": ["/ok.py"], "hidden_skipped": 0}]
-        result = _track(["nonexistent/*", "real.py"])
-        self.assertIn("1 new file(s)", result)
-        self.assertIn("had issues", result)
 
 
 if __name__ == "__main__":

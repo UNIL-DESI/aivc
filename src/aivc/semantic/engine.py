@@ -678,11 +678,6 @@ class SemanticEngine:
     # Workspace pass-throughs
     # ------------------------------------------------------------------
 
-    def track(self, path: str, ignores: list[str] | None = None) -> dict[str, Any]:
-        """Track a file, directory, or glob. See :meth:`Workspace.track`."""
-        self._local_hints_index = None
-        return self._workspace.track(path, ignores)
-
     def get_watched_dirs(self) -> dict[str, dict[str, Any]]:
         """Return exactly the watched directories state from workspace."""
         return self._workspace.get_watched_dirs()

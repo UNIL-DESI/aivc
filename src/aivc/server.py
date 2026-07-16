@@ -94,7 +94,6 @@ of files associated with it might not be available for `read_historical_file`.
 | `read_historical_file` | Read the content of a file as it was at a specific past memory. |
 | `get_status` | List tracked files with a navigable folder tree. |
 | `untrack` | **⚠️ VERY DESTRUCTIVE** — Erases history of specified files. |
-| `track` | Add files/dirs to surveillance and tracking. |
 | `search_files` | Lexical search (Keywords or Regex) over current tracked file contents. |
 
 ## `untrack` Warning
@@ -140,7 +139,7 @@ def _get_engine() -> SemanticEngine:
 # ---------------------------------------------------------------------------
 
 mcp = FastMCP(name="aivc", instructions=_SYSTEM_PROMPT)
-_observer = None
+
 
 # ---------------------------------------------------------------------------
 # Helper formatting functions
@@ -824,152 +823,8 @@ def untrack(path_or_glob: list[str]) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
-def track(path: list[str], ignores: list[str] = []) -> str:
-    """Add files to AIVC tracking.
+# No background watchers active
 
-    Accepts a list of file paths, directory paths, or glob patterns.
-    If a directory path is provided, it automatically starts real-time surveillance
-    of that directory (any new files created inside will be tracked automatically).
-    Hidden files/folders (starting with '.') are always ignored by default.
-
-    Args:
-        path: A list of file paths, directory paths, or glob patterns to track.
-        ignores: Optional list of glob patterns to ignore (only applicable if watching a dir).
-
-    Returns:
-        Confirmation with the list of newly tracked files.
-
-    Raises:
-        ValueError: If no files match the given path/pattern.
-    """
-    all_newly_tracked = []
-    total_hidden_skipped = 0
-    errors = []
-
-    for p in path:
-        try:
-            result = _get_engine().track(p, ignores)
-            all_newly_tracked.extend(result["newly_tracked"])
-            total_hidden_skipped += result["hidden_skipped"]
-
-            global _observer
-            if _WATCHDOG_AVAILABLE and _observer is not None and Path(p).is_dir():
-                handler = AIVCWatcherHandler(_get_engine(), p)
-                _observer.schedule(handler, p, recursive=True)
-        except ValueError as e:
-            errors.append(f"  ⚠️ {p}: {e}")
-
-    lines = []
-
-    if not all_newly_tracked and not errors:
-        msg = "No new files to track (already tracked or no match)."
-        if total_hidden_skipped > 0:
-            msg += f" ({total_hidden_skipped} hidden files were ignored)."
-        lines.append(msg)
-        return "\n".join(lines)
-
-    if all_newly_tracked:
-        lines.append(f"✅ Tracked {len(all_newly_tracked)} new file(s):")
-        for f in all_newly_tracked:
-            lines.append(f"  + {f}")
-
-    if total_hidden_skipped > 0:
-        lines.append(f"\n💡 {total_hidden_skipped} hidden files/folders were ignored.")
-
-    if errors:
-        lines.append(f"\n⚠️ {len(errors)} path(s) had issues:")
-        lines.extend(errors)
-
-    lines.append("\n💡 PRO-TIP: Use `untrack` on any useless files (build artifacts, etc.) to keep your memory relevant.")
-
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Background Watcher (watchdog)
-# ---------------------------------------------------------------------------
-
-try:
-    import sys
-    from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler
-    _WATCHDOG_AVAILABLE = True
-except ImportError:
-    _WATCHDOG_AVAILABLE = False
-
-    # Define a dummy class so the script doesn't crash when watchdog isn't installed
-    class FileSystemEventHandler:
-        pass
-
-
-class AIVCWatcherHandler(FileSystemEventHandler):
-    """Handles real-time file creation events."""
-    def __init__(self, engine, watched_path):
-        self.engine = engine
-        self.watched_path = Path(watched_path)
-
-    def on_created(self, event):
-        if event.is_directory:
-            return
-            
-        # Dynamically check if this directory is still watched
-        watched_dirs = self.engine.get_watched_dirs()
-        watched_paths = {str(Path(k).resolve()) for k in watched_dirs}
-        if str(self.watched_path.resolve()) not in watched_paths:
-            return
-        
-        path = Path(event.src_path)
-        # Check if hidden
-        try:
-            rel = path.relative_to(self.watched_path.parent)
-            if any(part.startswith(".") for part in rel.parts):
-                return
-        except ValueError:
-            # Fallback if path is outside (shouldn't happen with watchdogs)
-            if any(part.startswith(".") for part in path.parts):
-                return
-            
-        try:
-            # Automatic track
-            self.engine.track(str(path))
-        except Exception:
-            pass # Silent failure in background thread
-
-
-def start_background_watchers():
-    """Initialise and start background threads for watched directories."""
-    global _observer
-    if not _WATCHDOG_AVAILABLE:
-        print("⚠️  'watchdog' library not found. Real-time surveillance disabled.", file=sys.stderr)
-        return
-
-    watched_dirs = _get_engine().get_watched_dirs()
-    if not watched_dirs:
-        return
-
-    _observer = Observer()
-    count = 0
-    for path in watched_dirs:
-        if os.path.isdir(path):
-            # 1. Startup Sync (JIT track existing files)
-            try:
-                _get_engine().track(path)
-            except Exception as e:
-                print(f"⚠️  Startup sync failed for {path}: {e}", file=sys.stderr)
-
-            # 2. Schedule watcher
-            handler = AIVCWatcherHandler(_get_engine(), path)
-            _observer.schedule(handler, path, recursive=True)
-            count += 1
-    
-    if count > 0:
-        _observer.daemon = True
-        _observer.start()
-        # print(f"🔭 Started background surveillance on {count} directory/ies.", file=sys.stderr)
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1007,7 +862,6 @@ if __name__ == "__main__":
     _syncer = BackgroundSyncer(_storage_root, on_pull_callback=_on_sync_pull)
     
     # Start background tasks
-    start_background_watchers()
     _syncer.start()
     
     # Run MCP server
