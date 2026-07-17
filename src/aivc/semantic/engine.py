@@ -686,10 +686,6 @@ class SemanticEngine:
         """Return exactly the tracked paths from workspace (fast, no disk I/O)."""
         return self._workspace.get_tracked_paths()
 
-    def untrack(self, path_or_glob: str) -> None:
-        """Remove a file/dir from tracking. See :meth:`Workspace.untrack`."""
-        self._local_hints_index = None
-        self._workspace.untrack(path_or_glob)
 
     def get_status(self) -> list[FileStatus]:
         """Return status of all tracked files. See :meth:`Workspace.get_status`."""
