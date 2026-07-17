@@ -84,7 +84,7 @@ To retrieve memory, follow this two-step funnel:
 AIVC synchronizes ONLY memory metadata (titles, notes) between machines. 
 **File contents (blobs) are NOT synchronized.** 
 If you see a memory marked as `[Remote: machine-id]`, the historical version 
-of files associated with it might not be available for `read_historical_file`.
+of files associated with it might not be available for `read_past_file_content`.
 
 ## Tool Reference
 
@@ -94,16 +94,11 @@ of files associated with it might not be available for `read_historical_file`.
 | `recall` | Semantic search over all past memory notes. |
 | `get_recent_memories` | Recent memory log (paginable). |
 | `consult_memory` | Read a specific memory note in full. |
-| `consult_file` | Get the AIVC history of a specific file. |
-| `read_historical_file` | Read the content of a file as it was at a specific past memory. |
+| `get_file_history_metadata` | Get the AIVC history of a specific file. |
+| `read_past_file_content` | Read the content of a file as it was at a specific past memory. |
 | `get_status` | List tracked files with a navigable folder tree. |
-| `untrack` | **⚠️ VERY DESTRUCTIVE** — Erases history of specified files. |
 | `search_files` | Lexical search (Keywords or Regex) over current tracked file contents. |
 
-## `untrack` Warning
-
-`untrack([paths])` is HIGHLY DESTRUCTIVE. It PERMANENTLY ERASES THE HISTORY of matching files. 
-Do NOT use it without exploring `consult_file` or `recall` first.
 """
 
 # ---------------------------------------------------------------------------
@@ -591,13 +586,8 @@ def get_recent_memories(limit: int = 10, offset: int = 0, only_local: bool = Fal
 
 
 @mcp.tool()
-def consult_file(file_path: str) -> str:
-    """Get the AIVC history of a specific file.
-
-    Returns the list of commits that have ever touched this file,
-    sorted from most recent to oldest based on graph order.
-    This does NOT return the file's current content — use your text editor tools
-    or `read_historical_file` for that.
+def get_file_history_metadata(file_path: str) -> str:
+    """Retrieve the chronological list of all memories (commits) that modified or consulted a specific file. Useful to understand WHEN a file was changed and WHY, but DOES NOT return the actual file content.
 
     Args:
         file_path: The path of the file to look up (as tracked by AIVC).
@@ -628,20 +618,14 @@ def consult_file(file_path: str) -> str:
 
     lines.append(
         "\n💡 Use `consult_memory(memory_id)` to read the full note of a specific memory."
-        "\n💡 Use `read_historical_file(file_path, memory_id)` to read the file content at that memory."
+        "\n💡 Use `read_past_file_content(file_path, memory_id)` to read the file content at that memory."
     )
     return "\n".join(lines)
 
 
 @mcp.tool()
-def read_historical_file(file_path: str, memory_id: str) -> str:
-    """Read the content of a tracked file as it was at a specific past memory.
-
-    Scans the memory chain backwards from `memory_id` to find the most recent
-    blob for `file_path` at or before that memory.
-
-    NOTE: Since Phase 29, file contents (blobs) from other machines are not 
-    synchronized. This tool will error if the file content is only available remotely.
+def read_past_file_content(file_path: str, memory_id: str) -> str:
+    """Retrieve the actual text content of a file exactly as it was at the time of a specific past memory. Use this to restore old code or compare previous implementations. Note: requires both the file path and the memory_id obtained from get_file_history_metadata.
 
     Args:
         file_path: The path of the file to read.
@@ -775,51 +759,6 @@ def get_status(path: str = "") -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
-def untrack(path_or_glob: list[str]) -> str:
-    """⚠️ DESTRUCTIVE — Remove files or directories from AIVC tracking and erase their full history.
-
-    This operation:
-    1. Stops real-time surveillance (if directory).
-    2. Removes matching files from the tracked list.
-    3. Physically deletes blobs whose reference count drops to zero (Garbage Collection).
-    4. Strips the files' `FileChange` entries from all existing commits.
-
-    This action is IRREVERSIBLE. All stored history for these files will be lost.
-    WARNING: Do NOT use this tool on a directory unless you are absolutely certain
-    you want to destroy the history of ALL files inside it. NEVER use it without
-    prior exploration of the file's usage (`consult_file` or `search_memory`).
-
-    Args:
-        path_or_glob: A list of exact paths, directories, or glob patterns to untrack.
-
-    Returns:
-        Confirmation message.
-
-    Raises:
-        KeyError: If no matching files or watched directories are found.
-    """
-    errors = []
-    successes = []
-    for p in path_or_glob:
-        try:
-            _get_engine().untrack(p)
-            successes.append(p)
-        except KeyError as e:
-            errors.append(f"  ⚠️ {p}: {e}")
-
-    lines = []
-    if successes:
-        lines.append(f"🗑️  Untracked and history erased for {len(successes)} path(s):")
-        for s in successes:
-            lines.append(f"  - {s}")
-        lines.append("All associated blobs have been garbage-collected.")
-    if errors:
-        lines.append(f"\n⚠️ {len(errors)} path(s) could not be untracked:")
-        lines.extend(errors)
-    if not successes and not errors:
-        lines.append("Nothing to untrack.")
-    return "\n".join(lines)
 
 
 # No background watchers active
