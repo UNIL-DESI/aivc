@@ -83,13 +83,7 @@ def cmd_status(args: argparse.Namespace) -> None:
     print("-" * 82)
     print(f"Total tracked: {len(statuses)} file(s)")
 
-    # Watched directories (Phase 17)
-    watched = engine.get_watched_dirs()
-    if watched:
-        print(f"\n{YELLOW}{BOLD}Watched Directories:{RESET}")
-        for path, cfg in watched.items():
-            ignores_str = f" (ignoring: {', '.join(cfg['ignores'])})" if cfg['ignores'] else ""
-            print(f"  {CYAN}* {path}{RESET}{ignores_str}")
+
 
 
 def cmd_log(args: argparse.Namespace) -> None:
