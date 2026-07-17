@@ -192,15 +192,15 @@ AIVC_BLOCK="${MARKER_START}
 
 > [!IMPORTANT]
 > **USE MCP TOOLS ONLY — NEVER RUN CLI SHELL COMMANDS:**
-> As an AI assistant, you MUST interact with AIVC **exclusively** through its registered MCP tools (\`remember\`, \`recall\`, \`get_recent_memories\`, \`consult_memory\`, \`get_status\`, etc.).
+> As an AI assistant, you MUST interact with AIVC **exclusively** through its registered MCP tools (\`remember\`, \`recall\`, \`get_recent_memories\`, \`consult_memory\`, \`get_file_history_metadata\`, \`read_past_file_content\`, \`get_status\`, etc.).
 > **NEVER execute \`aivc\` CLI shell commands in the terminal (e.g. \`aivc sync\`, \`aivc status\`, \`aivc recall\`)** under any circumstances. Running the CLI in the terminal spawns separate process environments, misses the current session context, and is strictly reserved for the human user.
 
 ## Rules
 
 1. **Remember often.** Call \`remember\` after every meaningful step (sub-task done, file created/modified, decision made, error resolved, checkpoint reached). Notes must be **detailed**: what, why, errors, decisions, observations, next steps. A one-liner is a failure.
-2. **Start sessions with context recovery.** Before any work: \`get_recent_memories\` → \`recall\` (≥1 query) → \`consult_memory\` on relevant hits → \`consult_file\` on files you'll modify.
+2. **Start sessions with context recovery.** Before any work: \`get_recent_memories\` → \`recall\` (≥1 query) → \`consult_memory\` on relevant hits → \`get_file_history_metadata\` on files you'll modify.
 3. **Explore before you act.** Search memory first — never redo past work. Your memory contains solutions, patterns, and lessons.
-4. **Track files you work on.** Use \`track\` to add untracked files, directories, or subtrees you create or modify so AIVC can snapshot them in future memories.
+4. **Mention files you work on.** Always pass the files you consulted in \`read_files\` and the files you modified in \`edited_files\` when calling \`remember\`. This is how AIVC tracks file associations — there is no separate tracking tool.
 5. **Write for your future self.** Memory notes are handover memos — include reasoning, context, and recommendations as if briefing a colleague with zero context.
 ${MARKER_END}"
 
