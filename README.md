@@ -115,6 +115,8 @@ Exposed tools available to LLM assistants when configuring the AIVC MCP server:
 | `recall` | Read | Semantic search over memories. Returns ranked results (ID, title, score) + contextual snippets. |
 | `get_recent_memories`| Read | Retrospective chronological journal of the last N memories. |
 | `consult_memory`| Read | Retrieve the complete Markdown note and modified file diffs for a specific memory. |
+| `get_file_history_metadata`| Read | Retrieve the chronological list of all memories (commits) that modified or consulted a specific file. |
+| `read_past_file_content`| Read | Retrieve the actual text content of a file exactly as it was at the time of a specific past memory. |
 | `get_status` | Read | Explores tracked files, active directory structures, and size allocations. |
 | `search_files` | Read | Parallel search (Keywords/Regex) across active files. Instant native Windows execution. |
 
