@@ -221,10 +221,9 @@ class Workspace:
         WARNING: This is a highly destructive operation. If a directory or glob
         is provided, ALL matching files currently tracked will have their history
         permanently erased from AIVC.
-        This also removes the path from continuous surveillance if applicable.
 
         Raises:
-            KeyError: if no matching files or watched directories are found.
+            KeyError: if no matching files are found.
         """
         self._reload_state_if_needed()
         abs_p = str(Path(path_or_glob).resolve())
@@ -332,7 +331,13 @@ class Workspace:
                 self._state["tracked_files"][abs_path] = {"hash": None, "mtime": None, "size": None}
 
         with self._blob_store.batch():
-            changes = compute_diff(self._state["tracked_files"], self._blob_store)
+            # Targeted diff: only diff files in actual_edited_files
+            abs_edited_files = {str(Path(path_str).resolve()) for path_str in actual_edited_files}
+            subset_tracked = {
+                k: v for k, v in self._state["tracked_files"].items()
+                if k in abs_edited_files
+            }
+            changes = compute_diff(subset_tracked, self._blob_store)
 
             # Auto-track existing untracked files in read_files AFTER compute_diff
             for path_str in actual_read_files:
@@ -341,29 +346,38 @@ class Workspace:
                 if p.is_file() and abs_path not in self._state["tracked_files"]:
                     self._state["tracked_files"][abs_path] = {"hash": None, "mtime": None, "size": None}
 
-            # Handle read files (formerly consulted files)
+            # Handle consulted files (both read_files and non-modified edited_files)
             consulted_changes = []
-            if actual_read_files:
-                for path in actual_read_files:
-                    abs_path = str(Path(path).resolve())
-                    # Check if it was already modified/added/deleted.
-                    # If it's already in 'changes', we don't add it as 'consulted'.
-                    if any(c.path == abs_path for c in changes):
-                        continue
+            union_files = set()
+            for path_str in actual_read_files:
+                union_files.add(str(Path(path_str).resolve()))
+            for path_str in actual_edited_files:
+                union_files.add(str(Path(path_str).resolve()))
 
-                    consulted_changes.append(
-                        FileChange(
-                            path=abs_path,
-                            action="consulted",
-                            blob_hash=None,
-                            bytes_added=0,
-                            bytes_removed=0,
-                        )
+            for abs_path in union_files:
+                # Check if it was already modified/added/deleted in the diff.
+                if any(c.path == abs_path for c in changes):
+                    continue
+
+                # Get the last known hash from tracked_files if available
+                last_hash = None
+                tracked_info = self._state["tracked_files"].get(abs_path)
+                if tracked_info:
+                    last_hash = tracked_info.get("hash")
+
+                consulted_changes.append(
+                    FileChange(
+                        path=abs_path,
+                        action="consulted",
+                        blob_hash=last_hash,
+                        bytes_added=0,
+                        bytes_removed=0,
                     )
+                )
 
             all_changes = changes + consulted_changes
 
-        if not all_changes:
+        if not changes and not actual_read_files:
             raise RuntimeError(
                 "No changes detected in tracked files and no files consulted. "
                 "Nothing to remember."

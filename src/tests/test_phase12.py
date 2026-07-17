@@ -35,9 +35,9 @@ def test_consulted_file_change_validation():
     fc = FileChange(path="foo.txt", action="consulted", blob_hash=None, bytes_added=0, bytes_removed=0)
     assert fc.action == "consulted"
     
-    # Invalid: consulted with blob_hash
-    with pytest.raises(ValueError, match="must have blob_hash=None"):
-        FileChange(path="foo.txt", action="consulted", blob_hash="abc", bytes_added=0, bytes_removed=0)
+    # Valid: consulted with blob_hash is now allowed in Phase 35
+    fc_with_hash = FileChange(path="foo.txt", action="consulted", blob_hash="abc", bytes_added=0, bytes_removed=0)
+    assert fc_with_hash.blob_hash == "abc" 
 
 def test_memory_serialization_with_consulted():
     fc = FileChange(path="foo.txt", action="consulted", blob_hash=None, bytes_added=0, bytes_removed=0)
