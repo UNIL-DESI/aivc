@@ -137,21 +137,27 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
         _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=["f1.py"], edited_files=[])
 
     async def test_remember_validation_errors(self):
-        _mock_engine.get_tracked_paths.return_value = []
+        # Since we removed duplicate synchronous validation checks from remember,
+        # invalid paths do not raise ValueError synchronously anymore.
+        # Instead, they are passed to the background thread and any error is logged.
+        from unittest.mock import patch
+        import asyncio
         
-        # Test directory error
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaises(ValueError):
-                await _remember("T", "N", read_files=[tmpdir])
-            with self.assertRaises(ValueError):
-                await _remember("T", "N", edited_files=[tmpdir])
-
-        # Test untracked non-existent file error
-        with self.assertRaises(ValueError):
-            await _remember("T", "N", read_files=["non_existent.txt"])
-        with self.assertRaises(ValueError):
-            await _remember("T", "N", edited_files=["non_existent.txt"])
+        _mock_engine.create_memory.side_effect = ValueError("Validation error")
+        
+        with patch('aivc.server.logger') as mock_logger:
+            result = await _remember("T", "N", read_files=["non_existent.txt"])
+            
+            # Robust wait loop for background task completion
+            for _ in range(50):
+                if mock_logger.error.called:
+                    break
+                await asyncio.sleep(0.02)
+            
+            self.assertIn("creation scheduled in background", result)
+            mock_logger.error.assert_called_once()
+            # Reset side effect
+            _mock_engine.create_memory.side_effect = None
 
     async def test_runtime_error_propagates(self):
         import asyncio

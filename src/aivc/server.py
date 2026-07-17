@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import os
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Set mission-critical environment variables before heavy ML imports
 # This completely bypasses the 5-minute atexit/thread deadlock on Windows
@@ -57,11 +60,12 @@ The memory note must be **detailed**. Do not write one-liners.
 Document your reasoning, the decisions made, the problems encountered,
 and the solutions found. Think of it as a handover memo to your future self.
 
-### Consulted Files
+### Read and Edited Files
 
-When you create a memory, you can specify a list of `consulted_files`.
-These are files you have read and that were **truly useful** to you to
-accomplish your task, but that you did not modify.
+When you create a memory, you can specify `read_files` and `edited_files`.
+`read_files` are files you have read and that were **truly useful** to you to
+accomplish your task, but that you did not modify. `edited_files` are files
+that were modified or created for the task.
 
 ## Recall Funnel
 
@@ -286,23 +290,10 @@ async def remember(
     import asyncio
     from pathlib import Path
 
-    # Synchronous validation to raise strict validation errors immediately
     engine = _get_engine()
-    tracked_paths = set(engine.get_tracked_paths())
-
-    for files_list, list_name in [(read_files, "read_files"), (edited_files, "edited_files")]:
-        for path_str in files_list:
-            p = Path(path_str)
-            abs_path = str(p.resolve())
-
-            if p.is_dir():
-                raise ValueError(f"Validation error in {list_name}: '{path_str}' is a directory.")
-
-            if not p.is_file() and abs_path not in tracked_paths:
-                raise ValueError(f"Validation error in {list_name}: '{path_str}' is an untracked non-existent file.")
 
     # Run the heavy vector encoding and DB insertion in a background thread
-    asyncio.create_task(
+    task = asyncio.create_task(
         asyncio.to_thread(
             engine.create_memory,
             title,
@@ -311,6 +302,14 @@ async def remember(
             edited_files=edited_files
         )
     )
+
+    def _done_callback(t: asyncio.Task) -> None:
+        try:
+            t.result()
+        except Exception as exc:
+            logger.error("Error in background memory creation: %s", exc)
+
+    task.add_done_callback(_done_callback)
 
     return (
         f"✅ Memory creation scheduled in background.\n"
