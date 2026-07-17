@@ -678,10 +678,6 @@ class SemanticEngine:
     # Workspace pass-throughs
     # ------------------------------------------------------------------
 
-    def get_watched_dirs(self) -> dict[str, dict[str, Any]]:
-        """Return exactly the watched directories state from workspace."""
-        return self._workspace.get_watched_dirs()
-
     def get_tracked_files_metadata(self) -> dict[str, dict]:
         """Return the current metadata (mtime, size) for all tracked files from state."""
         return self._workspace.get_tracked_files_metadata()
