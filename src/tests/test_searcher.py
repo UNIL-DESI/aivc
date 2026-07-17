@@ -124,17 +124,16 @@ def test_search_with_empty_filter_ids_returns_empty(loaded_searcher) -> None:
     results = loaded_searcher.search("sql database", top_k=5, filter_ids=[])
     assert results == []
 
-def test_search_snippet_sliding_window(loaded_searcher) -> None:
-    # Add a memory with a very long note and a specific keyword in the middle
-    note = "Start. " * 30 + "This is the highly relevant keyword abracadabra that we want to find. " + "End. " * 30
+def test_search_snippet_prefix(loaded_searcher) -> None:
+    # Add a memory with a very long note
+    note = "Start. " * 200 # 1400 characters
     m3 = _make_memory("id-long", title="Long note", note=note)
     loaded_searcher._indexer.index_memory(m3)
     
-    results = loaded_searcher.search("abracadabra", top_k=5, top_n=1)
+    results = loaded_searcher.search("Start", top_k=5, top_n=1)
     assert len(results) == 1
     snippet = results[0].snippet
-    assert "abracadabra" in snippet
-    assert len(snippet) <= 205
-    assert snippet.startswith("…")
-    assert snippet.endswith("…")
+    assert len(snippet) <= 1003  # 1000 chars + "..."
+    assert snippet.endswith("...")
+    assert not snippet.startswith("…")
 

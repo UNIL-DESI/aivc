@@ -123,32 +123,9 @@ class Searcher:
                 lines = doc.split("\n", 2)
                 note_part = lines[2] if len(lines) >= 3 else doc
                 note_part = note_part.strip()
-                
-                snippet = note_part[:200]
-                if note_part:
-                    import re
-                    query_words = set(re.findall(r'\w+', query.lower()))
-                    if query_words:
-                        best_score = -1
-                        best_idx = 0
-                        max_len = 200
-                        step = 50
-                        for idx in range(0, max(1, len(note_part) - max_len + step), step):
-                            window = note_part[idx:idx+max_len]
-                            window_words = set(re.findall(r'\w+', window.lower()))
-                            window_score = len(query_words & window_words)
-                            if window_score > best_score:
-                                best_score = window_score
-                                best_idx = idx
-                        
-                        if best_score > 0:
-                            start = best_idx
-                            end = start + max_len
-                            snippet = note_part[start:end].strip()
-                            if start > 0:
-                                snippet = "…" + snippet
-                            if end < len(note_part):
-                                snippet = snippet + "…"
+                snippet = note_part[:1000].strip()
+                if len(note_part) > 1000:
+                    snippet += "..."
 
                 score = 1.0 - (i * 0.05)  # Assign a mock descending score
                 results.append(
@@ -184,34 +161,9 @@ class Searcher:
             lines = doc.split("\n", 2)
             note_part = lines[2] if len(lines) >= 3 else doc
             note_part = note_part.strip()
-            
-            snippet = note_part[:200]
-            if note_part:
-                import re
-                query_words = set(re.findall(r'\w+', query.lower()))
-                if query_words:
-                    best_score = -1
-                    best_idx = 0
-                    max_len = 200
-                    step = 50
-                    for i in range(0, max(1, len(note_part) - max_len + step), step):
-                        window = note_part[i:i+max_len]
-                        window_words = set(re.findall(r'\w+', window.lower()))
-                        window_score = len(query_words & window_words)
-                        if window_score > best_score:
-                            best_score = window_score
-                            best_idx = i
-                    
-                    if best_score > 0:
-                        start = best_idx
-                        end = start + max_len
-                        snippet = note_part[start:end].strip()
-                        if start > 0:
-                            snippet = "…" + snippet
-                        if end < len(note_part):
-                            snippet = snippet + "…"
-                        else:
-                            snippet = snippet
+            snippet = note_part[:1000].strip()
+            if len(note_part) > 1000:
+                snippet += "..."
 
             results.append(
                 SearchResult(

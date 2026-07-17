@@ -113,65 +113,37 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
     async def test_returns_memory_id_and_files(self):
         _mock_engine.create_memory.return_value = _make_memory()
         result = await _remember("Do something", "Detailed note.")
-        self.assertIn("creation scheduled in background", result)
+        self.assertIn("Memory successfully created", result)
 
     async def test_delegates_to_engine(self):
-        import asyncio
         _mock_engine.create_memory.return_value = _make_memory()
         _mock_engine.get_tracked_paths.return_value = []
         await _remember("T", "N")
-        # Let the background task execute
-        await asyncio.sleep(0.01)
         _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=[], edited_files=[])
 
     async def test_delegates_to_engine_with_consulted(self):
-        import asyncio
         from pathlib import Path
         _mock_engine.create_memory.return_value = _make_memory()
-        # Since f1.py is passed, it must either exist or be tracked.
-        # We'll mock get_tracked_paths to return it so it doesn't fail validation.
         _mock_engine.get_tracked_paths.return_value = [str(Path("f1.py").resolve())]
         await _remember("T", "N", read_files=["f1.py"])
-        # Let the background task execute
-        await asyncio.sleep(0.01)
         _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=["f1.py"], edited_files=[])
 
     async def test_remember_validation_errors(self):
-        # Since we removed duplicate synchronous validation checks from remember,
-        # invalid paths do not raise ValueError synchronously anymore.
-        # Instead, they are passed to the background thread and any error is logged.
-        from unittest.mock import patch
-        import asyncio
-        
         _mock_engine.create_memory.side_effect = ValueError("Validation error")
-        
-        with patch('aivc.server.logger') as mock_logger:
-            result = await _remember("T", "N", read_files=["non_existent.txt"])
-            
-            # Robust wait loop for background task completion
-            for _ in range(50):
-                if mock_logger.error.called:
-                    break
-                await asyncio.sleep(0.02)
-            
-            self.assertIn("creation scheduled in background", result)
-            mock_logger.error.assert_called_once()
-            # Reset side effect
-            _mock_engine.create_memory.side_effect = None
+        with self.assertRaises(ValueError):
+            await _remember("T", "N", read_files=["non_existent.txt"])
+        _mock_engine.create_memory.side_effect = None
 
     async def test_runtime_error_propagates(self):
-        import asyncio
-        # Errors in the background task are logged, but the caller gets a success message
-        # We verify that it doesn't crash the server.
         _mock_engine.create_memory.side_effect = RuntimeError("No changes detected")
-        result = await _remember("T", "N")
-        await asyncio.sleep(0.01)
-        self.assertIn("creation scheduled in background", result)
+        with self.assertRaises(RuntimeError):
+            await _remember("T", "N")
+        _mock_engine.create_memory.side_effect = None
 
     async def test_empty_changes_handled(self):
         _mock_engine.create_memory.return_value = _make_memory(changes=[])
         result = await _remember("T", "N")
-        self.assertIn("creation scheduled in background", result)
+        self.assertIn("Memory successfully created", result)
 
 
 class TestRecall(unittest.IsolatedAsyncioTestCase):
@@ -277,8 +249,67 @@ class TestConsultMemory(unittest.TestCase):
         _mock_engine.find_child_memory.return_value = child
 
         result = _consult_memory("curr")
-        self.assertIn("⬆️ **Prev** : P (ID: p-1)", result)
-        self.assertIn("⬇️ **Next** : N (ID: next)", result)
+        self.assertIn("- ⬆️ **Prev** : P (ID: p-1)\n\n", result)
+        self.assertIn("- ⬇️ **Next** : N (ID: next)\n\n", result)
+        _mock_engine.get_memory.side_effect = None
+
+    def test_chantier2_features(self):
+        from aivc.core.memory import FileChange
+        
+        # Test 1: Navigation bullets and double newlines
+        parent = _make_memory(memory_id="p-123", title="Parent Title")
+        current = _make_memory(
+            memory_id="curr-123", 
+            title="Current Title", 
+            parent_id="p-123",
+            changes=[
+                FileChange(path="src/modified.py", action="modified", blob_hash="mod", bytes_added=10, bytes_removed=5),
+                FileChange(path="src/consulted.py", action="consulted", blob_hash="cons", bytes_added=0, bytes_removed=0),
+                FileChange(path="src/new.py", action="added", blob_hash="new", bytes_added=100, bytes_removed=0)
+            ]
+        )
+        child = _make_memory(memory_id="c-123", title="Child Title")
+
+        def mock_get_memory(mid):
+            if mid == "p-123": return parent
+            if mid == "curr-123": return current
+            raise KeyError(mid)
+
+        _mock_engine.get_memory.side_effect = mock_get_memory
+        _mock_engine.find_child_memory.return_value = child
+
+        # Mock read_file_at_memory for diffing
+        def mock_read_file(path, memory_id):
+            if memory_id == "curr-123":
+                if path == "src/modified.py":
+                    return b"line1\nline2_modified\nline3\n"
+                elif path == "src/new.py":
+                    return b"new1\nnew2\n"
+            elif memory_id == "p-123":
+                if path == "src/modified.py":
+                    return b"line1\nline2\nline3\n"
+            raise KeyError(f"Not found: {path} @ {memory_id}")
+
+        _mock_engine.read_file_at_memory.side_effect = mock_read_file
+
+        result = _consult_memory("curr-123")
+
+        # Verify Navigation bullets (double newlines format)
+        self.assertIn("- ⬆️ **Prev** : Parent Title (ID: p-123)\n\n", result)
+        self.assertIn("- ⬇️ **Next** : Child Title (ID: c-123)\n\n", result)
+
+        # Verify Separation of modified vs. consulted files
+        self.assertIn("### Fichiers modifiés", result)
+        self.assertIn("### Fichiers consultés", result)
+
+        # Verify Diff statistics
+        # src/modified.py changed line2 -> line2_modified (1 addition, 1 deletion): (+1 -1)
+        self.assertIn("(+1 -1)", result)
+        # src/new.py is new (no parent): 2 additions: (+2 -0)
+        self.assertIn("(+2 -0)", result)
+
+        _mock_engine.get_memory.side_effect = None
+        _mock_engine.read_file_at_memory.side_effect = None
 
 
 class TestGetRecentMemories(unittest.TestCase):
@@ -334,14 +365,64 @@ class TestReadPastFileContent(unittest.TestCase):
 
     def test_returns_decoded_utf8(self):
         _mock_engine.read_file_at_memory.return_value = b"# Hello World\n"
-        result = _read_past_file_content("src/foo.py", "abc-123")
+        result = _read_past_file_content("src/foo.py", "abc-123", diff_against="none")
         self.assertEqual(result, "# Hello World\n")
+
+    def test_resolves_relative_path_to_absolute(self):
+        from pathlib import Path
+        _mock_engine.read_file_at_memory.return_value = b"# Hello Resolved\n"
+        expected_abs_path = str(Path("src/foo.py").resolve())
+        
+        result = _read_past_file_content("src/foo.py", "abc-123", diff_against="none")
+        
+        _mock_engine.read_file_at_memory.assert_called_once_with(expected_abs_path, "abc-123")
+        self.assertEqual(result, "# Hello Resolved\n")
+
+    def test_returns_diff_current(self):
+        import os
+        from unittest.mock import patch
+        _mock_engine.read_file_at_memory.return_value = b"# Hello World\n"
+        with patch('os.path.exists', return_value=False):
+            result = _read_past_file_content("src/foo.py", "abc-123", diff_against="current")
+            self.assertIn("```diff", result)
+            self.assertIn("-# Hello World", result)
+
+    def test_returns_diff_parent(self):
+        _mock_engine.read_file_at_memory.side_effect = lambda path, mid: (
+            b"# Parent World\n" if mid == "parent-123" else b"# Hello World\n"
+        )
+        parent_memory = _make_memory()
+        parent_memory.id = "parent-123"
+        current_memory = _make_memory()
+        current_memory.id = "abc-123"
+        current_memory.parent_id = "parent-123"
+        
+        def mock_get_memory(mid):
+            if mid == "abc-123":
+                return current_memory
+            return parent_memory
+            
+        _mock_engine.get_memory.side_effect = mock_get_memory
+        
+        result = _read_past_file_content("src/foo.py", "abc-123", diff_against="parent")
+        self.assertIn("```diff", result)
+        self.assertIn("-# Parent World", result)
+        self.assertIn("+# Hello World", result)
+        
+        _mock_engine.get_memory.side_effect = None
+        _mock_engine.read_file_at_memory.side_effect = None
+
+    def test_invalid_diff_against_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            _read_past_file_content("src/foo.py", "abc-123", diff_against="invalid")
 
     def test_key_error_propagates(self):
         _mock_engine.read_file_at_memory.side_effect = KeyError("Not found")
         _mock_engine.get_memory.side_effect = KeyError("Not found")
-        result = _read_past_file_content("src/foo.py", "bad-memory")
+        result = _read_past_file_content("src/foo.py", "bad-memory", diff_against="none")
         self.assertIn("ERROR:", result)
+        _mock_engine.read_file_at_memory.side_effect = None
+        _mock_engine.get_memory.side_effect = None
 
 
 class TestGetStatus(unittest.TestCase):
@@ -351,7 +432,7 @@ class TestGetStatus(unittest.TestCase):
     def test_returns_tree_structure(self):
         _mock_engine.get_tracked_paths.return_value = ["/abs/src/foo.py"]
         result = _get_status()
-        self.assertIn("📁 Root", result)
+        self.assertIn("📁 **Root**", result)
 
     def test_no_tracked_files(self):
         _mock_engine.get_tracked_paths.return_value = []
@@ -361,7 +442,7 @@ class TestGetStatus(unittest.TestCase):
     def test_missing_file_handled(self):
         _mock_engine.get_tracked_paths.return_value = ["/abs/src/foo.py"]
         result = _get_status()
-        self.assertIn("📁 Root", result)
+        self.assertIn("📁 **Root**", result)
 
 
 if __name__ == "__main__":

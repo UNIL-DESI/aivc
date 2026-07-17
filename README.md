@@ -144,4 +144,5 @@ Utilities for installation, data maintenance, and migrations:
 - `[x]` Phase 33: Windows Bulk Warmup & Physical Sync. [[Spec](docs/tasks/phase33_bulk_warmup.md)]
 - `[x]` Phase 34: Windows Threading Deadlock & Cross-Encoder Bypass. [[Spec](docs/tasks/phase34_windows_deadlocks.md)]
 - `[x]` Phase 35: Explicit File Tracking & Strict Path Validation.
+- `[x]` Phase 36: Correctifs de Rendu, Navigation et Diffs Statistiques / Unifiés MCP.
 
