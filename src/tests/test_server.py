@@ -45,8 +45,8 @@ _remember = _server.remember
 _recall = _server.recall
 _consult_memory = _server.consult_memory
 _get_recent_memories = _server.get_recent_memories
-_consult_file = _server.consult_file
-_read_hist = _server.read_historical_file
+_get_file_history_metadata = _server.get_file_history_metadata
+_read_past_file_content = _server.read_past_file_content
 _get_status = _server.get_status
 
 
@@ -306,41 +306,41 @@ class TestGetRecentMemories(unittest.TestCase):
         _mock_engine.get_log.assert_called_once_with(limit=50)
 
 
-class TestConsultFile(unittest.TestCase):
+class TestGetFileHistoryMetadata(unittest.TestCase):
     def setUp(self):
         _mock_engine.reset_mock(return_value=True, side_effect=True)
 
     def test_returns_memory_history(self):
         _mock_engine.get_file_memories.return_value = ["abc-123"]
         _mock_engine.get_memory.return_value = _make_memory()
-        result = _consult_file("src/foo.py")
+        result = _get_file_history_metadata("src/foo.py")
         self.assertIn("src/foo.py", result)
         self.assertIn("Do something", result)
 
     def test_key_error_propagates(self):
         _mock_engine.get_file_memories.side_effect = KeyError("File not in graph")
         with self.assertRaises(KeyError):
-            _consult_file("src/unknown.py")
+            _get_file_history_metadata("src/unknown.py")
 
     def test_empty_memory_list(self):
         _mock_engine.get_file_memories.return_value = []
-        result = _consult_file("src/orphan.py")
+        result = _get_file_history_metadata("src/orphan.py")
         self.assertIn("No memories found", result)
 
 
-class TestReadHistoricalFile(unittest.TestCase):
+class TestReadPastFileContent(unittest.TestCase):
     def setUp(self):
         _mock_engine.reset_mock(return_value=True, side_effect=True)
 
     def test_returns_decoded_utf8(self):
         _mock_engine.read_file_at_memory.return_value = b"# Hello World\n"
-        result = _read_hist("src/foo.py", "abc-123")
+        result = _read_past_file_content("src/foo.py", "abc-123")
         self.assertEqual(result, "# Hello World\n")
 
     def test_key_error_propagates(self):
         _mock_engine.read_file_at_memory.side_effect = KeyError("Not found")
         _mock_engine.get_memory.side_effect = KeyError("Not found")
-        result = _read_hist("src/foo.py", "bad-memory")
+        result = _read_past_file_content("src/foo.py", "bad-memory")
         self.assertIn("ERROR:", result)
 
 
