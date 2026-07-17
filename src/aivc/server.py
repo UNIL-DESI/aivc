@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import sys
 import logging
+import difflib
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,8 @@ def _render_file_tree(paths: list[str], path_extras: dict[str, str] = None, inde
 
     _traverse(tree)
 
-    return "\n".join(lines) if len(lines) > 0 else f"{indent_prefix}—"
+    tree_str = "\n".join(lines) if len(lines) > 0 else f"{indent_prefix}\u2014"
+    return f"```text\n{tree_str}\n```"
 
 
 def _format_bytes(n: int) -> str:
@@ -218,7 +220,7 @@ def _format_bytes(n: int) -> str:
     return f"{n / 1024 ** 2:.1f} MB"
 
 
-def _format_changes_compressed(changes, machine_id=None) -> str:
+def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_id=None) -> str:
     """Render tracked file changes as a clear hierarchical tree."""
     if not changes:
         return "  (no tracked files changed)"
@@ -226,10 +228,47 @@ def _format_changes_compressed(changes, machine_id=None) -> str:
     paths = []
     extras = {}
     
+    # Check if this memory is remote (created on another machine)
+    is_remote = machine_id and machine_id != _local_machine_id
+
     for c in changes:
         paths.append(c.path)
         extra_parts = [f"[{c.action}]"]
         if c.action != "consulted":
+            if memory_id and not is_remote:
+                added = 0
+                deleted = 0
+                try:
+                    current_lines = []
+                    if c.action != "deleted":
+                        current_bytes = _get_engine().read_file_at_memory(c.path, memory_id)
+                        current_text = current_bytes.decode('utf-8', errors='replace')
+                        current_lines = current_text.splitlines()
+                    
+                    has_parent = False
+                    if parent_id and c.action != "added":
+                        try:
+                            parent_bytes = _get_engine().read_file_at_memory(c.path, parent_id)
+                            parent_text = parent_bytes.decode('utf-8', errors='replace')
+                            parent_lines = parent_text.splitlines()
+                            has_parent = True
+                        except Exception as e:
+                            logger.warning("Could not read parent file %s at memory %s for diff: %s", c.path, parent_id, e)
+                            
+                    if has_parent or c.action == "deleted":
+                        parent_lines_to_diff = parent_lines if has_parent else []
+                        diff = list(difflib.unified_diff(parent_lines_to_diff, current_lines, lineterm=''))
+                        for line in diff:
+                            if line.startswith('+') and not line.startswith('+++'):
+                                added += 1
+                            elif line.startswith('-') and not line.startswith('---'):
+                                deleted += 1
+                    else:
+                        added = len(current_lines)
+                        deleted = 0
+                    extra_parts.append(f"(+{added} -{deleted})")
+                except Exception as e:
+                    logger.warning("Could not read file %s at memory %s for diff stats: %s", c.path, memory_id, e)
             extra_parts.append(f"({c.format_impact()})")
         
         if machine_id and machine_id != _local_machine_id:
@@ -287,29 +326,22 @@ async def remember(
 
     engine = _get_engine()
 
-    # Run the heavy vector encoding and DB insertion in a background thread
-    task = asyncio.create_task(
-        asyncio.to_thread(
-            engine.create_memory,
-            title,
-            note,
-            read_files=read_files,
-            edited_files=edited_files
-        )
+    # Run the heavy vector encoding and DB insertion synchronously and wait for it
+    memory = await asyncio.to_thread(
+        engine.create_memory,
+        title,
+        note,
+        read_files=read_files,
+        edited_files=edited_files
     )
 
-    def _done_callback(t: asyncio.Task) -> None:
-        try:
-            t.result()
-        except Exception as exc:
-            logger.error("Error in background memory creation: %s", exc)
-
-    task.add_done_callback(_done_callback)
+    changes_summary_str = _format_changes_compressed(memory.changes, memory.machine_id, memory.id, memory.parent_id)
 
     return (
-        f"✅ Memory creation scheduled in background.\n"
-        f"Title     : {title}\n"
-        f"Processing: vector encoding and database updates are running in the background."
+        f"✅ Memory successfully created.\n"
+        f"ID        : {memory.id}\n"
+        f"Title     : {memory.title}\n"
+        f"Files Recorded:\n{changes_summary_str}"
     )
 
 
@@ -369,11 +401,10 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
         m_id = getattr(r, 'machine_id', "")
         remote_tag = f" [Remote: {m_id}]" if m_id and m_id != _local_machine_id else ""
         
+        indented_snippet = "\n".join(f"   > {line}" for line in r.snippet.splitlines())
         memory_lines.append(
-            f"{i}. [{r.timestamp[:10]}] {r.title}{remote_tag}\n"
-            f"   ID    : {r.memory_id}\n"
-            f"   Score : {r.score:.3f}\n"
-            f"   > {r.snippet}"
+            f"{i}. [{r.timestamp[:10]}] {r.title}{remote_tag} (ID: {r.memory_id})\n"
+            f"{indented_snippet}"
         )
 
     # Aggregate file paths across top results (most frequently mentioned)
@@ -473,23 +504,44 @@ def consult_memory(memory_id: str) -> str:
     if memory.parent_id:
         try:
             parent = _get_engine().get_memory(memory.parent_id)
-            prev_str = f"⬆️ **Prev** : {parent.title} (ID: {parent.id})\n"
+            prev_str = f"- ⬆️ **Prev** : {parent.title} (ID: {parent.id})\n\n"
         except KeyError:
-            prev_str = f"⬆️ **Prev** : (metadata not found) (ID: {memory.parent_id})\n"
+            prev_str = f"- ⬆️ **Prev** : (metadata not found) (ID: {memory.parent_id})\n\n"
 
     next_str = ""
     try:
         child = _get_engine().find_child_memory(memory_id)
         if child:
-            next_str = f"⬇️ **Next** : {child.title} (ID: {child.id})\n"
+            next_str = f"- ⬇️ **Next** : {child.title} (ID: {child.id})\n\n"
     except Exception:
         pass
 
     context_block = ""
     if prev_str or next_str:
-        context_block = f"{prev_str}{next_str}\n"
+        context_block = f"{prev_str}{next_str}"
 
-    changes_summary_str = _format_changes_compressed(memory.changes, memory.machine_id)
+    # Restructure changes summary: separate modified and consulted files
+    changes_sections = []
+    
+    modified_changes = [c for c in memory.changes if c.action != "consulted"]
+    if modified_changes:
+        modified_tree = _format_changes_compressed(
+            modified_changes, memory.machine_id, memory.id, memory.parent_id
+        )
+        changes_sections.append(f"### Fichiers modifiés\n{modified_tree}")
+    else:
+        changes_sections.append("### Fichiers modifiés\n  (aucun)")
+        
+    consulted_changes = [c for c in memory.changes if c.action == "consulted"]
+    if consulted_changes:
+        consulted_tree = _format_changes_compressed(
+            consulted_changes, memory.machine_id, memory.id, memory.parent_id
+        )
+        changes_sections.append(f"### Fichiers consultés\n{consulted_tree}")
+    else:
+        changes_sections.append("### Fichiers consultés\n  (aucun)")
+
+    changes_summary_str = "\n\n".join(changes_sections)
 
     machine_line = ""
     remote_warning = ""
@@ -505,7 +557,7 @@ def consult_memory(memory_id: str) -> str:
         f"**Parent**    : {memory.parent_id or 'none (initial memory)'}\n"
         f"{machine_line}\n"
         f"{context_block}"
-        f"## Files Recorded\n{changes_summary_str}\n\n"
+        f"## Files Recorded\n\n{changes_summary_str}\n\n"
         f"## Note\n\n{memory.note}"
     )
 
@@ -545,8 +597,7 @@ def get_recent_memories(limit: int = 10, offset: int = 0, only_local: bool = Fal
     for i, memory in enumerate(page, offset + 1):
         m_tag = f" [Remote: {memory.machine_id}]" if memory.machine_id and memory.machine_id != _local_machine_id else ""
         lines.append(
-            f"{i:>3}. [{memory.timestamp[:10]}] {memory.title}{m_tag}\n"
-            f"      ID    : {memory.id}"
+            f"{i:>3}. [{memory.timestamp[:10]}] {memory.title}{m_tag} (ID: {memory.id})"
         )
 
         # Collect files for aggregation
@@ -598,7 +649,9 @@ def get_file_history_metadata(file_path: str) -> str:
     Raises:
         KeyError: If the file is not in the AIVC co-occurrence graph.
     """
-    memory_ids = _get_engine().get_file_memories(file_path)
+    from pathlib import Path
+    abs_path = str(Path(file_path).resolve())
+    memory_ids = _get_engine().get_file_memories(abs_path)
 
     if not memory_ids:
         return f"No memories found for file: {file_path}"
@@ -610,8 +663,7 @@ def get_file_history_metadata(file_path: str) -> str:
         try:
             memory = _get_engine().get_memory(mid)
             lines.append(
-                f"  - [{memory.timestamp[:10]}] {memory.title}\n"
-                f"    ID: {memory.id}"
+                f"  - [{memory.timestamp[:10]}] {memory.title} (ID: {memory.id})"
             )
         except KeyError:
             lines.append(f"  - [unknown date] Memory {mid} (metadata not found)")
@@ -624,16 +676,33 @@ def get_file_history_metadata(file_path: str) -> str:
 
 
 @mcp.tool()
-def read_past_file_content(file_path: str, memory_id: str) -> str:
+def read_past_file_content(file_path: str, memory_id: str, diff_against: str = "current") -> str:
     """Retrieve the actual text content of a file exactly as it was at the time of a specific past memory. Use this to restore old code or compare previous implementations. Note: requires both the file path and the memory_id obtained from get_file_history_metadata.
 
     Args:
         file_path: The path of the file to read.
         memory_id: The UUID of the memory at which to read the file.
+        diff_against: Compare the historical file content against another version. 
+                      Values: "current" (default, diff against the local disk version),
+                      "parent" (diff against the parent memory's version), 
+                      "none" (return the raw historical content).
     """
+    import difflib
+    import os
+    from pathlib import Path
+
+    # Resolve the path to absolute format to ensure matching in history
+    abs_file_path = str(Path(file_path).resolve())
+
+    if diff_against not in ("current", "parent", "none"):
+        raise ValueError(
+            f"Invalid diff_against value: {diff_against!r}. "
+            "Must be one of 'current', 'parent', 'none'."
+        )
+
     try:
-        raw: bytes = _get_engine().read_file_at_memory(file_path, memory_id)
-        return raw.decode("utf-8")
+        raw: bytes = _get_engine().read_file_at_memory(abs_file_path, memory_id)
+        historical_content = raw.decode("utf-8")
     except (KeyError, FileNotFoundError):
         # Find which memory exactly has this blob to provide context
         target_memory = None
@@ -642,10 +711,11 @@ def read_past_file_content(file_path: str, memory_id: str) -> str:
             try:
                 m = _get_engine().get_memory(mid)
                 for change in m.changes:
-                    if change.path == file_path and change.blob_hash:
+                    if str(Path(change.path).resolve()) == abs_file_path and change.blob_hash:
                         target_memory = m
                         break
-                if target_memory: break
+                if target_memory:
+                    break
                 mid = m.parent_id
             except KeyError:
                 break
@@ -658,7 +728,59 @@ def read_past_file_content(file_path: str, memory_id: str) -> str:
                 "Please synchronize your files manually (e.g., via `git pull`) to access this content."
             )
         
-        return f"⚠️ ERROR: File `{file_path}` or its content at memory `{memory_id}` could not be found locally."
+        return f"⚠️ ERROR: Historical version of file `{file_path}` at memory `{memory_id}` could not be found locally (it may have only been consulted or not modified)."
+
+    if diff_against == "none":
+        return historical_content
+
+    elif diff_against == "current":
+        current_content = ""
+        if os.path.exists(abs_file_path):
+            try:
+                with open(abs_file_path, "r", encoding="utf-8", errors="replace") as f:
+                    current_content = f.read()
+            except Exception as e:
+                logger.error("Failed to read current local file %s: %s", abs_file_path, e)
+
+        diff_lines = list(
+            difflib.unified_diff(
+                historical_content.splitlines(keepends=True),
+                current_content.splitlines(keepends=True),
+                fromfile=f"aivc://{memory_id[:8]}/{file_path}",
+                tofile=f"local://current/{file_path}",
+            )
+        )
+        diff_text = "".join(diff_lines)
+        return f"```diff\n{diff_text}\n```"
+
+    elif diff_against == "parent":
+        parent_id = None
+        try:
+            memory = _get_engine().get_memory(memory_id)
+            parent_id = memory.parent_id
+        except KeyError:
+            pass
+
+        parent_content = ""
+        if parent_id:
+            try:
+                raw_parent: bytes = _get_engine().read_file_at_memory(abs_file_path, parent_id)
+                parent_content = raw_parent.decode("utf-8")
+            except (KeyError, FileNotFoundError):
+                pass
+
+        diff_lines = list(
+            difflib.unified_diff(
+                parent_content.splitlines(keepends=True),
+                historical_content.splitlines(keepends=True),
+                fromfile=f"aivc://{parent_id[:8] if parent_id else 'none'}/{file_path}",
+                tofile=f"aivc://{memory_id[:8]}/{file_path}",
+            )
+        )
+        diff_text = "".join(diff_lines)
+        return f"```diff\n{diff_text}\n```"
+
+    return historical_content
 
 
 @mcp.tool()
@@ -740,23 +862,26 @@ def get_status(path: str = "") -> str:
     # Sort: directories first, then files
     sorted_items = sorted(tree.items(), key=lambda x: (not x[1]["is_dir"], x[0].lower()))
 
-    lines = []
     header_path = path if path else "Root"
-    lines.append(f"📁 {header_path} ({total_files} tracked files, {_format_bytes(total_size)})")
-    lines.append("-" * 60)
+    header = f"📁 **{header_path}** ({total_files} tracked files, {_format_bytes(total_size)})\n"
 
+    tree_lines = []
     for name, info in sorted_items:
         prefix = "├── " if name != sorted_items[-1][0] else "└── "
         if info["is_dir"]:
-            lines.append(f"{prefix}{name}/ ({info['files']} files, {_format_bytes(info['size'])})")
+            tree_lines.append(f"{prefix}{name}/ ({info['files']} files, {_format_bytes(info['size'])})")
         else:
-            lines.append(f"{prefix}{name} ({_format_bytes(info['size'])})")
+            tree_lines.append(f"{prefix}{name} ({_format_bytes(info['size'])})")
 
-    lines.append("-" * 60)
-    lines.append("\n💡 TIP: Use `get_status(path='dir/name')` to explore subdirectories.")
-    lines.append("💡 NOTE: Hidden files/folders (starting with '.') are NEVER tracked automatically.")
-    
-    return "\n".join(lines)
+    tree_content = "\n".join(tree_lines)
+    tree_block = f"```text\n{tree_content}\n```" if tree_content else "  (no files)"
+
+    tips = (
+        f"\n💡 **TIP**: Use `get_status(path='dir/name')` to explore subdirectories.\n"
+        f"💡 **NOTE**: Hidden files/folders (starting with '.') are NEVER tracked automatically."
+    )
+
+    return f"{header}{tree_block}\n{tips}"
 
 
 

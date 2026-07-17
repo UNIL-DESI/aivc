@@ -496,8 +496,11 @@ class Workspace:
         while current_id is not None:
             memory = self._load_memory(current_id)
             for change in memory.changes:
-                if change.path == file_path and change.blob_hash is not None:
-                    return self._blob_store.retrieve(change.blob_hash)
+                if change.path == file_path:
+                    if change.action == "deleted":
+                        raise KeyError(f"File {file_path!r} was deleted at memory {current_id!r}.")
+                    if change.blob_hash is not None:
+                        return self._blob_store.retrieve(change.blob_hash)
             current_id = memory.parent_id
 
         raise KeyError(
