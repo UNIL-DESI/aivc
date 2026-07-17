@@ -215,56 +215,31 @@ class Workspace:
     # Public API
     # ------------------------------------------------------------------
 
-    def untrack(self, path_or_glob: str) -> None:
-        """Remove a file, directory, or glob from tracking and garbage-collect history.
-
-        WARNING: This is a highly destructive operation. If a directory or glob
-        is provided, ALL matching files currently tracked will have their history
-        permanently erased from AIVC.
-
-        Raises:
-            KeyError: if no matching files are found.
-        """
+    def _purge_file_history(self, file_path: str) -> None:
+        """Remove a specific file's history, decrementing blob references and cleaning index/state."""
         self._reload_state_if_needed()
-        abs_p = str(Path(path_or_glob).resolve())
+        abs_p = str(Path(file_path).resolve())
 
+        # Collect memories referencing this file via the index (fast).
+        affected_memory_ids = self._index.get_memories_touching_file(abs_p)
+        with self._blob_store.batch():
+            for mid in affected_memory_ids:
+                memory = self._load_memory(mid)
+                updated_changes = []
+                for change in memory.changes:
+                    if change.path == abs_p:
+                        if change.blob_hash is not None:
+                            self._blob_store.decrement_ref(change.blob_hash)
+                    else:
+                        updated_changes.append(change)
+                
+                if len(updated_changes) != len(memory.changes):
+                    memory.changes = updated_changes
+                    self._save_memory(memory)
 
-        to_untrack = set()
-        p_is_dir = Path(abs_p).is_dir()
-        
-        for tracked_file in self._state["tracked_files"]:
-            if tracked_file == abs_p:
-                to_untrack.add(tracked_file)
-            elif p_is_dir and tracked_file.startswith(abs_p + os.sep):
-                to_untrack.add(tracked_file)
-            elif fnmatch.fnmatch(tracked_file, abs_p):
-                to_untrack.add(tracked_file)
-
-        if not to_untrack:
-            raise KeyError(f"Path {path_or_glob!r} is not tracked.")
-
-        for file_path in to_untrack:
-            # Collect memories referencing this file via the index (fast).
-            affected_memory_ids = self._index.get_memories_touching_file(file_path)
-            with self._blob_store.batch():
-                for mid in affected_memory_ids:
-                    memory = self._load_memory(mid)
-                    updated_changes = []
-                    for change in memory.changes:
-                        if change.path == file_path:
-                            if change.blob_hash is not None:
-                                self._blob_store.decrement_ref(change.blob_hash)
-                        else:
-                            updated_changes.append(change)
-                    
-                    if len(updated_changes) != len(memory.changes):
-                        memory.changes = updated_changes
-                        self._save_memory(memory)
-
-            # Cleanup the index for this file.
-            self._index.remove_file_changes(file_path)
-            del self._state["tracked_files"][file_path]
-            
+        # Cleanup the index for this file.
+        self._index.remove_file_changes(abs_p)
+        self._state["tracked_files"].pop(abs_p, None)
         self._save_state()
 
     def get_tracked_paths(self) -> list[str]:
@@ -377,6 +352,12 @@ class Workspace:
 
             all_changes = changes + consulted_changes
 
+        # Automate GC and untrack on file deletion
+        deleted_paths = [c.path for c in changes if c.action == "deleted"]
+        for path in deleted_paths:
+            self._purge_file_history(path)
+            self._state["tracked_files"].pop(path, None)
+
         if not changes and not actual_read_files:
             raise RuntimeError(
                 "No changes detected in tracked files and no files consulted. "
@@ -395,10 +376,7 @@ class Workspace:
 
         # Update tracked_files with the new hashes and metadata.
         for change in changes:
-            if change.action == "deleted":
-                # Keep the file in tracking but mark hash as None (it might come back).
-                self._state["tracked_files"][change.path] = {"hash": None, "mtime": None, "size": None}
-            else:
+            if change.action != "deleted":
                 # Store new hash and capture current disk metadata
                 p = Path(change.path)
                 stat = p.stat()
