@@ -54,9 +54,8 @@ AIVC operates at the boundary of Git-like file tracking and modern vector-based 
 +--------------------+
 ```
 
-- **Memory Recording (`remember`)**: When completing a task, the agent compiles their actions, decisions, and outcomes into a Markdown note. AIVC snapshots modified files at that exact moment.
+- **Memory Recording (`remember`)**: When completing a task, the agent compiles their actions, decisions, and outcomes into a Markdown note. AIVC takes explicit lists of read and edited files to construct bipartite association links.
 - **Semantic Retrieval (`recall`)**: The agent queries past memories with natural language. Under the hood, a local dual-encoder embeds the query, matches notes, and extracts highly relevant context snippets.
-- **Windows File System Watcher**: Standard Windows implementations utilize low-level system events through `watchdog.observers.Observer` to monitor directory changes in milliseconds, avoiding CPU spikes.
 - **Lexical Search Fallback**: Fast lexical searching (`search_files`) leverages pure-Python parallel execution paths whenever `grep` or `xargs` are absent on Windows.
 
 ---
@@ -70,7 +69,7 @@ Following extensive porting and performance tuning for native Windows operations
 | **File Search (`search_files`)** | Windows Native | `< 45ms` | `100%` | Single core / ThreadPool |
 | **Memory Creation (`remember`)** | Windows Native | `< 90ms` | `100%` | Zero DB locks / WAL mode |
 | **Semantic Query (`recall`)** | Windows Native | `< 75ms` | `100%` | In-memory indexing |
-| **Comprehensive Test Suite** | Windows Native | `3.85s` total | `100%` (160/160) | SQLite connection pooling |
+| **Comprehensive Test Suite** | Windows Native | `110s` total | `100%` (173/173) | SQLite connection pooling |
 
 ---
 
@@ -112,7 +111,7 @@ Exposed tools available to LLM assistants when configuring the AIVC MCP server:
 
 | Command | Type | Description |
 |---------|------|-------------|
-| `remember` | Write | Records a memory (Title + Markdown Note) and snapshots current files (ignoring previously deleted files). **Call after major milestones.** |
+| `remember` | Write | Records a memory (Title + Markdown Note) associated with explicitly read and edited files. Raises strict validation errors for folders or untracked non-existent paths. **Call after major milestones.** |
 | `recall` | Read | Semantic search over memories. Returns ranked results (ID, title, score) + contextual snippets. |
 | `get_recent_memories`| Read | Retrospective chronological journal of the last N memories. |
 | `consult_memory`| Read | Retrieve the complete Markdown note and modified file diffs for a specific memory. |
@@ -142,4 +141,5 @@ Utilities for installation, data maintenance, and migrations:
 - `[x]` Phase 32: Windows Portability & Performance. [[Spec](docs/tasks/phase32_windows_portability.md)]
 - `[x]` Phase 33: Windows Bulk Warmup & Physical Sync. [[Spec](docs/tasks/phase33_bulk_warmup.md)]
 - `[x]` Phase 34: Windows Threading Deadlock & Cross-Encoder Bypass. [[Spec](docs/tasks/phase34_windows_deadlocks.md)]
+- `[x]` Phase 35: Explicit File Tracking & Strict Path Validation.
 
