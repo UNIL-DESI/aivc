@@ -39,7 +39,7 @@ class FileChange:
                 f"Invalid FileChange action {self.action!r}. "
                 f"Must be one of {_VALID_ACTIONS}."
             )
-        if self.action in ("deleted", "consulted") and self.blob_hash is not None:
+        if self.action in ("deleted",) and self.blob_hash is not None:
             raise ValueError(
                 f"FileChange with action={self.action!r} must have blob_hash=None."
             )
