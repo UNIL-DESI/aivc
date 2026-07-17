@@ -276,7 +276,3 @@ AIVC_STORAGE_ROOT="${AIVC_HOME}/storage" "${VENV_PYTHON}" -m aivc.cli migrate ||
 echo "  Agent rules  : ${GEMINI_MD}"
 echo ""
 echo "Restart Gemini Antigravity to pick up the new MCP server."
-
-echo "  Agent rules  : ${GEMINI_MD}"
-echo ""
-echo "Restart Gemini Antigravity to pick up the new MCP server."
