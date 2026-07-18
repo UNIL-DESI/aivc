@@ -264,15 +264,6 @@ Follow these steps (takes ~2 minutes):
         return
 
     # Step 3: Run OAuth flow
-    print(f"\n{DIM}Opening your browser for Google authorization...{RESET}")
-
-    try:
-        from google_auth_oauthlib.flow import InstalledAppFlow
-    except ImportError:
-        print(f"{RED}Error: Google auth libraries not installed.{RESET}")
-        print("Run: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib")
-        return
-
     client_config = {
         "installed": {
             "client_id": client_id,
@@ -282,10 +273,69 @@ Follow these steps (takes ~2 minutes):
             "redirect_uris": ["http://localhost"],
         }
     }
-
     scopes = ["https://www.googleapis.com/auth/drive.file"]
-    flow = InstalledAppFlow.from_client_config(client_config, scopes)
-    creds = flow.run_local_server(port=0)
+
+    if getattr(args, "headless", False):
+        try:
+            from google_auth_oauthlib.flow import Flow
+        except ImportError:
+            print(f"{RED}Error: Google auth libraries not installed.{RESET}")
+            print("Run: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib")
+            return
+
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=scopes,
+            redirect_uri="http://localhost"
+        )
+        auth_url, _ = flow.authorization_url(
+            access_type="offline",
+            prompt="consent",
+            include_granted_scopes="true"
+        )
+
+        print(f"\n{YELLOW}{BOLD}--- Headless Authentication ---{RESET}")
+        print("Please visit the following URL in a browser on any machine to authenticate:")
+        print(f"\n  {CYAN}{auth_url}{RESET}\n")
+        print("After approving, you will be redirected to a page that fails to load like:")
+        print("  http://localhost/?state=...&code=...")
+        print("Copy the ENTIRE redirect URL from your browser's address bar and paste it below.")
+        print("(Alternatively, you can copy and paste just the 'code' parameter value.)\n")
+
+        user_input = input(f"{BOLD}Paste redirect URL or Authorization Code:{RESET} ").strip()
+        if not user_input:
+            print(f"{RED}Aborted: Authentication input is required.{RESET}")
+            return
+
+        from urllib.parse import urlparse, parse_qs
+        code = user_input
+        if "code=" in user_input or user_input.startswith("http://") or user_input.startswith("https://"):
+            try:
+                parsed = urlparse(user_input)
+                query = parse_qs(parsed.query)
+                if "code" in query:
+                    code = query["code"][0]
+            except Exception:
+                pass
+
+        print(f"\n{DIM}Exchanging authorization code for access token...{RESET}")
+        try:
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+        except Exception as e:
+            print(f"{RED}Error: Failed to fetch token: {e}{RESET}")
+            return
+    else:
+        print(f"\n{DIM}Opening your browser for Google authorization...{RESET}")
+        try:
+            from google_auth_oauthlib.flow import InstalledAppFlow
+        except ImportError:
+            print(f"{RED}Error: Google auth libraries not installed.{RESET}")
+            print("Run: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib")
+            return
+
+        flow = InstalledAppFlow.from_client_config(client_config, scopes)
+        creds = flow.run_local_server(port=0)
 
     # Save credentials and token
     creds_path = get_credentials_path()
@@ -455,7 +505,12 @@ def main() -> None:
         help="Manage cloud synchronization"
     )
     sync_sub = parser_sync.add_subparsers(dest="sync_command", required=True)
-    sync_sub.add_parser("setup", help="Interactive Google Drive sync setup")
+    parser_setup = sync_sub.add_parser("setup", help="Interactive Google Drive sync setup")
+    parser_setup.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run in headless mode (no browser, paste redirection URL)"
+    )
     sync_sub.add_parser("status", help="Check cloud sync status")
     sync_sub.add_parser("push", help="Force push all missing local memories to Drive")
 

@@ -33,15 +33,30 @@ and click **"ENABLE"**.
 ## Step 3: Run AIVC Sync Setup
 
 ```bash
+# Standard interactive setup (opens browser)
 aivc sync setup
+
+# Headless setup (for remote servers, SSH sessions)
+aivc sync setup --headless
 ```
 
-The command will:
+The standard command will:
 1. Display these instructions as a reminder.
 2. Ask you to paste your **Client ID** and **Client Secret**.
 3. Open your browser for Google authorization.
 4. Save the OAuth token to `~/.aivc/token.json`.
 5. Enable cloud sync in `~/.aivc/config.json`.
+
+In **headless mode** (`--headless`), AIVC will not attempt to open a local browser or start a local HTTP server. Instead:
+1. It prints the authorization URL. Copy it and open it in a browser on any machine.
+2. After authorizing, copy the redirected URL from your browser's address bar (even if the page fails to load).
+3. Paste it back into the terminal.
+
+## Alternative: Direct Configuration Copy
+
+If you already have AIVC authenticated on one machine, you can copy the setup directly:
+1. Copy the entire `~/.aivc/` directory from the source machine to the destination machine.
+2. The folder contains `config.json`, `credentials.json`, and `token.json` which fully represent the authentication and configuration state.
 
 ## Step 4: Verify
 

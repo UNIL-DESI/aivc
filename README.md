@@ -134,6 +134,33 @@ Utilities for installation, data maintenance, and migrations:
 
 ---
 
+## Cloud Synchronization & Headless Setup
+
+AIVC supports sharing memory metadata across multiple machines via Google Drive.
+
+### Native Headless Authentication
+For remote servers, containers, or environments without a web browser, use the `--headless` flag:
+```bash
+aivc sync setup --headless
+```
+When running with `--headless`:
+1. It generates the authorization URL and prints it to the console.
+2. Open this URL in any web browser on any machine.
+3. Authenticate with Google and approve the requested permissions.
+4. Your browser will be redirected to a localhost address (e.g., `http://localhost/?state=...&code=...`), which will fail to load. This is normal.
+5. Copy the **entire redirect URL** from the browser's address bar (or just the `code` parameter value) and paste it back into the AIVC terminal prompt to complete the authentication.
+
+### Configuration Import/Export (Direct Directory Copy)
+If you already have a configured and authenticated AIVC instance on a local machine, you can quickly copy the authentication state to another machine by copying the configuration directory:
+1. Locate the configuration directory on your source machine: `~/.aivc/` (or `C:\Users\<username>\.aivc` on Windows).
+2. Copy the entire directory (containing `config.json`, `credentials.json`, and `token.json`) to the destination machine at the same path: `~/.aivc/`.
+3. Check the status on the destination machine to confirm:
+   ```bash
+   aivc sync status
+   ```
+
+---
+
 ## Roadmap
 
 - `[x]` Phase 28: Synchronous I/O Optimization.
