@@ -211,3 +211,52 @@ def test_workspace_persists_and_reloads(tmp_path: Path) -> None:
     log = ws2.get_log()
     assert len(log) == 1
     assert log[0].id == m.id
+
+
+# ---------------------------------------------------------------------------
+# Broken chain and missing HEAD recovery (Chantier 3)
+# ---------------------------------------------------------------------------
+
+def test_get_log_with_broken_chain(tmp_path: Path, ws: Workspace) -> None:
+    # 1. Create a chain of memories: m1 -> m2 -> m3
+    f = _write(tmp_path / "app.py", b"v1")
+    m1 = ws.create_memory("m1", "First commit", edited_files=[str(f)])
+    
+    f.write_bytes(b"v2")
+    m2 = ws.create_memory("m2", "Second commit", edited_files=[str(f)])
+    
+    f.write_bytes(b"v3")
+    m3 = ws.create_memory("m3", "Third commit", edited_files=[str(f)])
+
+    # Verify the complete chain
+    log = ws.get_log()
+    assert [m.id for m in log] == [m3.id, m2.id, m1.id]
+
+    # 2. Physically remove the intermediate commit file (m2.json)
+    m2_file = ws._commits_dir / f"{m2.id}.json"
+    assert m2_file.exists()
+    m2_file.unlink()
+
+    # 3. get_log() should only return m3 (recent commits before the break) without KeyError
+    broken_log = ws.get_log()
+    assert [m.id for m in broken_log] == [m3.id]
+
+
+def test_workspace_init_with_missing_head(tmp_path: Path) -> None:
+    storage = tmp_path / "storage"
+    ws = Workspace(storage)
+    
+    # 1. Create a clean memory to have a head_commit_id
+    f = _write(tmp_path / "app.py", b"v1")
+    m1 = ws.create_memory("m1", "First commit", edited_files=[str(f)])
+    
+    assert ws._state["head_commit_id"] == m1.id
+    
+    # 2. Physically delete the commit file corresponding to head_commit_id
+    m1_file = ws._commits_dir / f"{m1.id}.json"
+    assert m1_file.exists()
+    m1_file.unlink()
+    
+    # 3. Re-instantiate the Workspace. It should auto-repair and set head_commit_id to None
+    ws_reloaded = Workspace(storage)
+    assert ws_reloaded._state["head_commit_id"] is None
