@@ -325,6 +325,7 @@ class NativeDriveSyncManager:
         print(f"Starting parallel download of {len(missing_files)} files using {max_workers} threads...", file=sys.stderr)
         sys.stderr.flush()
 
+        failures = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_file = {
                 executor.submit(self._download_file, file_id, dest_path): dest_path.name
@@ -342,6 +343,11 @@ class NativeDriveSyncManager:
                 except Exception as e:
                     print(f"Error downloading {filename}: {e}", file=sys.stderr)
                     sys.stderr.flush()
+                    failures.append((filename, e))
+
+        if failures:
+            error_details = ", ".join(f"{name}: {err}" for name, err in failures)
+            raise RuntimeError(f"Failed to download {len(failures)} memory files: {error_details}")
 
         return pulled_count
 

@@ -11,6 +11,7 @@ import fnmatch
 import glob as _glob
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,17 @@ class Workspace:
         if self._workspace_path.exists():
             self._state = self._load_state()
             self._last_mtime = self._workspace_path.stat().st_mtime
+
+            # Validate that head_commit_id actually exists on disk
+            head_id = self._state.get("head_commit_id")
+            if head_id is not None:
+                if not self._memory_path(head_id).exists():
+                    sys.stderr.write(
+                        f"Warning: HEAD commit {head_id!r} not found in commits/. "
+                        "Resetting head_commit_id to None.\n"
+                    )
+                    self._state["head_commit_id"] = None
+                    self._save_state()
             
             # Migration: convert stored relative paths to absolute and richer format
             migrated = False
@@ -462,7 +474,13 @@ class Workspace:
         current_id = self._state["head_commit_id"]
         skipped = 0
         while current_id is not None and len(memories) < limit:
-            memory = self._load_memory(current_id)
+            try:
+                memory = self._load_memory(current_id)
+            except KeyError:
+                sys.stderr.write(
+                    f"Warning: Commit chain broken. Commit {current_id!r} not found.\n"
+                )
+                break
             if skipped < offset:
                 skipped += 1
             else:
