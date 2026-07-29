@@ -43,6 +43,7 @@
             top: 0;
             left: 0;
             z-index: 1;
+            display: none;
         }
 
         /* Glassmorphism utility */
@@ -173,6 +174,7 @@
             padding: 8px 16px;
             min-height: 44px;
             transition: all 0.2s;
+            display: none;
         }
         .relayout-btn:hover {
             color: var(--accent);
@@ -232,6 +234,7 @@
 
         .keep-filter-bar {
             display: flex;
+            flex-wrap: wrap;
             gap: 8px;
             padding: 8px 14px;
             align-self: center;
@@ -252,6 +255,7 @@
             min-height: 44px;
             display: inline-flex;
             align-items: center;
+            gap: 6px;
         }
 
         .filter-pill:hover {
@@ -266,6 +270,23 @@
             font-weight: 600;
         }
 
+        .filter-pill.commit-pill {
+            background: rgba(210, 168, 255, 0.2);
+            color: var(--highlight);
+            border-color: var(--highlight);
+        }
+
+        .remove-pill-btn {
+            font-weight: bold;
+            margin-left: 4px;
+            cursor: pointer;
+            opacity: 0.8;
+        }
+        .remove-pill-btn:hover {
+            opacity: 1;
+            color: #ffffff;
+        }
+
         /* Keep Grid */
         .keep-grid {
             display: grid;
@@ -274,7 +295,7 @@
             padding-bottom: 40px;
         }
 
-        /* Keep Card */
+        /* Keep Card Base */
         .keep-card {
             background: rgba(22, 27, 34, 0.75);
             backdrop-filter: blur(12px);
@@ -284,15 +305,80 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+            transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
             cursor: pointer;
-            min-height: 180px;
+            min-height: 190px;
         }
 
         .keep-card:hover {
             transform: translateY(-3px);
-            border-color: var(--accent);
-            box-shadow: 0 8px 24px rgba(88, 166, 255, 0.15);
+        }
+
+        /* Keep Card Pastel Themes (Dark & Light adaptative) */
+        .keep-card.theme-added {
+            background: rgba(46, 125, 50, 0.22);
+            border: 1px solid rgba(126, 231, 135, 0.45);
+        }
+        .keep-card.theme-added:hover {
+            border-color: #7ee787;
+            box-shadow: 0 8px 24px rgba(126, 231, 135, 0.25);
+        }
+
+        .keep-card.theme-modified {
+            background: rgba(180, 110, 10, 0.22);
+            border: 1px solid rgba(245, 158, 11, 0.45);
+        }
+        .keep-card.theme-modified:hover {
+            border-color: #f59e0b;
+            box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25);
+        }
+
+        .keep-card.theme-deleted {
+            background: rgba(190, 30, 60, 0.22);
+            border: 1px solid rgba(255, 123, 114, 0.45);
+        }
+        .keep-card.theme-deleted:hover {
+            border-color: #ff7b72;
+            box-shadow: 0 8px 24px rgba(255, 123, 114, 0.25);
+        }
+
+        .keep-card.theme-consulted {
+            background: rgba(14, 130, 200, 0.22);
+            border: 1px solid rgba(56, 189, 248, 0.45);
+        }
+        .keep-card.theme-consulted:hover {
+            border-color: #38bdf8;
+            box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25);
+        }
+
+        @media (prefers-color-scheme: light) {
+            .keep-card.theme-added {
+                background: #e6f4ea;
+                border-color: #ceead6;
+                color: #137333;
+            }
+            .keep-card.theme-added .keep-card-title { color: #137333; }
+
+            .keep-card.theme-modified {
+                background: #fef7e0;
+                border-color: #feefc3;
+                color: #b06000;
+            }
+            .keep-card.theme-modified .keep-card-title { color: #b06000; }
+
+            .keep-card.theme-deleted {
+                background: #fce8e6;
+                border-color: #fad2cf;
+                color: #c5221f;
+            }
+            .keep-card.theme-deleted .keep-card-title { color: #c5221f; }
+
+            .keep-card.theme-consulted {
+                background: #e8f0fe;
+                border-color: #d2e3fc;
+                color: #1a73e8;
+            }
+            .keep-card.theme-consulted .keep-card-title { color: #1a73e8; }
         }
 
         .keep-card-header {
@@ -315,8 +401,8 @@
         .keep-card-id {
             font-family: monospace;
             font-size: 11px;
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
             padding: 2px 6px;
             border-radius: 4px;
             flex-shrink: 0;
@@ -328,6 +414,42 @@
             margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
+            align-items: center;
+        }
+
+        .commit-btn {
+            background: rgba(88, 166, 255, 0.12);
+            border: 1px solid rgba(88, 166, 255, 0.3);
+            color: var(--accent);
+            font-size: 11px;
+            font-weight: 500;
+            padding: 3px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .commit-btn:hover {
+            background: rgba(88, 166, 255, 0.25);
+            border-color: var(--accent);
+        }
+
+        .detail-btn {
+            background: rgba(210, 168, 255, 0.12);
+            border: 1px solid rgba(210, 168, 255, 0.3);
+            color: var(--highlight);
+            font-size: 11px;
+            font-weight: 500;
+            padding: 3px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .detail-btn:hover {
+            background: rgba(210, 168, 255, 0.25);
+            border-color: var(--highlight);
         }
 
         .keep-card-snippet {
@@ -339,7 +461,7 @@
             -webkit-line-clamp: 4;
             -webkit-box-orient: vertical;
             overflow: hidden;
-            opacity: 0.9;
+            opacity: 0.95;
         }
 
         .keep-media-thumb {
@@ -371,31 +493,37 @@
         }
 
         .badge-add {
-            background: rgba(126, 231, 135, 0.15);
+            background: rgba(126, 231, 135, 0.18);
             color: var(--add-color);
-            border: 1px solid rgba(126, 231, 135, 0.3);
+            border: 1px solid rgba(126, 231, 135, 0.35);
         }
 
         .badge-del {
-            background: rgba(255, 123, 114, 0.15);
+            background: rgba(255, 123, 114, 0.18);
             color: var(--del-color);
-            border: 1px solid rgba(255, 123, 114, 0.3);
+            border: 1px solid rgba(255, 123, 114, 0.35);
         }
 
         .badge-view {
-            background: rgba(210, 168, 255, 0.15);
+            background: rgba(210, 168, 255, 0.18);
             color: var(--highlight);
-            border: 1px solid rgba(210, 168, 255, 0.3);
+            border: 1px solid rgba(210, 168, 255, 0.35);
         }
 
         .badge-file {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
             border: 1px solid var(--border-color);
-            font-weight: 400;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .badge-file:hover {
+            border-color: var(--accent);
+            color: var(--accent);
         }
 
-        /* Detail Modal */
+        /* Detail Modal & 2-Column Desktop Layout */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -416,8 +544,8 @@
 
         .modal-card {
             width: 100%;
-            max-width: 850px;
-            max-height: 85vh;
+            max-width: 1100px;
+            height: 85vh;
             display: flex;
             flex-direction: column;
             background: #161b22;
@@ -428,16 +556,18 @@
         }
 
         .modal-header {
-            padding: 20px 24px;
+            padding: 16px 24px;
             border-bottom: 1px solid var(--border-color);
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
+            align-items: center;
             gap: 16px;
+            background: rgba(22, 27, 34, 0.9);
+            flex-shrink: 0;
         }
 
         .modal-title-group h2 {
-            margin: 0 0 6px 0;
+            margin: 0 0 4px 0;
             font-size: 18px;
             font-weight: 600;
             color: #ffffff;
@@ -471,39 +601,128 @@
             background: rgba(255, 255, 255, 0.1);
         }
 
-        .modal-body {
-            padding: 24px;
-            overflow-y: auto;
+        /* 2-Column Content Grid */
+        .modal-content-grid {
+            display: flex;
             flex: 1;
+            overflow: hidden;
+        }
+
+        .modal-left-col {
+            width: 340px;
+            min-width: 280px;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 16px;
+            background: rgba(13, 17, 23, 0.5);
+            flex-shrink: 0;
+        }
+
+        .modal-right-col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 20px;
+            background: #0d1117;
         }
 
         .modal-note {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--border-color);
             border-radius: 10px;
-            padding: 16px 20px;
-            font-size: 14px;
-            line-height: 1.65;
+            padding: 14px;
+            font-size: 13px;
+            line-height: 1.6;
             white-space: pre-wrap;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
             color: var(--text-main);
         }
 
+        /* File Tree Styling */
+        .tree-container {
+            margin-top: 8px;
+        }
+
+        .tree-dir {
+            margin-left: 4px;
+            margin-top: 4px;
+        }
+
+        .tree-summary {
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+            padding: 4px 6px;
+            border-radius: 6px;
+            user-select: none;
+            transition: background 0.15s;
+        }
+
+        .tree-summary:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .tree-children {
+            padding-left: 10px;
+            border-left: 1px dashed rgba(255, 255, 255, 0.15);
+            margin-left: 6px;
+        }
+
+        .tree-file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 8px;
+            margin: 3px 0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.15s ease, border-color 0.15s ease;
+            border: 1px solid transparent;
+        }
+
+        .tree-file-item:hover {
+            background: rgba(88, 166, 255, 0.12);
+        }
+
+        .tree-file-item.selected {
+            background: rgba(88, 166, 255, 0.22);
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+
+        .tree-file-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #f0f6fc;
+        }
+
+        .tree-file-badges {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
         .modal-media-container {
-            margin-bottom: 24px;
+            margin-bottom: 20px;
             text-align: center;
         }
 
         .modal-media-full {
             max-width: 100%;
-            max-height: 350px;
+            max-height: 400px;
             border-radius: 10px;
             border: 1px solid var(--border-color);
         }
 
         .modal-pdf-embed {
             width: 100%;
-            height: 400px;
+            height: 450px;
             border: 1px solid var(--border-color);
             border-radius: 10px;
         }
@@ -515,46 +734,22 @@
             margin: 0 0 12px 0;
         }
 
-        /* Accordion Diffs */
-        .accordion-item {
+        /* Diff Viewer */
+        .diff-viewer {
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            margin-bottom: 10px;
-            overflow: hidden;
-            background: rgba(255, 255, 255, 0.02);
-        }
-
-        .accordion-header {
-            padding: 12px 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-            user-select: none;
-            font-size: 13px;
-            font-weight: 500;
-            transition: background 0.2s;
-            min-height: 44px;
-        }
-
-        .accordion-header:hover {
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .accordion-content {
-            padding: 12px;
-            border-top: 1px solid var(--border-color);
+            border-radius: 10px;
             background: #0d1117;
             font-family: monospace;
             font-size: 12px;
             overflow-x: auto;
+            padding: 12px;
         }
 
         .diff-line {
             white-space: pre-wrap;
             word-break: break-all;
             padding: 2px 6px;
-            line-height: 1.4;
+            line-height: 1.45;
         }
 
         .diff-add {
@@ -602,7 +797,7 @@
             margin-bottom: 20px;
         }
 
-        /* Mobile Media Queries */
+        /* Mobile Media Queries & Bottom-Sheet */
         @media (max-width: 768px) {
             .header-container {
                 flex-direction: column;
@@ -622,13 +817,36 @@
             .keep-grid {
                 grid-template-columns: 1fr;
             }
+            
+            /* Bottom-Sheet for Mobile */
             .modal-overlay {
                 padding: 0;
                 align-items: flex-end;
             }
             .modal-card {
                 border-radius: 20px 20px 0 0;
-                max-height: 85vh;
+                height: 90vh;
+                max-height: 90vh;
+                animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            @keyframes slideUp {
+                from { transform: translateY(100%); }
+                to { transform: translateY(0); }
+            }
+            .modal-content-grid {
+                flex-direction: column;
+                overflow-y: auto;
+            }
+            .modal-left-col {
+                width: 100%;
+                min-width: 100%;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+                max-height: 40vh;
+            }
+            .modal-right-col {
+                width: 100%;
+                flex: 1;
             }
         }
     </style>
@@ -644,8 +862,8 @@
     <div class="header-container">
         <!-- View Switcher -->
         <div class="view-switcher glass">
-            <button class="switcher-btn active" id="btnViewGraph" title="Vue Graphique Cytoscape">🌐 Graphe</button>
-            <button class="switcher-btn" id="btnViewKeep" title="Vue Grille Keep">📌 Grille Keep</button>
+            <button class="switcher-btn" id="btnViewGraph" title="Vue Graphique Cytoscape">🌐 Graphe</button>
+            <button class="switcher-btn active" id="btnViewKeep" title="Vue Grille Keep">📌 Grille Keep</button>
         </div>
 
         <!-- Search Bar -->
@@ -673,9 +891,9 @@
         </div>
     </div>
 
-    <!-- Keep View Container -->
-    <div id="keep-container" class="keep-container" style="display: none;">
-        <div class="keep-filter-bar glass">
+    <!-- Keep View Container (Default View) -->
+    <div id="keep-container" class="keep-container">
+        <div class="keep-filter-bar glass" id="keep-filter-bar">
             <button class="filter-pill active" data-filter="all">Tous</button>
             <button class="filter-pill" data-filter="modified">Modifiés ✏️</button>
             <button class="filter-pill" data-filter="consulted">Consultés 👁️</button>
@@ -685,7 +903,7 @@
         </div>
     </div>
 
-    <!-- Full Detail Modal -->
+    <!-- Full Detail Modal (2-Column Desktop / Bottom-Sheet Mobile) -->
     <div id="detail-modal-overlay" class="modal-overlay" style="display: none;">
         <div class="modal-card">
             <div class="modal-header">
@@ -695,8 +913,9 @@
                 </div>
                 <button class="modal-close-btn" id="modalCloseBtn" title="Fermer">✕</button>
             </div>
-            <div class="modal-body" id="modalBody">
-                <!-- Modal content loaded dynamically -->
+            <div class="modal-content-grid" id="modalContentGrid">
+                <div class="modal-left-col" id="modalLeftCol"></div>
+                <div class="modal-right-col" id="modalRightCol"></div>
             </div>
         </div>
     </div>
@@ -723,9 +942,98 @@
             return path.split('.').pop().toLowerCase() === 'pdf';
         }
 
+        function getCardThemeClass(m) {
+            const changes = m.changes || [];
+            const actions = changes.map(c => typeof c === 'string' ? 'modified' : c.action);
+            const hasAdded = actions.includes('added') || (m.lines_added && m.lines_added > 0);
+            const hasDeleted = actions.includes('deleted') || (m.lines_removed && m.lines_removed > 0);
+            const hasModified = actions.includes('modified') || m.has_modified;
+            const isConsultedOnly = actions.length > 0 && actions.every(a => a === 'consulted');
+
+            if (isConsultedOnly) return 'theme-consulted';
+            if (hasAdded) return 'theme-added';
+            if (hasModified) return 'theme-modified';
+            if (hasDeleted) return 'theme-deleted';
+            return 'theme-modified';
+        }
+
+        function buildFileTree(changes) {
+            const root = { _isDir: true, name: '', children: {} };
+            (changes || []).forEach(c => {
+                const path = typeof c === 'string' ? c : c.path;
+                const parts = path.split('/').filter(Boolean);
+                let current = root;
+                parts.forEach((part, idx) => {
+                    if (idx === parts.length - 1) {
+                        current.children[part] = { _isDir: false, name: part, path: path, change: c };
+                    } else {
+                        if (!current.children[part]) {
+                            current.children[part] = { _isDir: true, name: part, children: {} };
+                        }
+                        current = current.children[part];
+                    }
+                });
+            });
+            return root;
+        }
+
+        function renderTreeNodes(node) {
+            let html = '';
+            const keys = Object.keys(node.children || {}).sort((a, b) => {
+                const isDirA = node.children[a]._isDir;
+                const isDirB = node.children[b]._isDir;
+                if (isDirA && !isDirB) return -1;
+                if (!isDirA && isDirB) return 1;
+                return a.localeCompare(b);
+            });
+
+            keys.forEach(key => {
+                const item = node.children[key];
+                if (item._isDir) {
+                    html += `
+                        <details class="tree-dir" open>
+                            <summary class="tree-summary">📁 ${escapeHtml(item.name)}</summary>
+                            <div class="tree-children">
+                                ${renderTreeNodes(item)}
+                            </div>
+                        </details>
+                    `;
+                } else {
+                    const c = item.change;
+                    const action = typeof c === 'string' ? 'modified' : (c.action || 'modified');
+                    const added = typeof c === 'string' ? 0 : (c.lines_added || 0);
+                    const removed = typeof c === 'string' ? 0 : (c.lines_removed || 0);
+                    const actionBadgeClass = action === 'added' ? 'badge-add' : action === 'deleted' ? 'badge-del' : action === 'consulted' ? 'badge-view' : 'badge-file';
+
+                    html += `
+                        <div class="tree-file-item" data-path="${escapeHtml(item.path)}">
+                            <span class="tree-file-name" title="${escapeHtml(item.path)}">📄 ${escapeHtml(item.name)}</span>
+                            <div class="tree-file-badges">
+                                <span class="badge ${actionBadgeClass}">${action}</span>
+                                ${added > 0 ? `<span class="badge badge-add">+${added}</span>` : ''}
+                                ${removed > 0 ? `<span class="badge badge-del">-${removed}</span>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+            return html;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
-            let currentView = 'graph'; // 'graph' or 'keep'
+            let currentView = 'keep'; // Default view: 'keep'
             let activeKeepFilter = 'all'; // 'all', 'modified', 'consulted'
+            let activeCommitFilter = null; // { id, hash }
             let keepMemories = [];
             let currentSearchQuery = '';
 
@@ -741,6 +1049,7 @@
             const sidebar = document.getElementById('sidebar');
             const keepContainer = document.getElementById('keep-container');
             const keepGrid = document.getElementById('keep-grid');
+            const keepFilterBar = document.getElementById('keep-filter-bar');
             const searchInput = document.getElementById('searchInput');
             const searchSpinner = document.getElementById('searchSpinner');
             const resetBtn = document.getElementById('resetBtn');
@@ -749,156 +1058,137 @@
             const modalOverlay = document.getElementById('detail-modal-overlay');
             const modalTitle = document.getElementById('modalTitle');
             const modalMeta = document.getElementById('modalMeta');
-            const modalBody = document.getElementById('modalBody');
+            const modalLeftCol = document.getElementById('modalLeftCol');
+            const modalRightCol = document.getElementById('modalRightCol');
             const modalCloseBtn = document.getElementById('modalCloseBtn');
 
-            // 1. Fetch Graph Data
-            let graphData = { nodes: [], edges: [] };
-            try {
-                const res = await fetch('/api/graph');
-                graphData = await res.json();
-            } catch (err) {
-                console.error("Failed to load graph data", err);
-                document.getElementById('init-loader').innerHTML = '<div style="color:#ff7b72;">Erreur de connexion au serveur AIVC.</div>';
-                return;
+            // 1. Load Keep Memories by default
+            loadKeepMemories();
+
+            // 2. Fetch Graph Data in background for Cytoscape
+            let cy = null;
+            let graphDataLoaded = false;
+
+            async function initCytoscape() {
+                if (graphDataLoaded) return;
+                try {
+                    const res = await fetch('/api/graph');
+                    const graphData = await res.json();
+
+                    const elements = [];
+                    const maxMemoryCnt = graphData.nodes.reduce((max, n) => Math.max(max, n.memory_count), 1);
+                    graphData.nodes.forEach(n => {
+                        elements.push({
+                            data: {
+                                id: n.id,
+                                label: n.label,
+                                dir: n.directory,
+                                size: 10 + (Math.log1p(n.memory_count) / Math.log1p(maxMemoryCnt)) * 20,
+                                color: hashColor(n.directory)
+                            }
+                        });
+                    });
+
+                    const maxWeight = graphData.edges.reduce((max, e) => Math.max(max, e.weight), 1);
+                    graphData.edges.forEach(e => {
+                        elements.push({
+                            data: {
+                                source: e.source,
+                                target: e.target,
+                                weight: e.weight,
+                                opacity: 0.1 + (e.weight / maxWeight) * 0.4
+                            }
+                        });
+                    });
+
+                    cy = cytoscape({
+                        container: cyContainer,
+                        elements: elements,
+                        style: [
+                            {
+                                selector: 'node',
+                                style: {
+                                    'background-color': 'data(color)',
+                                    'width': 'data(size)',
+                                    'height': 'data(size)',
+                                    'label': 'data(label)',
+                                    'color': '#c9d1d9',
+                                    'font-size': '11px',
+                                    'font-family': 'Inter, sans-serif',
+                                    'text-valign': 'bottom',
+                                    'text-margin-y': 6,
+                                    'text-outline-width': 2,
+                                    'text-outline-color': '#0d1117',
+                                    'transition-property': 'background-color, line-color, target-arrow-color, width, height, opacity',
+                                    'transition-duration': '0.3s'
+                                }
+                            },
+                            {
+                                selector: 'edge',
+                                style: {
+                                    'width': 'mapData(weight, 1, 10, 1, 4)',
+                                    'line-color': '#444',
+                                    'opacity': 'data(opacity)',
+                                    'curve-style': 'bezier',
+                                    'transition-property': 'opacity',
+                                    'transition-duration': '0.3s'
+                                }
+                            },
+                            {
+                                selector: 'node.highlight',
+                                style: {
+                                    'border-width': 3,
+                                    'border-color': '#fff',
+                                    'width': ele => ele.data('size') * (1.1 + (ele.data('relevance') || 0) * 0.9),
+                                    'height': ele => ele.data('size') * (1.1 + (ele.data('relevance') || 0) * 0.9),
+                                    'z-index': 100,
+                                    'color': '#ffffff',
+                                    'font-weight': 'bold',
+                                    'font-size': '13px'
+                                }
+                            },
+                            {
+                                selector: 'node.selected',
+                                style: {
+                                    'border-width': 4,
+                                    'border-color': '#58a6ff',
+                                    'width': ele => ele.data('size') * 1.8,
+                                    'height': ele => ele.data('size') * 1.8,
+                                    'z-index': 200,
+                                    'color': '#ffffff',
+                                    'font-weight': 'bold',
+                                    'font-size': '14px',
+                                    'shadow-blur': 20,
+                                    'shadow-color': 'rgba(88, 166, 255, 0.6)',
+                                    'shadow-opacity': 1
+                                }
+                            }
+                        ],
+                        layout: {
+                            name: 'cose',
+                            animate: true,
+                            animationDuration: 800,
+                            fit: true,
+                            padding: 40,
+                            randomize: true,
+                            nodeRepulsion: () => 12000,
+                            idealEdgeLength: (edge) => Math.max(40, 180 / edge.data('weight')),
+                            edgeElasticity: (edge) => edge.data('weight') * 80,
+                            gravity: 0.4
+                        },
+                        wheelSensitivity: 0.1
+                    });
+
+                    cy.on('tap', 'node', async (e) => {
+                        const node = e.target;
+                        openFileHistoryModal(node.id());
+                    });
+
+                    graphDataLoaded = true;
+                } catch (err) {
+                    console.error("Failed to load graph data", err);
+                }
             }
-
-            // Cytoscape Elements Setup
-            const elements = [];
-            const maxMemoryCnt = graphData.nodes.reduce((max, n) => Math.max(max, n.memory_count), 1);
-            graphData.nodes.forEach(n => {
-                elements.push({
-                    data: {
-                        id: n.id,
-                        label: n.label,
-                        dir: n.directory,
-                        size: 10 + (Math.log1p(n.memory_count) / Math.log1p(maxMemoryCnt)) * 20,
-                        color: hashColor(n.directory)
-                    }
-                });
-            });
-
-            const maxWeight = graphData.edges.reduce((max, e) => Math.max(max, e.weight), 1);
-            graphData.edges.forEach(e => {
-                elements.push({
-                    data: {
-                        source: e.source,
-                        target: e.target,
-                        weight: e.weight,
-                        opacity: 0.1 + (e.weight / maxWeight) * 0.4
-                    }
-                });
-            });
-
-            // Initialize Cytoscape
-            const cy = cytoscape({
-                container: cyContainer,
-                elements: elements,
-                style: [
-                    {
-                        selector: 'node',
-                        style: {
-                            'background-color': 'data(color)',
-                            'width': 'data(size)',
-                            'height': 'data(size)',
-                            'label': 'data(label)',
-                            'color': '#c9d1d9',
-                            'font-size': '11px',
-                            'font-family': 'Inter, sans-serif',
-                            'text-valign': 'bottom',
-                            'text-margin-y': 6,
-                            'text-outline-width': 2,
-                            'text-outline-color': '#0d1117',
-                            'transition-property': 'background-color, line-color, target-arrow-color, width, height, opacity',
-                            'transition-duration': '0.3s'
-                        }
-                    },
-                    {
-                        selector: 'edge',
-                        style: {
-                            'width': 'mapData(weight, 1, 10, 1, 4)',
-                            'line-color': '#444',
-                            'opacity': 'data(opacity)',
-                            'curve-style': 'bezier',
-                            'transition-property': 'opacity',
-                            'transition-duration': '0.3s'
-                        }
-                    },
-                    {
-                        selector: 'node.highlight',
-                        style: {
-                            'border-width': 3,
-                            'border-color': '#fff',
-                            'width': ele => ele.data('size') * (1.1 + (ele.data('relevance') || 0) * 0.9),
-                            'height': ele => ele.data('size') * (1.1 + (ele.data('relevance') || 0) * 0.9),
-                            'z-index': 100,
-                            'color': '#ffffff',
-                            'font-weight': 'bold',
-                            'font-size': '13px'
-                        }
-                    },
-                    {
-                        selector: 'node.selected',
-                        style: {
-                            'border-width': 4,
-                            'border-color': '#58a6ff',
-                            'width': ele => ele.data('size') * 1.8,
-                            'height': ele => ele.data('size') * 1.8,
-                            'z-index': 200,
-                            'color': '#ffffff',
-                            'font-weight': 'bold',
-                            'font-size': '14px',
-                            'shadow-blur': 20,
-                            'shadow-color': 'rgba(88, 166, 255, 0.6)',
-                            'shadow-opacity': 1
-                        }
-                    },
-                    {
-                        selector: 'node.neighbor',
-                        style: {
-                            'border-width': 2,
-                            'border-color': '#d2a8ff',
-                            'width': ele => ele.data('size') * (1.0 + (ele.data('relevance') || 0) * 0.8),
-                            'height': ele => ele.data('size') * (1.0 + (ele.data('relevance') || 0) * 0.8),
-                            'z-index': 150,
-                            'color': '#e0e0e0',
-                            'font-weight': '500',
-                            'font-size': '12px'
-                        }
-                    },
-                    {
-                        selector: 'edge.neighbor-edge',
-                        style: {
-                            'line-color': 'rgba(210, 168, 255, 0.6)',
-                            'opacity': 0.8,
-                            'width': 'mapData(weight, 1, 10, 2, 5)',
-                            'z-index': 100
-                        }
-                    },
-                    {
-                        selector: 'node.dim',
-                        style: { 'opacity': 0.12, 'color': '#333' }
-                    },
-                    {
-                        selector: 'edge.dim',
-                        style: { 'opacity': 0.04 }
-                    }
-                ],
-                layout: {
-                    name: 'cose',
-                    animate: true,
-                    animationDuration: 800,
-                    fit: true,
-                    padding: 40,
-                    randomize: true,
-                    nodeRepulsion: () => 12000,
-                    idealEdgeLength: (edge) => Math.max(40, 180 / edge.data('weight')),
-                    edgeElasticity: (edge) => edge.data('weight') * 80,
-                    gravity: 0.4,
-                    numIter: 1000
-                },
-                wheelSensitivity: 0.1
-            });
 
             // Remove initial loader
             setTimeout(() => {
@@ -907,7 +1197,7 @@
                     loader.style.opacity = '0';
                     setTimeout(() => loader.remove(), 500);
                 }
-            }, 600);
+            }, 500);
 
             // View Switcher Handlers
             btnViewGraph.addEventListener('click', () => switchView('graph'));
@@ -922,6 +1212,8 @@
                     relayoutBtn.style.display = 'block';
                     keepContainer.style.display = 'none';
                     sidebar.classList.add('open');
+                    initCytoscape();
+                    loadGitLogSidebar();
                 } else {
                     btnViewKeep.classList.add('active');
                     btnViewGraph.classList.remove('active');
@@ -934,21 +1226,23 @@
             }
 
             relayoutBtn.addEventListener('click', () => {
-                cy.layout({
-                    name: 'cose',
-                    animate: true,
-                    animationDuration: 800,
-                    fit: true,
-                    padding: 40,
-                    randomize: false,
-                    nodeRepulsion: () => 12000,
-                    idealEdgeLength: (edge) => Math.max(40, 180 / edge.data('weight')),
-                    edgeElasticity: (edge) => edge.data('weight') * 80,
-                    gravity: 0.4
-                }).run();
+                if (cy) {
+                    cy.layout({
+                        name: 'cose',
+                        animate: true,
+                        animationDuration: 800,
+                        fit: true,
+                        padding: 40,
+                        randomize: false,
+                        nodeRepulsion: () => 12000,
+                        idealEdgeLength: (edge) => Math.max(40, 180 / edge.data('weight')),
+                        edgeElasticity: (edge) => edge.data('weight') * 80,
+                        gravity: 0.4
+                    }).run();
+                }
             });
 
-            // 2. Fetch and Load Memories for Keep View
+            // 3. Fetch and Load Memories for Keep View
             async function loadKeepMemories() {
                 try {
                     let url = currentSearchQuery 
@@ -964,21 +1258,58 @@
             }
 
             // Keep View Filter Tabs
-            document.querySelectorAll('.filter-pill').forEach(pill => {
+            document.querySelectorAll('.filter-pill[data-filter]').forEach(pill => {
                 pill.addEventListener('click', () => {
-                    document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+                    document.querySelectorAll('.filter-pill[data-filter]').forEach(p => p.classList.remove('active'));
                     pill.classList.add('active');
                     activeKeepFilter = pill.getAttribute('data-filter');
                     renderKeepGrid();
                 });
             });
 
+            function renderCommitPill() {
+                const existingPill = document.getElementById('commit-filter-pill');
+                if (existingPill) existingPill.remove();
+
+                if (activeCommitFilter) {
+                    const pillBtn = document.createElement('button');
+                    pillBtn.className = 'filter-pill active commit-pill';
+                    pillBtn.id = 'commit-filter-pill';
+                    pillBtn.innerHTML = `Commit: #${activeCommitFilter.hash} <span class="remove-pill-btn" title="Effacer le filtre">✕</span>`;
+                    
+                    pillBtn.addEventListener('click', (e) => {
+                        activeCommitFilter = null;
+                        renderCommitPill();
+                        renderKeepGrid();
+                    });
+                    
+                    keepFilterBar.appendChild(pillBtn);
+                }
+            }
+
             function renderKeepGrid() {
+                renderCommitPill();
+
                 let filtered = keepMemories;
+
+                // Tab Filter
                 if (activeKeepFilter === 'modified') {
-                    filtered = filtered.filter(m => m.has_modified || (m.changes && m.changes.some(c => c.action !== 'consulted')));
+                    filtered = filtered.filter(m => m.has_modified || (m.changes && m.changes.some(c => (typeof c === 'string' ? 'modified' : c.action) !== 'consulted')));
                 } else if (activeKeepFilter === 'consulted') {
-                    filtered = filtered.filter(m => m.has_consulted || (m.changes && m.changes.some(c => c.action === 'consulted')));
+                    filtered = filtered.filter(m => m.has_consulted || (m.changes && m.changes.some(c => (typeof c === 'string' ? 'modified' : c.action) === 'consulted')));
+                }
+
+                // Commit Hash Filter
+                if (activeCommitFilter) {
+                    const targetMem = keepMemories.find(m => (m.id || m.memory_id) === activeCommitFilter.id);
+                    const targetPaths = targetMem ? (targetMem.changes || []).map(c => typeof c === 'string' ? c : c.path) : [];
+
+                    filtered = filtered.filter(m => {
+                        const mId = m.id || m.memory_id;
+                        if (mId === activeCommitFilter.id) return true;
+                        const mPaths = (m.changes || []).map(c => typeof c === 'string' ? c : c.path);
+                        return mPaths.some(p => targetPaths.includes(p));
+                    });
                 }
 
                 if (filtered.length === 0) {
@@ -991,20 +1322,22 @@
                     const dateStr = (m.timestamp || '').substring(0, 10);
                     const shortId = id ? id.substring(0, 8) : '';
                     const snippet = m.snippet || m.note || '';
+                    const themeClass = getCardThemeClass(m);
 
                     // Find media blob if any
                     let mediaHash = null;
                     if (m.changes) {
-                        const mediaChange = m.changes.find(c => isImageFile(c.path) && c.blob_hash);
+                        const mediaChange = m.changes.find(c => typeof c !== 'string' && isImageFile(c.path) && c.blob_hash);
                         if (mediaChange) mediaHash = mediaChange.blob_hash;
                     }
 
                     const added = m.lines_added || 0;
                     const removed = m.lines_removed || 0;
-                    const consultedCount = m.changes ? m.changes.filter(c => c.action === 'consulted').length : 0;
+                    const consultedCount = m.changes ? m.changes.filter(c => (typeof c === 'string' ? 'modified' : c.action) === 'consulted').length : 0;
+                    const primaryPath = m.changes && m.changes[0] ? (typeof m.changes[0] === 'string' ? m.changes[0] : m.changes[0].path) : null;
 
                     return `
-                        <div class="keep-card" data-memory-id="${id}">
+                        <div class="keep-card ${themeClass}" data-memory-id="${id}" data-primary-path="${escapeHtml(primaryPath || '')}">
                             <div>
                                 <div class="keep-card-header">
                                     <h3 class="keep-card-title">${escapeHtml(m.title || 'Mémoire')}</h3>
@@ -1012,7 +1345,9 @@
                                 </div>
                                 <div class="keep-card-meta">
                                     <span>📅 ${dateStr}</span>
-                                    <span>${(m.changes || []).length} fichier(s)</span>
+                                    <button class="commit-btn" data-commit-id="${id}" data-commit-hash="${shortId}" title="Filtrer par les fichiers de ce commit">
+                                        🔖 Dernier commit: #${shortId}
+                                    </button>
                                 </div>
                                 ${mediaHash ? `<img src="/api/blob/${mediaHash}" class="keep-media-thumb" loading="lazy" alt="Aperçu média" />` : ''}
                                 <div class="keep-card-snippet">${escapeHtml(snippet)}</div>
@@ -1021,24 +1356,61 @@
                                 ${added > 0 ? `<span class="badge badge-add">+${added}</span>` : ''}
                                 ${removed > 0 ? `<span class="badge badge-del">-${removed}</span>` : ''}
                                 ${consultedCount > 0 ? `<span class="badge badge-view">👁 ${consultedCount}</span>` : ''}
-                                ${(m.changes || []).slice(0, 2).map(c => `
-                                    <span class="badge badge-file" title="${escapeHtml(c.path)}">${escapeHtml(c.path.split('/').pop())}</span>
-                                `).join('')}
+                                ${(m.changes || []).slice(0, 3).map(c => {
+                                    const cPath = typeof c === 'string' ? c : c.path;
+                                    return `<span class="badge badge-file" data-file-path="${escapeHtml(cPath)}" title="Historique de ${escapeHtml(cPath)}">${escapeHtml(cPath.split('/').pop())}</span>`;
+                                }).join('')}
+                                <button class="detail-btn" data-detail-id="${id}" title="Ouvrir les détails et arborescence">Détails 🔍</button>
                             </div>
                         </div>
                     `;
                 }).join('');
 
-                // Bind Keep Card Clicks
+                // Bind Keep Card Actions
                 document.querySelectorAll('.keep-card').forEach(card => {
-                    card.addEventListener('click', () => {
-                        const memoryId = card.getAttribute('data-memory-id');
-                        openDetailModal(memoryId);
+                    // Clicking card body -> opens File History for primary file
+                    card.addEventListener('click', (e) => {
+                        const primaryPath = card.getAttribute('data-primary-path');
+                        if (primaryPath) {
+                            openFileHistoryModal(primaryPath);
+                        } else {
+                            const memoryId = card.getAttribute('data-memory-id');
+                            openDetailModal(memoryId);
+                        }
+                    });
+                });
+
+                // Bind Commit Filter Button Clicks
+                document.querySelectorAll('.commit-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation(); // prevent triggering card click
+                        const commitId = btn.getAttribute('data-commit-id');
+                        const commitHash = btn.getAttribute('data-commit-hash');
+                        activeCommitFilter = { id: commitId, hash: commitHash };
+                        renderKeepGrid();
+                    });
+                });
+
+                // Bind File Badge Clicks (Opens File History)
+                document.querySelectorAll('.badge-file').forEach(badge => {
+                    badge.addEventListener('click', (e) => {
+                        e.stopPropagation(); // prevent triggering card click
+                        const filePath = badge.getAttribute('data-file-path');
+                        if (filePath) openFileHistoryModal(filePath);
+                    });
+                });
+
+                // Bind Detail Button Clicks
+                document.querySelectorAll('.detail-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const memId = btn.getAttribute('data-detail-id');
+                        openDetailModal(memId);
                     });
                 });
             }
 
-            // 3. Search Logic with Debounce & AbortController
+            // 4. Search Logic with Debounce & AbortController
             searchInput.addEventListener('input', () => {
                 const query = searchInput.value.trim();
                 currentSearchQuery = query;
@@ -1102,10 +1474,12 @@
             function resetSearch() {
                 searchSpinner.style.display = 'none';
                 resetBtn.style.display = 'none';
-                cy.batch(() => {
-                    cy.elements().removeClass('highlight dim selected neighbor neighbor-edge');
-                    cy.nodes().removeData('relevance');
-                });
+                if (cy) {
+                    cy.batch(() => {
+                        cy.elements().removeClass('highlight dim selected neighbor neighbor-edge');
+                        cy.nodes().removeData('relevance');
+                    });
+                }
                 if (currentView === 'keep') {
                     loadKeepMemories();
                 } else {
@@ -1124,7 +1498,7 @@
                 }
 
                 resultsContent.innerHTML = memories.map(c => `
-                    <div class="keep-card" style="margin-bottom: 12px;" data-memory-id="${c.memory_id}">
+                    <div class="keep-card theme-modified" style="margin-bottom: 12px;" data-memory-id="${c.memory_id}">
                         <h3 class="keep-card-title">${escapeHtml(c.title)}</h3>
                         <div class="keep-card-meta">
                             <span>${(c.timestamp || '').substring(0, 10)}</span>
@@ -1152,7 +1526,7 @@
                     const logs = await res.json();
 
                     resultsContent.innerHTML = logs.map(c => `
-                        <div class="keep-card" style="margin-bottom: 12px;" data-memory-id="${c.id}">
+                        <div class="keep-card theme-modified" style="margin-bottom: 12px;" data-memory-id="${c.id}">
                             <h3 class="keep-card-title">${escapeHtml(c.title)}</h3>
                             <div class="keep-card-meta">
                                 <span>${(c.timestamp || '').substring(0, 10)}</span>
@@ -1175,48 +1549,13 @@
                 }
             }
 
-            // Cytoscape Node Tap -> show file history in sidebar
-            cy.on('tap', 'node', async (e) => {
-                const node = e.target;
-                sidebar.classList.add('open');
-                resultsTitle.innerText = `Fichier: ${node.data('label')}`;
-                resultsContent.innerHTML = '<div style="text-align:center; padding: 20px;"><div class="spinner" style="display:inline-block;"></div></div>';
-
-                try {
-                    const res = await fetch(`/api/file-history/${encodeURIComponent(node.id())}`);
-                    const history = await res.json();
-
-                    if (history.error) {
-                        resultsContent.innerHTML = `<p style="color: var(--del-color);">${history.error}</p>`;
-                        return;
-                    }
-
-                    resultsContent.innerHTML = history.map(c => `
-                        <div class="keep-card" style="margin-bottom: 12px;" data-memory-id="${c.memory_id}">
-                            <h3 class="keep-card-title">${escapeHtml(c.title)}</h3>
-                            <div class="keep-card-meta">
-                                <span>${(c.timestamp || '').substring(0, 10)}</span>
-                                <span class="keep-card-id">${c.memory_id.substring(0, 8)}</span>
-                            </div>
-                        </div>
-                    `).join('');
-
-                    document.querySelectorAll('#resultsContent .keep-card').forEach(card => {
-                        card.addEventListener('click', () => {
-                            openDetailModal(card.getAttribute('data-memory-id'));
-                        });
-                    });
-                } catch (err) {
-                    resultsContent.innerHTML = `<p style="color: var(--del-color);">Erreur: ${err.message}</p>`;
-                }
-            });
-
-            // 4. Full Detail Modal & Accordion Diffs
-            async function openDetailModal(memoryId) {
+            // 5. Full Detail Modal (2-Column Desktop & Bottom-Sheet Mobile)
+            async function openDetailModal(memoryId, initialSelectedPath = null) {
                 modalOverlay.style.display = 'flex';
                 modalTitle.innerText = 'Chargement...';
                 modalMeta.innerHTML = '';
-                modalBody.innerHTML = '<div style="text-align:center; padding: 40px;"><div class="spinner" style="display:inline-block; width:30px; height:30px;"></div></div>';
+                modalLeftCol.innerHTML = '<div style="text-align:center; padding: 40px;"><div class="spinner" style="display:inline-block; width:24px; height:24px;"></div></div>';
+                modalRightCol.innerHTML = '';
 
                 try {
                     const res = await fetch(`/api/memory/${memoryId}`);
@@ -1224,11 +1563,11 @@
 
                     if (memory.error) {
                         modalTitle.innerText = 'Erreur';
-                        modalBody.innerHTML = `<p style="color: var(--del-color);">${memory.error}</p>`;
+                        modalLeftCol.innerHTML = `<p style="color: var(--del-color);">${memory.error}</p>`;
                         return;
                     }
 
-                    modalTitle.innerText = memory.title;
+                    modalTitle.innerText = memory.title || 'Détails du Commit';
                     modalMeta.innerHTML = `
                         <span>📅 ${(memory.timestamp || '').substring(0, 19).replace('T', ' ')}</span>
                         <span class="keep-card-id">ID: ${memory.id.substring(0, 8)}</span>
@@ -1241,99 +1580,179 @@
                         });
                     }
 
-                    // Check for images or PDF media
-                    let mediaHtml = '';
-                    const mediaChange = memory.changes.find(c => (isImageFile(c.path) || isPdfFile(c.path)) && c.blob_hash);
-                    if (mediaChange) {
-                        if (isImageFile(mediaChange.path)) {
-                            mediaHtml = `
-                                <div class="modal-media-container">
-                                    <img src="/api/blob/${mediaChange.blob_hash}" class="modal-media-full" alt="Media preview" />
+                    // Build Left Column: Metadata + Tree View
+                    const changes = memory.changes || [];
+                    const treeRoot = buildFileTree(changes);
+                    const treeHtml = renderTreeNodes(treeRoot);
+
+                    modalLeftCol.innerHTML = `
+                        <div class="modal-note">${escapeHtml(memory.note || 'Aucune note associée.')}</div>
+                        <h3 class="modal-section-title">Fichiers touchés (${changes.length})</h3>
+                        <div class="tree-container">
+                            ${treeHtml || '<div style="color: var(--text-muted);">Aucun fichier.</div>'}
+                        </div>
+                    `;
+
+                    // Handle File Selection in Tree View
+                    const fileItems = modalLeftCol.querySelectorAll('.tree-file-item');
+
+                    async function selectFile(filePath) {
+                        fileItems.forEach(item => {
+                            if (item.getAttribute('data-path') === filePath) {
+                                item.classList.add('selected');
+                            } else {
+                                item.classList.remove('selected');
+                            }
+                        });
+
+                        const changeObj = changes.find(c => (typeof c === 'string' ? c : c.path) === filePath);
+                        const action = changeObj ? (typeof changeObj === 'string' ? 'modified' : changeObj.action) : 'modified';
+                        const blobHash = changeObj && typeof changeObj !== 'string' ? changeObj.blob_hash : null;
+
+                        modalRightCol.innerHTML = '<div style="text-align:center; padding: 40px;"><div class="spinner" style="display:inline-block; width:28px; height:28px;"></div></div>';
+
+                        // Check for image or PDF media preview
+                        if (blobHash && (isImageFile(filePath) || isPdfFile(filePath))) {
+                            if (isImageFile(filePath)) {
+                                modalRightCol.innerHTML = `
+                                    <h3 class="modal-section-title">Aperçu Média: ${escapeHtml(filePath)}</h3>
+                                    <div class="modal-media-container">
+                                        <img src="/api/blob/${blobHash}" class="modal-media-full" alt="Aperçu Média" />
+                                    </div>
+                                `;
+                            } else {
+                                modalRightCol.innerHTML = `
+                                    <h3 class="modal-section-title">Document PDF: ${escapeHtml(filePath)}</h3>
+                                    <div class="modal-media-container">
+                                        <iframe src="/api/blob/${blobHash}" class="modal-pdf-embed"></iframe>
+                                    </div>
+                                `;
+                            }
+                            return;
+                        }
+
+                        // Fetch Unified Diff
+                        try {
+                            const diffRes = await fetch(`/api/diff?memory_id=${memoryId}&path=${encodeURIComponent(filePath)}`);
+                            const diffData = await diffRes.json();
+
+                            if (diffData.error) {
+                                modalRightCol.innerHTML = `<div style="color: var(--del-color);">${escapeHtml(diffData.error)}</div>`;
+                                return;
+                            }
+
+                            const linesAdded = diffData.lines_added || 0;
+                            const linesRemoved = diffData.lines_removed || 0;
+
+                            if (diffData.is_binary) {
+                                modalRightCol.innerHTML = `
+                                    <h3 class="modal-section-title">${escapeHtml(filePath)}</h3>
+                                    <div style="color: var(--highlight); padding: 20px; text-align: center;">[Fichier binaire ou média non prévisualisable]</div>
+                                `;
+                                return;
+                            }
+
+                            const diffLines = (diffData.diff || '').split('\n');
+                            const diffContentHtml = diffLines.map(line => {
+                                let cls = '';
+                                if (line.startsWith('+') && !line.startsWith('+++')) cls = 'diff-add';
+                                else if (line.startsWith('-') && !line.startsWith('---')) cls = 'diff-del';
+                                else if (line.startsWith('@@')) cls = 'diff-hunk';
+                                return `<div class="diff-line ${cls}">${escapeHtml(line)}</div>`;
+                            }).join('');
+
+                            modalRightCol.innerHTML = `
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <h3 class="modal-section-title" style="margin: 0;">${escapeHtml(filePath)}</h3>
+                                    <div>
+                                        ${linesAdded > 0 ? `<span class="badge badge-add">+${linesAdded}</span>` : ''}
+                                        ${linesRemoved > 0 ? `<span class="badge badge-del">-${linesRemoved}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="diff-viewer">
+                                    ${diffContentHtml || '<div style="color: var(--text-muted);">Aucune différence.</div>'}
                                 </div>
                             `;
-                        } else if (isPdfFile(mediaChange.path)) {
-                            mediaHtml = `
-                                <div class="modal-media-container">
-                                    <iframe src="/api/blob/${mediaChange.blob_hash}" class="modal-pdf-embed"></iframe>
-                                </div>
-                            `;
+
+                        } catch (err) {
+                            modalRightCol.innerHTML = `<div style="color: var(--del-color);">Erreur de chargement du diff: ${err.message}</div>`;
                         }
                     }
 
-                    // Render Body
-                    modalBody.innerHTML = `
-                        <div class="modal-note">${escapeHtml(memory.note)}</div>
-                        ${mediaHtml}
-                        <h3 class="modal-section-title">Modifications & Diffs (${memory.changes.length})</h3>
-                        <div class="accordion-group">
-                            ${memory.changes.map((c, idx) => `
-                                <div class="accordion-item" data-path="${escapeHtml(c.path)}" data-memory-id="${memory.id}">
-                                    <div class="accordion-header">
-                                        <div>
-                                            <span class="badge ${c.action === 'added' ? 'badge-add' : c.action === 'deleted' ? 'badge-del' : c.action === 'consulted' ? 'badge-view' : 'badge-file'}">${c.action}</span>
-                                            <strong style="margin-left: 8px; color: #f0f6fc;">${escapeHtml(c.path.split('/').pop())}</strong>
-                                            <span style="color: var(--text-muted); font-size: 11px; margin-left: 6px;">(${escapeHtml(c.path)})</span>
-                                        </div>
-                                        <div>
-                                            ${c.lines_added > 0 ? `<span class="badge badge-add">+${c.lines_added}</span>` : ''}
-                                            ${c.lines_removed > 0 ? `<span class="badge badge-del">-${c.lines_removed}</span>` : ''}
-                                            <span style="color: var(--text-muted); margin-left: 8px;">▼</span>
-                                        </div>
+                    fileItems.forEach(item => {
+                        item.addEventListener('click', () => {
+                            selectFile(item.getAttribute('data-path'));
+                        });
+                    });
+
+                    // Initial selection
+                    const defaultPath = initialSelectedPath && changes.some(c => (typeof c === 'string' ? c : c.path) === initialSelectedPath)
+                        ? initialSelectedPath
+                        : (changes.length > 0 ? (typeof changes[0] === 'string' ? changes[0] : changes[0].path) : null);
+
+                    if (defaultPath) {
+                        selectFile(defaultPath);
+                    } else {
+                        modalRightCol.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">Sélectionnez un fichier dans l\'arborescence à gauche.</div>';
+                    }
+
+                } catch (err) {
+                    modalTitle.innerText = 'Erreur';
+                    modalLeftCol.innerHTML = `<p style="color: var(--del-color);">${err.message}</p>`;
+                }
+            }
+
+            // 6. File History Modal
+            async function openFileHistoryModal(filePath) {
+                modalOverlay.style.display = 'flex';
+                const fileName = filePath.split('/').pop();
+                modalTitle.innerText = `📜 Historique du Fichier : ${fileName}`;
+                modalMeta.innerHTML = `<span style="color: var(--text-muted); font-size: 11px;">${escapeHtml(filePath)}</span>`;
+                modalLeftCol.innerHTML = '<div style="text-align:center; padding: 40px;"><div class="spinner" style="display:inline-block; width:24px; height:24px;"></div></div>';
+                modalRightCol.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px;">Sélectionnez une révision dans l\'historique à gauche pour voir les détails.</div>';
+
+                try {
+                    const res = await fetch(`/api/file-history/${encodeURIComponent(filePath)}`);
+                    const history = await res.json();
+
+                    if (history.error || !Array.isArray(history)) {
+                        modalLeftCol.innerHTML = `<p style="color: var(--del-color);">${history.error || 'Erreur lors du chargement de l\'historique'}</p>`;
+                        return;
+                    }
+
+                    modalLeftCol.innerHTML = `
+                        <div style="margin-bottom: 12px; color: var(--text-muted); font-size: 12px;">
+                            ${history.length} révision(s) pour <code>${escapeHtml(fileName)}</code>
+                        </div>
+                        <div class="history-list">
+                            ${history.map(item => `
+                                <div class="keep-card theme-modified" style="margin-bottom: 10px; padding: 12px; min-height: auto;" data-memory-id="${item.memory_id}">
+                                    <div class="keep-card-header" style="margin-bottom: 4px;">
+                                        <h4 style="margin: 0; font-size: 14px; color: #f0f6fc;">${escapeHtml(item.title || 'Révision')}</h4>
                                     </div>
-                                    <div class="accordion-content" id="accordion-content-${idx}" style="display: none;">
-                                        <div style="text-align:center; padding: 12px;"><div class="spinner" style="display:inline-block;"></div></div>
+                                    <div class="keep-card-meta" style="margin: 0; font-size: 11px;">
+                                        <span>📅 ${(item.timestamp || '').substring(0, 10)}</span>
+                                        <span class="keep-card-id">${(item.memory_id || '').substring(0, 8)}</span>
                                     </div>
                                 </div>
                             `).join('')}
                         </div>
                     `;
 
-                    // Accordion Toggle Handlers
-                    document.querySelectorAll('.accordion-header').forEach((header, idx) => {
-                        header.addEventListener('click', async () => {
-                            const content = document.getElementById(`accordion-content-${idx}`);
-                            const isHidden = content.style.display === 'none';
-
-                            if (isHidden) {
-                                content.style.display = 'block';
-                                if (!content.getAttribute('data-loaded')) {
-                                    const item = header.parentElement;
-                                    const path = item.getAttribute('data-path');
-                                    const memId = item.getAttribute('data-memory-id');
-
-                                    try {
-                                        const diffRes = await fetch(`/api/diff?memory_id=${memId}&path=${encodeURIComponent(path)}`);
-                                        const diffData = await diffRes.json();
-
-                                        if (diffData.error) {
-                                            content.innerHTML = `<div style="color: var(--del-color);">${diffData.error}</div>`;
-                                        } else if (diffData.is_binary) {
-                                            content.innerHTML = `<div style="color: var(--highlight);">[Fichier binaire ou média - détection automatique]</div>`;
-                                        } else {
-                                            const lines = (diffData.diff || '').split('\n');
-                                            content.innerHTML = lines.map(line => {
-                                                let cls = '';
-                                                if (line.startsWith('+') && !line.startsWith('+++')) cls = 'diff-add';
-                                                else if (line.startsWith('-') && !line.startsWith('---')) cls = 'diff-del';
-                                                else if (line.startsWith('@@')) cls = 'diff-hunk';
-
-                                                return `<div class="diff-line ${cls}">${escapeHtml(line)}</div>`;
-                                            }).join('');
-                                        }
-                                        content.setAttribute('data-loaded', 'true');
-                                    } catch (err) {
-                                        content.innerHTML = `<div style="color: var(--del-color);">Erreur diff: ${err.message}</div>`;
-                                    }
-                                }
-                            } else {
-                                content.style.display = 'none';
-                            }
+                    document.querySelectorAll('#modalLeftCol .keep-card').forEach(card => {
+                        card.addEventListener('click', () => {
+                            const memId = card.getAttribute('data-memory-id');
+                            openDetailModal(memId, filePath);
                         });
                     });
 
+                    // Automatically open latest commit in detail view
+                    if (history.length > 0 && history[0].memory_id) {
+                        openDetailModal(history[0].memory_id, filePath);
+                    }
+
                 } catch (err) {
-                    modalTitle.innerText = 'Erreur';
-                    modalBody.innerHTML = `<p style="color: var(--del-color);">${err.message}</p>`;
+                    modalLeftCol.innerHTML = `<p style="color: var(--del-color);">Erreur: ${err.message}</p>`;
                 }
             }
 
@@ -1346,19 +1765,6 @@
                     modalOverlay.style.display = 'none';
                 }
             });
-
-            function escapeHtml(str) {
-                if (!str) return '';
-                return String(str)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#039;');
-            }
-
-            // Default Startup Load
-            loadGitLogSidebar();
         });
     </script>
 </body>
