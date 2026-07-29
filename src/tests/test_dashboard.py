@@ -107,3 +107,56 @@ def test_dashboard_api_file_history_error():
     
     res = handler._api_file_history("unknown.py")
     assert "error" in res
+
+
+def test_dashboard_api_blob():
+    engine = MagicMock()
+    engine._workspace._blob_store.retrieve.side_effect = lambda h: b"\x89PNG\r\n\x1a\nfake" if h == "valid_png" else raise_key_error(h)
+
+    def raise_key_error(h):
+        raise KeyError(h)
+
+    handler = DashboardHandler.__new__(DashboardHandler)
+    handler.engine = engine
+    handler.send_json = MagicMock()
+    handler.send_response = MagicMock()
+    handler.send_header = MagicMock()
+    handler.end_headers = MagicMock()
+    handler.wfile = MagicMock()
+
+    # Valid PNG Blob
+    handler._serve_blob("valid_png")
+    handler.send_response.assert_called_with(200)
+
+    # Unknown Blob -> 404
+    handler._serve_blob("unknown")
+    handler.send_json.assert_called_with({"error": "Blob unknown not found"}, status=404)
+
+
+def test_dashboard_api_diff():
+    engine = MagicMock()
+    mock_mem = MagicMock()
+    mock_mem.id = "m1"
+    mock_mem.parent_id = "m0"
+
+    mock_change = MagicMock()
+    mock_change.path = "app.py"
+    mock_change.action = "modified"
+    mock_change.blob_hash = "h2"
+    mock_mem.changes = [mock_change]
+
+    engine.get_memory.return_value = mock_mem
+    engine._workspace._blob_store.retrieve.return_value = b"line1\nline2_modified\n"
+    engine.read_file_at_memory.return_value = b"line1\nline2\n"
+
+    handler = DashboardHandler.__new__(DashboardHandler)
+    handler.engine = engine
+
+    res = handler._get_file_diff_and_stats("m1", "app.py")
+    assert res["memory_id"] == "m1"
+    assert res["path"] == "app.py"
+    assert res["action"] == "modified"
+    assert res["lines_added"] == 1
+    assert res["lines_removed"] == 1
+    assert "+line2_modified" in res["diff"]
+
