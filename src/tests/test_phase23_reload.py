@@ -63,8 +63,8 @@ def test_semantic_engine_cache_invalidation_on_reload(tmp_path):
     workspace_json.write_text(json.dumps(state))
     
     # Accessing workspace through engine should trigger reload and callback
-    # get_status calls _reload_state_if_needed in Workspace
-    engine.get_status()
+    # get_tracked_paths calls _reload_state_if_needed in Workspace
+    engine.get_tracked_paths()
     
     # The cache should have been invalidated by the callback
     assert engine._local_hints_index is None

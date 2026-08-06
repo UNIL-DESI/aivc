@@ -21,13 +21,6 @@ def test_format_bytes():
     assert _format_bytes(1024) == "1.0 KB"
     assert _format_bytes(10 * 1024**2) == "10.0 MB"
 
-def test_cli_status(mock_engine, capsys):
-    mock_engine.get_status.return_value = []
-    with patch("sys.argv", ["aivc", "status"]):
-        main()
-    captured = capsys.readouterr()
-    assert "No files are currently tracked" in captured.out
-
 def test_cli_log(mock_engine, capsys):
     mock_engine.get_log.return_value = []
     with patch("sys.argv", ["aivc", "log"]):
@@ -46,16 +39,16 @@ def test_cli_search(mock_engine, capsys):
 
 def test_cli_no_env_var(mock_engine, capsys):
     # Tests that omitting AIVC_STORAGE_ROOT now falls back gracefully
-    mock_engine.get_status.return_value = []
+    mock_engine.get_log.return_value = []
     with patch.dict(os.environ, clear=True):
         if "AIVC_STORAGE_ROOT" in os.environ:
             del os.environ["AIVC_STORAGE_ROOT"]
             
-        with patch("sys.argv", ["aivc", "status"]):
+        with patch("sys.argv", ["aivc", "log"]):
             main()
     
     captured = capsys.readouterr()
-    assert "No files are currently tracked" in captured.out
+    assert "No memories found" in captured.out
 
 def test_cmd_sync_push_disabled(capsys):
     with patch("aivc.config.get_aivc_config") as mock_cfg:

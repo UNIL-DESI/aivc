@@ -47,7 +47,6 @@ _consult_memory = _server.consult_memory
 _get_recent_memories = _server.get_recent_memories
 _get_file_history_metadata = _server.get_file_history_metadata
 _read_past_file_content = _server.read_past_file_content
-_get_status = _server.get_status
 
 
 
@@ -425,24 +424,6 @@ class TestReadPastFileContent(unittest.TestCase):
         _mock_engine.get_memory.side_effect = None
 
 
-class TestGetStatus(unittest.TestCase):
-    def setUp(self):
-        _mock_engine.reset_mock(return_value=True, side_effect=True)
-
-    def test_returns_tree_structure(self):
-        _mock_engine.get_tracked_paths.return_value = ["/abs/src/foo.py"]
-        result = _get_status()
-        self.assertIn("📁 **Root**", result)
-
-    def test_no_tracked_files(self):
-        _mock_engine.get_tracked_paths.return_value = []
-        result = _get_status()
-        self.assertIn("No files are currently tracked", result)
-
-    def test_missing_file_handled(self):
-        _mock_engine.get_tracked_paths.return_value = ["/abs/src/foo.py"]
-        result = _get_status()
-        self.assertIn("📁 **Root**", result)
 
 
 if __name__ == "__main__":

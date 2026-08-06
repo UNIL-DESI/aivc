@@ -48,13 +48,12 @@ Memories are indexed semantically, so you can retrieve them by meaning later.
 
 ## CRITICAL RULE — REMEMBER OFTEN
 
-**You MUST create a memory (call `remember`) after EVERY significant step.**
+**You MUST call `remember` whenever progress is made (completed major edit, understood concept/architecture, or user confirmed fact) tied to `read_files` or `edited_files`.**
 
 A memory is required after:
-- Completing a sub-task or an entire task.
-- Creating or modifying any artifact (file, script, document, test, config…).
-- Discovering a key finding or making an architectural decision.
-- Finishing any phase of a plan, even if work is still ongoing.
+- Progress is made on a task or major edit completed.
+- Understanding a concept, architecture, or key finding.
+- User confirmed a fact or decision.
 - Any identifiable "checkpoint" in your reasoning.
 
 The memory note must be **detailed**. Do not write one-liners.
@@ -63,22 +62,24 @@ and the solutions found. Think of it as a handover memo to your future self.
 
 ### Read and Edited Files
 
-When you create a memory, you can specify `read_files` and `edited_files`.
+When you create a memory, specify `read_files` and `edited_files`.
 `read_files` are files you have read and that were **truly useful** to you to
 accomplish your task, but that you did not modify. `edited_files` are files
 that were modified or created for the task.
 
+## CRITICAL RULE — RECALL FIRST
+
+**You MUST call `recall` whenever user mentions anything fuzzy, an unfamiliar project, concept or context. Never make assumptions—always call `recall` first to retrieve context.**
+
 ## Recall Funnel
 
-To retrieve memory, follow this two-step funnel:
+To retrieve memory, follow this funnel:
 
 1. **`recall`** — for semantic search by meaning (idea, topic, solution).
    → Returns memory titles/dates/IDs + snippets. NEVER the full note.
 2. **`get_recent_memories`** — for recalling recent history chronologically.
 3. **`consult_memory`** — to read the full note of a specific memory.
    → Call this AFTER identifying a relevant memory.
-
-4. **`search_files`** — for keyword or regex search in the CURRENT state of files.
 
 ## Remote Memories & Sync Policy
 
@@ -91,14 +92,12 @@ of files associated with it might not be available for `read_past_file_content`.
 
 | Tool | Purpose |
 |------|---------|
-| `remember` | Save a memory checkpoint. Call this VERY often. |
-| `recall` | Semantic search over all past memory notes. |
+| `remember` | Save a memory checkpoint. Must be called whenever progress is made tied to read_files or edited_files. |
+| `recall` | Semantic search over all past memory notes. Must be called whenever user mentions anything fuzzy or unfamiliar. |
 | `get_recent_memories` | Recent memory log (paginable). |
 | `consult_memory` | Read a specific memory note in full. |
 | `get_file_history_metadata` | Get the AIVC history of a specific file. |
 | `read_past_file_content` | Read the content of a file as it was at a specific past memory. |
-| `get_status` | List tracked files with a navigable folder tree. |
-| `search_files` | Lexical search (Keywords or Regex) over current tracked file contents. |
 
 """
 
@@ -295,8 +294,7 @@ async def remember(
 ) -> str:
     """Persist a memory checkpoint in AIVC.
 
-    Call this tool after EVERY meaningful step: task completion, artefact creation,
-    architectural decision, key discovery, or any checkpoint in your work.
+    Must be called whenever progress is made (completed major edit, understood concept/architecture, or user confirmed fact) tied to read_files or edited_files.
     The note should be a rich, detailed Markdown document — your future self will
     read it to recall this moment. All tracked files that have changed since the last
     memory are automatically associated with this memory.
@@ -348,6 +346,8 @@ async def remember(
 @mcp.tool()
 async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: bool = False) -> str:
     """Recall past memories by semantic meaning.
+
+    Must be called whenever user mentions anything fuzzy, an unfamiliar project, concept or context. Never make assumptions—always call recall first to retrieve context.
 
     Uses a Bi-Encoder + Cross-Encoder pipeline to retrieve the most relevant
     memories for a natural-language query. Returns only memory metadata (ID,
@@ -438,46 +438,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
 
     output += "\n\n💡 Use `consult_memory(memory_id)` to read a full note."
     return output
-
-
-@mcp.tool()
-def search_files(
-    query: str, 
-    top_n: int = 5, 
-    is_regex: bool = False,
-    case_sensitive: bool = False
-) -> str:
-    """Search for keywords or regex patterns inside the content of tracked files.
-
-    This tool performs a fast, parallel scan of all currently tracked files on disk.
-    For keyword searches (default), it uses an 'AND' logic: it finds files where ALL
-    provided words are present, regardless of their order or location.
-
-    Args:
-        query: Search terms (e.g. "auth error") or a regex pattern.
-        top_n: Number of results to return (default 5).
-        is_regex: If True, treats query as a regular expression.
-        case_sensitive: If True, search is case sensitive (default False).
-    """
-    results = _get_engine().search_files(
-        query, 
-        top_n=top_n, 
-        is_regex=is_regex, 
-        case_sensitive=case_sensitive
-    )
-
-    if not results:
-        type_str = "regex" if is_regex else "keyword"
-        return f"No matches found for {type_str} query: '{query}'"
-
-    lines = [f"## Search results for: `{query}`\n"]
-    for i, r in enumerate(results, 1):
-        lines.append(
-            f"{i}. `{r['path']}` (score: {r['score']:.1f})\n"
-            f"   > {r['snippet']}"
-        )
-
-    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -783,105 +743,6 @@ def read_past_file_content(file_path: str, memory_id: str, diff_against: str = "
     return historical_content
 
 
-@mcp.tool()
-def get_status(path: str = "") -> str:
-    """List tracked files with storage usage in a navigable folder tree.
-
-    Displays a tree of depth 1 starting from the given path (or root if empty).
-    Shows the number of files and total size for each subfolder.
-
-    Args:
-        path: Optional subdirectory path to explore (e.g. "src/").
-    """
-    import os
-    import getpass
-    from aivc.config import get_storage_root
-    storage_root = get_storage_root(allow_fallback=True)
-    diag_info = f"[AIVC Diag] Storage Root: {storage_root} | User: {getpass.getuser()} | Env Root: {os.environ.get('AIVC_STORAGE_ROOT')}\n"
-
-    # Use get_tracked_paths (fast) + metadata (fast, from memory)
-    tracked_paths = _get_engine().get_tracked_paths()
-    metadata = _get_engine().get_tracked_files_metadata()
-    
-    if not tracked_paths:
-        return diag_info + "No files are currently tracked by AIVC."
-
-    # Determine virtual root for display
-    if path:
-        root_path = str(Path(path).resolve())
-    else:
-        # Find common root to avoid showing /home/lopilo/... hierarchy
-        try:
-            root_path = os.path.commonpath(tracked_paths)
-        except ValueError:
-            root_path = ""
-
-    # {name: {"files": int, "size": int, "is_dir": bool}}
-    tree: dict[str, dict] = {}
-    total_files = 0
-    total_size = 0
-
-    for abs_path in tracked_paths:
-        if root_path and not abs_path.startswith(root_path):
-            continue
-
-        total_files += 1
-        # Retrieve size from in-memory metadata (zero O/S overhead)
-        file_meta = metadata.get(abs_path, {})
-        raw_size = file_meta.get("size", 0) if isinstance(file_meta, dict) else 0
-        size = int(raw_size) if raw_size is not None else 0
-        total_size += size
-
-        # Relative path from our virtual root
-        try:
-            rel_to_root = os.path.relpath(abs_path, root_path) if root_path else abs_path
-        except ValueError:
-            rel_to_root = abs_path
-            
-        if rel_to_root == ".":
-            continue
-
-        # Determine the first component
-        parts = rel_to_root.split(os.sep)
-        if not parts or not parts[0]:
-            continue
-        
-        name = parts[0]
-        # It's a directory if it has more components
-        is_dir = len(parts) > 1
-        
-        if name not in tree:
-            tree[name] = {"files": 0, "size": 0, "is_dir": is_dir}
-        
-        tree[name]["files"] += 1
-        tree[name]["size"] += size
-
-    if not tree and path:
-        return f"No tracked files found under path: `{path}`"
-
-    # Sort: directories first, then files
-    sorted_items = sorted(tree.items(), key=lambda x: (not x[1]["is_dir"], x[0].lower()))
-
-    header_path = path if path else "Root"
-    header = f"📁 **{header_path}** ({total_files} tracked files, {_format_bytes(total_size)})\n"
-
-    tree_lines = []
-    for name, info in sorted_items:
-        prefix = "├── " if name != sorted_items[-1][0] else "└── "
-        if info["is_dir"]:
-            tree_lines.append(f"{prefix}{name}/ ({info['files']} files, {_format_bytes(info['size'])})")
-        else:
-            tree_lines.append(f"{prefix}{name} ({_format_bytes(info['size'])})")
-
-    tree_content = "\n".join(tree_lines)
-    tree_block = f"```text\n{tree_content}\n```" if tree_content else "  (no files)"
-
-    tips = (
-        f"\n💡 **TIP**: Use `get_status(path='dir/name')` to explore subdirectories.\n"
-        f"💡 **NOTE**: Hidden files/folders (starting with '.') are NEVER tracked automatically."
-    )
-
-    return f"{header}{tree_block}\n{tips}"
 
 
 

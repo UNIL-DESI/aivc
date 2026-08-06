@@ -56,7 +56,6 @@ AIVC operates at the boundary of Git-like file tracking and modern vector-based 
 
 - **Memory Recording (`remember`)**: When completing a task, the agent compiles their actions, decisions, and outcomes into a Markdown note. AIVC takes explicit lists of read and edited files to construct bipartite association links.
 - **Semantic Retrieval (`recall`)**: The agent queries past memories with natural language. Under the hood, a local dual-encoder embeds the query, matches notes, and extracts highly relevant context snippets.
-- **Lexical Search Fallback**: Fast lexical searching (`search_files`) leverages pure-Python parallel execution paths whenever `grep` or `xargs` are absent on Windows.
 
 ---
 
@@ -66,7 +65,6 @@ Following extensive porting and performance tuning for native Windows operations
 
 | Operation | Platform | Average Speed | Success Rate | Resource Usage |
 |-----------|----------|---------------|--------------|----------------|
-| **File Search (`search_files`)** | Windows Native | `< 45ms` | `100%` | Single core / ThreadPool |
 | **Memory Creation (`remember`)** | Windows Native | `< 90ms` | `100%` | Zero DB locks / WAL mode |
 | **Semantic Query (`recall`)** | Windows Native | `< 75ms` | `100%` | In-memory indexing |
 | **Comprehensive Test Suite** | Windows Native | `110s` total | `100%` (173/173) | SQLite connection pooling |
@@ -118,7 +116,6 @@ Exposed tools available to LLM assistants when configuring the AIVC MCP server:
 | `get_file_history_metadata`| Read | Retrieve the chronological list of all memories (commits) that modified or consulted a specific file. |
 | `read_past_file_content`| Read | Retrieve the actual text content of a file exactly as it was at the time of a specific past memory. |
 | `get_status` | Read | Explores tracked files, active directory structures, and size allocations. |
-| `search_files` | Read | Parallel search (Keywords/Regex) across active files. Instant native Windows execution. |
 
 ---
 

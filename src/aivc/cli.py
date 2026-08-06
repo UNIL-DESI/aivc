@@ -63,27 +63,6 @@ def _get_engine() -> "SemanticEngine":
 # Commands
 # ---------------------------------------------------------------------------
 
-def cmd_status(args: argparse.Namespace) -> None:
-    engine = _get_engine()
-    statuses = engine.get_status()
-
-    if not statuses:
-        print("No files are currently tracked by AIVC.")
-        return
-
-    header = f"{CYAN}{'File Path':<60} {'Current':>10} {'History':>10}{RESET}"
-    print(header)
-    print("-" * 82)
-    
-    for s in statuses:
-        curr = _format_bytes(s.current_size)
-        hist = _format_bytes(s.history_size)
-        print(f"{s.path:<60} {curr:>10} {hist:>10}")
-        
-    print("-" * 82)
-    print(f"Total tracked: {len(statuses)} file(s)")
-
-
 
 
 def cmd_log(args: argparse.Namespace) -> None:
@@ -143,20 +122,6 @@ def cmd_search(args: argparse.Namespace) -> None:
         print(f"   {DIM}Files:{RESET} {', '.join(r.file_paths) if r.file_paths else '—'}")
         print(f"\n      {r.snippet}\n")
 
-
-def cmd_search_files(args: argparse.Namespace) -> None:
-    """Lexical search (BM25) over current tracked file contents."""
-    engine = _get_engine()
-    print(f"{DIM}Searching file contents for: '{args.query}' (BM25)...{RESET}\n")
-    results = engine.search_files_bm25(args.query, top_n=args.top_n)
-    
-    if not results:
-        print("No matching files found.")
-        return
-
-    for i, r in enumerate(results, 1):
-        print(f"{CYAN}{BOLD}{i}. {r['path']}{RESET} {DIM}(score: {r['score']:.3f}){RESET}")
-        print(f"   {r['snippet']}\n")
 
 def cmd_migrate(args: argparse.Namespace) -> None:
     """Explicitly migrate JSON commits to SQLite index."""
@@ -423,11 +388,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="AIVC — AI Version Control CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # status
-    subparsers.add_parser(
-        "status", 
-        help="List tracked files with a navigable folder tree"
-    )
 
     # migrate
     subparsers.add_parser(
@@ -467,20 +427,6 @@ def main() -> None:
         help="Optional glob pattern to restrict recall to matching files"
     )
 
-    # search-files (BM25)
-    parser_search_files = subparsers.add_parser(
-        "search-files", 
-        help="Lexical search (BM25) in current tracked files"
-    )
-    parser_search_files.add_argument(
-        "query", type=str, 
-        help="Keywords or exact terms to find"
-    )
-    parser_search_files.add_argument(
-        "-n", "--top-n", type=int, default=5, 
-        help="Number of results to return (default: 5)"
-    )
-
     # web
     parser_web = subparsers.add_parser(
         "web",
@@ -516,17 +462,13 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "status":
-        cmd_status(args)
-    elif args.command == "migrate":
+    if args.command == "migrate":
         cmd_migrate(args)
 
     elif args.command in ("memories", "log"):
         cmd_log(args)
     elif args.command in ("recall", "search"):
         cmd_search(args)
-    elif args.command == "search-files":
-        cmd_search_files(args)
     elif args.command == "web":
         cmd_web(args)
     elif args.command == "config":
