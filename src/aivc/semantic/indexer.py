@@ -102,12 +102,18 @@ class Indexer:
     @staticmethod
     def _memory_text(memory: "Memory") -> str:
         """Build the text to be vectorised for a given memory."""
-        return f"{memory.title}\n\n{memory.note}"
+        urls_block = (
+            ("\n\nURLs:\n" + "\n".join(memory.urls))
+            if getattr(memory, "urls", None)
+            else ""
+        )
+        return f"{memory.title}\n\n{memory.note}{urls_block}"
 
     @staticmethod
     def _memory_metadata(memory: "Memory") -> dict:
         """Build the metadata dict stored alongside the vector."""
         file_paths = [c.path for c in memory.changes if c.action != "deleted"]
+        urls = getattr(memory, "urls", [])
         return {
             "memory_id": memory.id,
             "title": memory.title,
@@ -116,6 +122,7 @@ class Indexer:
             # ChromaDB metadata values must be str/int/float/bool.
             # Store file paths as a comma-joined string.
             "file_paths": "\n".join(file_paths),
+            "urls": "\n".join(urls),
         }
 
     # ------------------------------------------------------------------
@@ -229,6 +236,7 @@ class Indexer:
 
         for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
             file_paths_str = meta.get("file_paths", "")
+            urls_str = meta.get("urls", "")
             hits.append(
                 {
                     "memory_id": meta["memory_id"],
@@ -236,6 +244,7 @@ class Indexer:
                     "timestamp": meta["timestamp"],
                     "machine_id": meta.get("machine_id", ""),
                     "file_paths": [p for p in file_paths_str.split("\n") if p],
+                    "urls": [u for u in urls_str.split("\n") if u],
                     "document": doc,
                 }
             )

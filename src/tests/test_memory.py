@@ -110,3 +110,23 @@ def test_memory_from_dict_crashes_on_missing_change_field() -> None:
     del d["changes"][0]["bytes_added"]
     with pytest.raises(ValueError, match="missing fields"):
         memory_from_dict(d)
+
+
+def test_memory_urls_creation_and_roundtrip() -> None:
+    urls = ["https://example.com/spec", "https://arxiv.org/abs/1234.5678"]
+    original = make_memory(urls=urls)
+    assert original.urls == urls
+
+    d = memory_to_dict(original)
+    assert d["urls"] == urls
+
+    restored = memory_from_dict(d)
+    assert restored.urls == urls
+
+
+def test_memory_from_dict_legacy_backwards_compat() -> None:
+    d = memory_to_dict(make_memory())
+    del d["urls"]  # Simulate legacy commit JSON without urls key
+    restored = memory_from_dict(d)
+    assert restored.urls == []
+

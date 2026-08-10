@@ -259,4 +259,27 @@ def test_workspace_init_with_missing_head(tmp_path: Path) -> None:
     
     # 3. Re-instantiate the Workspace. It should auto-repair and set head_commit_id to None
     ws_reloaded = Workspace(storage)
-    assert ws_reloaded._state["head_commit_id"] is None
+    assert ws_reloaded._state["head_commit_id"] is None
+
+
+def test_create_memory_with_urls_only(ws: Workspace) -> None:
+    m = ws.create_memory("URL Note", "Just saving links.", urls=["  https://example.com  ", "https://arxiv.org  "])
+    assert m.urls == ["https://example.com", "https://arxiv.org"]
+    assert m.changes == []
+
+
+def test_create_memory_sanitizes_urls(ws: Workspace) -> None:
+    m = ws.create_memory("URL Note", "Clean links.", urls=["", "   ", "https://valid.com", None])  # type: ignore
+    assert m.urls == ["https://valid.com"]
+
+
+def test_create_memory_read_files_snapshots_blob(tmp_path: Path, ws: Workspace) -> None:
+    f = _write(tmp_path / "doc.txt", b"consulted content")
+    m = ws.create_memory("Consult doc", "Read doc.", read_files=[str(f)])
+    assert len(m.changes) == 1
+    c = m.changes[0]
+    assert c.action == "consulted"
+    assert c.blob_hash is not None
+    # Verify blob is in store
+    assert ws._blob_store.retrieve(c.blob_hash) == b"consulted content"
+

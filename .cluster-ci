@@ -1,0 +1,5 @@
+REQUIRED_RAM=8GB
+REQUIRED_VRAM=0GB
+MAX_RUNTIME_HOURS=24
+STAGES=eval
+DOCKER_FLAGS=-v /var/run/docker.sock:/var/run/docker.sock

@@ -289,8 +289,9 @@ def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_
 async def remember(
     title: str,
     note: str,
-    read_files: list[str] = [],
-    edited_files: list[str] = []
+    read_files: list[str] | None = None,
+    edited_files: list[str] | None = None,
+    urls: list[str] | None = None,
 ) -> str:
     """Persist a memory checkpoint in AIVC.
 
@@ -310,6 +311,7 @@ async def remember(
         edited_files: Optional list of file paths that were modified/created for this task.
                       Files not yet tracked will be auto-tracked if they exist on disk.
                       Directories or untracked non-existent files will raise strict validation errors.
+        urls: Optional list of web URLs or links that were consulted or relevant to this memory.
 
     Returns:
         Confirmation with the memory ID and the list of files that were snapshotted.
@@ -322,6 +324,10 @@ async def remember(
     import asyncio
     from pathlib import Path
 
+    actual_read_files = read_files or []
+    actual_edited_files = edited_files or []
+    actual_urls = urls or []
+
     engine = _get_engine()
 
     # Run the heavy vector encoding and DB insertion synchronously and wait for it
@@ -329,8 +335,9 @@ async def remember(
         engine.create_memory,
         title,
         note,
-        read_files=read_files,
-        edited_files=edited_files
+        read_files=actual_read_files,
+        edited_files=actual_edited_files,
+        urls=actual_urls,
     )
 
     changes_summary_str = _format_changes_compressed(memory.changes, memory.machine_id, memory.id, memory.parent_id)
@@ -509,6 +516,12 @@ def consult_memory(memory_id: str) -> str:
         machine_line = f"**Machine**   : {memory.machine_id} (Distant)\n"
         remote_warning = "> [!WARNING]\n> This memory was created on a remote machine. Historical file contents may not be available.\n\n"
 
+    urls_section = ""
+    memory_urls = getattr(memory, "urls", []) or []
+    if memory_urls:
+        urls_list_str = "\n".join(f"- {url}" for url in memory_urls)
+        urls_section = f"## URLs / Links Consulted\n\n{urls_list_str}\n\n"
+
     return (
         f"# Memory: {memory.title}\n\n"
         f"{remote_warning}"
@@ -518,6 +531,7 @@ def consult_memory(memory_id: str) -> str:
         f"{machine_line}\n"
         f"{context_block}"
         f"## Files Recorded\n\n{changes_summary_str}\n\n"
+        f"{urls_section}"
         f"## Note\n\n{memory.note}"
     )
 

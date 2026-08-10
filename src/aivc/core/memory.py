@@ -83,6 +83,9 @@ class Memory:
     machine_id: str = ""
     """ID of the machine where the memory was created (empty for local/legacy)."""
 
+    urls: list[str] = field(default_factory=list)
+    """List of URLs associated with this memory."""
+
     @classmethod
     def create(
         cls,
@@ -91,6 +94,7 @@ class Memory:
         parent_id: str | None,
         changes: list[FileChange],
         machine_id: str = "",
+        urls: list[str] | None = None,
     ) -> "Memory":
         """Factory: create a new Memory with a fresh UUID and current UTC timestamp."""
         if not title.strip():
@@ -105,6 +109,7 @@ class Memory:
             parent_id=parent_id,
             changes=changes,
             machine_id=machine_id,
+            urls=list(urls) if urls else [],
         )
 
 
@@ -121,6 +126,7 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
         "note": memory.note,
         "parent_id": memory.parent_id,
         "machine_id": memory.machine_id,
+        "urls": list(memory.urls),
         "changes": [
             {
                 "path": c.path,
@@ -170,6 +176,7 @@ def memory_from_dict(data: dict[str, Any]) -> Memory:
         note=data["note"],
         parent_id=data["parent_id"],
         machine_id=data.get("machine_id", ""),  # Default to empty for legacy
+        urls=data.get("urls", []),
         changes=changes,
     )
 

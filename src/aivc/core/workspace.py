@@ -267,6 +267,7 @@ class Workspace:
         edited_files: list[str] | None = None,
         machine_id: str = "",
         consulted_files: list[str] | None = None,
+        urls: list[str] | None = None,
     ) -> Memory:
         """Detect changes in tracked files and create a new memory.
 
@@ -278,6 +279,7 @@ class Workspace:
             edited_files: Optional list of file paths that were modified/created.
             machine_id: ID of the machine where the memory was created.
             consulted_files: Legacy parameter, mapped to read_files.
+            urls: Optional list of web URLs associated with this memory.
 
         Returns:
             The newly created Memory.
@@ -285,9 +287,11 @@ class Workspace:
         Raises:
             ValueError: If any paths in read_files or edited_files are directories
                         or untracked non-existent files.
-            RuntimeError: If no changes are detected and no files were read/edited.
+            RuntimeError: If no changes are detected, no files were read/edited, and no URLs provided.
         """
         self._reload_state_if_needed()
+
+        actual_urls = [u.strip() for u in (urls or []) if isinstance(u, str) and u.strip()]
 
         # Normalize and merge consulted_files into read_files
         actual_read_files = list(read_files) if read_files is not None else []
@@ -333,30 +337,34 @@ class Workspace:
                 if p.is_file() and abs_path not in self._state["tracked_files"]:
                     self._state["tracked_files"][abs_path] = {"hash": None, "mtime": None, "size": None}
 
-            # Handle consulted files (both read_files and non-modified edited_files)
+            # Handle consulted files (read_files / consulted_files)
             consulted_changes = []
-            union_files = set()
+            seen_read_paths = set()
             for path_str in actual_read_files:
-                union_files.add(str(Path(path_str).resolve()))
-            for path_str in actual_edited_files:
-                union_files.add(str(Path(path_str).resolve()))
+                abs_path = str(Path(path_str).resolve())
+                if abs_path in seen_read_paths:
+                    continue
+                seen_read_paths.add(abs_path)
 
-            for abs_path in union_files:
                 # Check if it was already modified/added/deleted in the diff.
                 if any(c.path == abs_path for c in changes):
                     continue
 
-                # Get the last known hash from tracked_files if available
-                last_hash = None
-                tracked_info = self._state["tracked_files"].get(abs_path)
-                if tracked_info:
-                    last_hash = tracked_info.get("hash")
+                # Compute and store blob snapshot in _blob_store if file exists on disk
+                p = Path(abs_path)
+                blob_hash = None
+                if p.is_file():
+                    blob_hash = self._blob_store.store(p.read_bytes())
+                else:
+                    tracked_info = self._state["tracked_files"].get(abs_path)
+                    if tracked_info:
+                        blob_hash = tracked_info.get("hash")
 
                 consulted_changes.append(
                     FileChange(
                         path=abs_path,
                         action="consulted",
-                        blob_hash=last_hash,
+                        blob_hash=blob_hash,
                         bytes_added=0,
                         bytes_removed=0,
                     )
@@ -370,9 +378,9 @@ class Workspace:
             self._purge_file_history(path)
             self._state["tracked_files"].pop(path, None)
 
-        if not changes and not actual_read_files:
+        if not all_changes and not actual_urls:
             raise RuntimeError(
-                "No changes detected in tracked files and no files consulted. "
+                "No changes detected in tracked files, no files consulted, and no URLs provided. "
                 "Nothing to remember."
             )
 
@@ -382,13 +390,14 @@ class Workspace:
             parent_id=self._state["head_commit_id"],
             changes=all_changes,
             machine_id=machine_id,
+            urls=actual_urls,
         )
         self._save_memory(memory)
         self._index.add_memory(memory)
 
         # Update tracked_files with the new hashes and metadata.
-        for change in changes:
-            if change.action != "deleted":
+        for change in all_changes:
+            if change.action != "deleted" and change.blob_hash is not None and Path(change.path).is_file():
                 # Store new hash and capture current disk metadata
                 p = Path(change.path)
                 stat = p.stat()

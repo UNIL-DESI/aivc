@@ -302,6 +302,7 @@ class SemanticEngine:
         read_files: list[str] | None = None,
         edited_files: list[str] | None = None,
         consulted_files: list[str] | None = None,
+        urls: list[str] | None = None,
     ) -> Memory:
         """Create a versioning memory and index it semantically (asynchronously).
 
@@ -316,6 +317,7 @@ class SemanticEngine:
             read_files: Optional list of file paths consulted.
             edited_files: Optional list of file paths modified/created.
             consulted_files: Legacy parameter, mapped to read_files.
+            urls: Optional list of web URLs associated with this memory.
 
         Returns:
             The newly created :class:`~aivc.core.memory.Memory`.
@@ -335,6 +337,7 @@ class SemanticEngine:
             edited_files=edited_files,
             machine_id=machine_id,
             consulted_files=consulted_files,
+            urls=urls,
         )
 
         # Step 2: graph update (SQLite, always fast)

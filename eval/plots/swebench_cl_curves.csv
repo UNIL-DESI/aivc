@@ -1,0 +1,11 @@
+episode_index,instance_id,repo,timestamp,resolved,cumulative_resolved,resolve_rate,cumulative_cost_usd,cumulative_eor,cumulative_mui,cumulative_ccsr
+1,swebench-cl-task-001,python/cpython,2026-08-10T16:46:12.164223+00:00,1,1,1.0,3.6e-05,0.25,0.75,0.9937
+2,swebench-cl-task-002,django/django,2026-08-10T16:46:12.166238+00:00,1,2,1.0,0.000112,0.25,0.75,0.9906
+3,swebench-cl-task-003,scikit-learn/scikit-learn,2026-08-10T16:46:12.167239+00:00,1,3,1.0,0.000229,0.25,0.5625,0.9874
+4,swebench-cl-task-004,astropy/astropy,2026-08-10T16:46:12.167239+00:00,0,3,0.75,0.00039,0.25,0.6094,0.9843
+5,swebench-cl-task-005,sympy/sympy,2026-08-10T16:46:12.168239+00:00,1,4,0.8,0.000599,0.25,0.6375,0.9811
+6,swebench-cl-task-001,python/cpython,2026-08-10T16:47:46.745964+00:00,1,5,0.8333,0.000635,0.25,0.6562,0.9832
+7,swebench-cl-task-002,django/django,2026-08-10T16:47:46.746730+00:00,1,6,0.8571,0.00071,0.25,0.6696,0.9838
+8,swebench-cl-task-003,scikit-learn/scikit-learn,2026-08-10T16:47:46.747251+00:00,1,7,0.875,0.000827,0.25,0.6094,0.9835
+9,swebench-cl-task-004,astropy/astropy,2026-08-10T16:47:46.748263+00:00,0,7,0.7778,0.000989,0.25,0.625,0.9825
+10,swebench-cl-task-005,sympy/sympy,2026-08-10T16:47:46.749262+00:00,1,8,0.8,0.001197,0.25,0.6375,0.9811

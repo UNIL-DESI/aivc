@@ -6,6 +6,7 @@
     <title>AIVC | Dashboard & Vue Keep</title>
     <script src="vendor/cytoscape.min.js"></script>
     <script src="vendor/cytoscape-fcose.js"></script>
+    <script src="vendor/marked.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -609,8 +610,8 @@
         }
 
         .modal-left-col {
-            width: 340px;
-            min-width: 280px;
+            width: 380px;
+            min-width: 300px;
             border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
@@ -629,16 +630,81 @@
             background: #0d1117;
         }
 
+        /* Markdown formatting in modal-note */
         .modal-note {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--border-color);
             border-radius: 10px;
-            padding: 14px;
-            font-size: 13px;
+            padding: 16px;
+            font-size: 14px;
             line-height: 1.6;
-            white-space: pre-wrap;
             margin-bottom: 16px;
             color: var(--text-main);
+            word-break: break-word;
+        }
+
+        .modal-note h1, .modal-note h2, .modal-note h3, .modal-note h4, .modal-note h5, .modal-note h6 {
+            color: #ffffff;
+            margin-top: 16px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .modal-note h1 { font-size: 1.4em; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; }
+        .modal-note h2 { font-size: 1.25em; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; }
+        .modal-note h3 { font-size: 1.1em; }
+        .modal-note p { margin-top: 0; margin-bottom: 10px; }
+        .modal-note p:last-child { margin-bottom: 0; }
+        .modal-note code {
+            background: rgba(110, 118, 129, 0.2);
+            color: #e6edf3;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 85%;
+        }
+        .modal-note pre {
+            background: #0d1117;
+            border: 1px solid var(--border-color);
+            padding: 14px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-top: 8px;
+            margin-bottom: 12px;
+        }
+        .modal-note pre code {
+            background: transparent;
+            padding: 0;
+            font-size: 12px;
+        }
+        .modal-note blockquote {
+            border-left: 3px solid var(--accent);
+            margin: 8px 0;
+            padding: 4px 12px;
+            color: var(--text-muted);
+            background: rgba(88, 166, 255, 0.05);
+            border-radius: 0 6px 6px 0;
+        }
+        .modal-note a {
+            color: var(--accent);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+        .modal-note a:hover {
+            color: #79c0ff;
+        }
+        .modal-note ul, .modal-note ol {
+            padding-left: 22px;
+            margin-top: 6px;
+            margin-bottom: 10px;
+        }
+        .modal-note li {
+            margin-bottom: 4px;
+        }
+        .modal-note hr {
+            height: 1px;
+            background-color: var(--border-color);
+            border: none;
+            margin: 16px 0;
         }
 
         /* File Tree Styling */
@@ -842,7 +908,7 @@
                 min-width: 100%;
                 border-right: none;
                 border-bottom: 1px solid var(--border-color);
-                max-height: 40vh;
+                max-height: 45vh;
             }
             .modal-right-col {
                 width: 100%;
@@ -899,11 +965,11 @@
             <button class="filter-pill" data-filter="consulted">Consultés 👁️</button>
         </div>
         <div id="keep-grid" class="keep-grid">
-            <!-- Keep Cards rendered dynamically -->
+            <!-- File Cards grouped by Unique File Path rendered dynamically -->
         </div>
     </div>
 
-    <!-- Full Detail Modal (2-Column Desktop / Bottom-Sheet Mobile) -->
+    <!-- Full Detail / History Modal (2-Column Desktop / Bottom-Sheet Mobile) -->
     <div id="detail-modal-overlay" class="modal-overlay" style="display: none;">
         <div class="modal-card">
             <div class="modal-header">
@@ -940,21 +1006,6 @@
         function isPdfFile(path) {
             if (!path) return false;
             return path.split('.').pop().toLowerCase() === 'pdf';
-        }
-
-        function getCardThemeClass(m) {
-            const changes = m.changes || [];
-            const actions = changes.map(c => typeof c === 'string' ? 'modified' : c.action);
-            const hasAdded = actions.includes('added') || (m.lines_added && m.lines_added > 0);
-            const hasDeleted = actions.includes('deleted') || (m.lines_removed && m.lines_removed > 0);
-            const hasModified = actions.includes('modified') || m.has_modified;
-            const isConsultedOnly = actions.length > 0 && actions.every(a => a === 'consulted');
-
-            if (isConsultedOnly) return 'theme-consulted';
-            if (hasAdded) return 'theme-added';
-            if (hasModified) return 'theme-modified';
-            if (hasDeleted) return 'theme-deleted';
-            return 'theme-modified';
         }
 
         function buildFileTree(changes) {
@@ -1287,125 +1338,152 @@
                 }
             }
 
+            // Render Keep Grid by Grouping Memories by Unique File Path (filePath)
             function renderKeepGrid() {
                 renderCommitPill();
 
-                let filtered = keepMemories;
+                const fileCardsMap = new Map();
+
+                keepMemories.forEach(m => {
+                    const memId = m.id || m.memory_id;
+                    const timestamp = m.timestamp || '';
+                    const title = m.title || 'Mémoire';
+                    const changes = m.changes || [];
+                    const filePaths = changes.length > 0
+                        ? changes.map(c => typeof c === 'string' ? c : c.path)
+                        : (m.file_paths || []);
+
+                    filePaths.forEach(filePath => {
+                        if (!filePath) return;
+                        if (!fileCardsMap.has(filePath)) {
+                            fileCardsMap.set(filePath, {
+                                filePath: filePath,
+                                fileName: filePath.split('/').pop(),
+                                dirPath: filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '',
+                                memories: [],
+                                commitCount: 0,
+                                hasModified: false,
+                                hasConsulted: false,
+                                linesAdded: 0,
+                                linesRemoved: 0,
+                                lastUpdated: timestamp,
+                                lastCommitTitle: title,
+                                lastCommitId: memId,
+                                latestMediaHash: null
+                            });
+                        }
+
+                        const card = fileCardsMap.get(filePath);
+                        card.memories.push(m);
+                        card.commitCount += 1;
+
+                        const changeObj = changes.find(c => (typeof c === 'string' ? c : c.path) === filePath);
+                        const action = changeObj ? (typeof changeObj === 'string' ? 'modified' : changeObj.action) : (m.has_consulted ? 'consulted' : 'modified');
+                        
+                        if (action === 'consulted') {
+                            card.hasConsulted = true;
+                        } else {
+                            card.hasModified = true;
+                        }
+
+                        if (changeObj && typeof changeObj !== 'string') {
+                            card.linesAdded += changeObj.lines_added || 0;
+                            card.linesRemoved += changeObj.lines_removed || 0;
+                            if (!card.latestMediaHash && changeObj.blob_hash && isImageFile(filePath)) {
+                                card.latestMediaHash = changeObj.blob_hash;
+                            }
+                        }
+
+                        if (timestamp > card.lastUpdated) {
+                            card.lastUpdated = timestamp;
+                            card.lastCommitTitle = title;
+                            card.lastCommitId = memId;
+                        }
+                    });
+                });
+
+                let fileCards = Array.from(fileCardsMap.values());
+
+                // Sort by last updated descending
+                fileCards.sort((a, b) => (b.lastUpdated || '').localeCompare(a.lastUpdated || ''));
 
                 // Tab Filter
                 if (activeKeepFilter === 'modified') {
-                    filtered = filtered.filter(m => m.has_modified || (m.changes && m.changes.some(c => (typeof c === 'string' ? 'modified' : c.action) !== 'consulted')));
+                    fileCards = fileCards.filter(c => c.hasModified);
                 } else if (activeKeepFilter === 'consulted') {
-                    filtered = filtered.filter(m => m.has_consulted || (m.changes && m.changes.some(c => (typeof c === 'string' ? 'modified' : c.action) === 'consulted')));
+                    fileCards = fileCards.filter(c => c.hasConsulted && !c.hasModified);
                 }
 
-                // Commit Hash Filter
+                // Commit Filter
                 if (activeCommitFilter) {
-                    const targetMem = keepMemories.find(m => (m.id || m.memory_id) === activeCommitFilter.id);
-                    const targetPaths = targetMem ? (targetMem.changes || []).map(c => typeof c === 'string' ? c : c.path) : [];
-
-                    filtered = filtered.filter(m => {
-                        const mId = m.id || m.memory_id;
-                        if (mId === activeCommitFilter.id) return true;
-                        const mPaths = (m.changes || []).map(c => typeof c === 'string' ? c : c.path);
-                        return mPaths.some(p => targetPaths.includes(p));
-                    });
+                    fileCards = fileCards.filter(c => c.memories.some(m => (m.id || m.memory_id) === activeCommitFilter.id));
                 }
 
-                if (filtered.length === 0) {
-                    keepGrid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 40px 0;">Aucune mémoire trouvée pour ce filtre.</div>`;
+                if (fileCards.length === 0) {
+                    keepGrid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 40px 0;">Aucun fichier trouvé pour ce filtre.</div>`;
                     return;
                 }
 
-                keepGrid.innerHTML = filtered.map(m => {
-                    const id = m.id || m.memory_id;
-                    const dateStr = (m.timestamp || '').substring(0, 10);
-                    const shortId = id ? id.substring(0, 8) : '';
-                    const snippet = m.snippet || m.note || '';
-                    const themeClass = getCardThemeClass(m);
+                keepGrid.innerHTML = fileCards.map(c => {
+                    const dateStr = (c.lastUpdated || '').substring(0, 10);
+                    let statusBadge = '';
+                    let themeClass = 'theme-modified';
 
-                    // Find media blob if any
-                    let mediaHash = null;
-                    if (m.changes) {
-                        const mediaChange = m.changes.find(c => typeof c !== 'string' && isImageFile(c.path) && c.blob_hash);
-                        if (mediaChange) mediaHash = mediaChange.blob_hash;
+                    if (c.hasModified && c.hasConsulted) {
+                        statusBadge = `<span class="badge badge-add">✏️ Modifié</span> <span class="badge badge-view">👁️ Consulté</span>`;
+                        themeClass = 'theme-modified';
+                    } else if (c.hasModified) {
+                        statusBadge = `<span class="badge badge-add">✏️ Modifié</span>`;
+                        themeClass = 'theme-modified';
+                    } else {
+                        statusBadge = `<span class="badge badge-view">👁️ Consulté</span>`;
+                        themeClass = 'theme-consulted';
                     }
 
-                    const added = m.lines_added || 0;
-                    const removed = m.lines_removed || 0;
-                    const consultedCount = m.changes ? m.changes.filter(c => (typeof c === 'string' ? 'modified' : c.action) === 'consulted').length : 0;
-                    const primaryPath = m.changes && m.changes[0] ? (typeof m.changes[0] === 'string' ? m.changes[0] : m.changes[0].path) : null;
-
                     return `
-                        <div class="keep-card ${themeClass}" data-memory-id="${id}" data-primary-path="${escapeHtml(primaryPath || '')}">
+                        <div class="keep-card ${themeClass}" data-file-path="${escapeHtml(c.filePath)}">
                             <div>
                                 <div class="keep-card-header">
-                                    <h3 class="keep-card-title">${escapeHtml(m.title || 'Mémoire')}</h3>
-                                    <span class="keep-card-id">${shortId}</span>
+                                    <h3 class="keep-card-title">📄 ${escapeHtml(c.fileName)}</h3>
+                                    <span class="keep-card-id">${escapeHtml(c.dirPath || '/')}</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; word-break: break-all;">
+                                    ${escapeHtml(c.filePath)}
                                 </div>
                                 <div class="keep-card-meta">
                                     <span>📅 ${dateStr}</span>
-                                    <button class="commit-btn" data-commit-id="${id}" data-commit-hash="${shortId}" title="Filtrer par les fichiers de ce commit">
-                                        🔖 Dernier commit: #${shortId}
-                                    </button>
+                                    <span class="commit-btn" style="cursor:default;" title="Nombre de révisions dans la mémoire">
+                                        🔖 ${c.commitCount} révision(s)
+                                    </span>
                                 </div>
-                                ${mediaHash ? `<img src="/api/blob/${mediaHash}" class="keep-media-thumb" loading="lazy" alt="Aperçu média" />` : ''}
-                                <div class="keep-card-snippet">${escapeHtml(snippet)}</div>
+                                ${c.latestMediaHash ? `<img src="/api/blob/${c.latestMediaHash}" class="keep-media-thumb" loading="lazy" alt="Aperçu média" />` : ''}
+                                <div class="keep-card-snippet" style="font-style: italic; color: var(--text-muted);">
+                                    Dernier commit : "${escapeHtml(c.lastCommitTitle)}"
+                                </div>
                             </div>
                             <div class="keep-card-badges">
-                                ${added > 0 ? `<span class="badge badge-add">+${added}</span>` : ''}
-                                ${removed > 0 ? `<span class="badge badge-del">-${removed}</span>` : ''}
-                                ${consultedCount > 0 ? `<span class="badge badge-view">👁 ${consultedCount}</span>` : ''}
-                                ${(m.changes || []).slice(0, 3).map(c => {
-                                    const cPath = typeof c === 'string' ? c : c.path;
-                                    return `<span class="badge badge-file" data-file-path="${escapeHtml(cPath)}" title="Historique de ${escapeHtml(cPath)}">${escapeHtml(cPath.split('/').pop())}</span>`;
-                                }).join('')}
-                                <button class="detail-btn" data-detail-id="${id}" title="Ouvrir les détails et arborescence">Détails 🔍</button>
+                                ${statusBadge}
+                                ${c.linesAdded > 0 ? `<span class="badge badge-add">+${c.linesAdded}</span>` : ''}
+                                ${c.linesRemoved > 0 ? `<span class="badge badge-del">-${c.linesRemoved}</span>` : ''}
+                                <button class="detail-btn history-btn" data-file-path="${escapeHtml(c.filePath)}" title="Voir l'historique des révisions">Historique 📜</button>
                             </div>
                         </div>
                     `;
                 }).join('');
 
-                // Bind Keep Card Actions
-                document.querySelectorAll('.keep-card').forEach(card => {
-                    // Clicking card body -> opens File History for primary file
-                    card.addEventListener('click', (e) => {
-                        const primaryPath = card.getAttribute('data-primary-path');
-                        if (primaryPath) {
-                            openFileHistoryModal(primaryPath);
-                        } else {
-                            const memoryId = card.getAttribute('data-memory-id');
-                            openDetailModal(memoryId);
-                        }
-                    });
-                });
-
-                // Bind Commit Filter Button Clicks
-                document.querySelectorAll('.commit-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        e.stopPropagation(); // prevent triggering card click
-                        const commitId = btn.getAttribute('data-commit-id');
-                        const commitHash = btn.getAttribute('data-commit-hash');
-                        activeCommitFilter = { id: commitId, hash: commitHash };
-                        renderKeepGrid();
-                    });
-                });
-
-                // Bind File Badge Clicks (Opens File History)
-                document.querySelectorAll('.badge-file').forEach(badge => {
-                    badge.addEventListener('click', (e) => {
-                        e.stopPropagation(); // prevent triggering card click
-                        const filePath = badge.getAttribute('data-file-path');
+                // Bind File Card Click -> Open File History Modal
+                document.querySelectorAll('#keep-grid .keep-card').forEach(card => {
+                    card.addEventListener('click', () => {
+                        const filePath = card.getAttribute('data-file-path');
                         if (filePath) openFileHistoryModal(filePath);
                     });
                 });
 
-                // Bind Detail Button Clicks
-                document.querySelectorAll('.detail-btn').forEach(btn => {
+                document.querySelectorAll('#keep-grid .history-btn').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const memId = btn.getAttribute('data-detail-id');
-                        openDetailModal(memId);
+                        const filePath = btn.getAttribute('data-file-path');
+                        if (filePath) openFileHistoryModal(filePath);
                     });
                 });
             }
@@ -1563,7 +1641,7 @@
 
                     if (memory.error) {
                         modalTitle.innerText = 'Erreur';
-                        modalLeftCol.innerHTML = `<p style="color: var(--del-color);">${memory.error}</p>`;
+                        modalLeftCol.innerHTML = `<p style="color: var(--del-color);">${escapeHtml(memory.error)}</p>`;
                         return;
                     }
 
@@ -1580,18 +1658,60 @@
                         });
                     }
 
-                    // Build Left Column: Metadata + Tree View
+                    // Render Markdown Note via marked.parse
+                    const noteHtml = (window.marked && typeof window.marked.parse === 'function')
+                        ? window.marked.parse(memory.note || 'Aucune note associée.')
+                        : escapeHtml(memory.note || 'Aucune note associée.');
+
+                    // Extract URLs list (memory.urls or regex from note)
+                    const rawUrls = memory.urls || [];
+                    const extractedUrls = (memory.note || '').match(/https?:\/\/[^\s\)\>]+/g) || [];
+                    const uniqueUrls = Array.from(new Set([...rawUrls, ...extractedUrls]));
+
+                    let urlsHtml = '';
+                    if (uniqueUrls.length > 0) {
+                        urlsHtml = `
+                            <div style="margin-top: 12px; margin-bottom: 16px;">
+                                <h3 class="modal-section-title">🌐 Sources & URLs (${uniqueUrls.length})</h3>
+                                <div style="display: flex; flex-direction: column; gap: 4px; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+                                    ${uniqueUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent); font-size: 12px; word-break: break-all;">🔗 ${escapeHtml(u)}</a>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // Build Left Column: Note + URLs + File Chips + Tree View
                     const changes = memory.changes || [];
                     const treeRoot = buildFileTree(changes);
                     const treeHtml = renderTreeNodes(treeRoot);
 
+                    const fileChipsHtml = changes.map(c => {
+                        const path = typeof c === 'string' ? c : c.path;
+                        const name = path.split('/').pop();
+                        return `<span class="badge badge-file" data-file-chip="${escapeHtml(path)}" title="${escapeHtml(path)}">📄 ${escapeHtml(name)}</span>`;
+                    }).join(' ');
+
                     modalLeftCol.innerHTML = `
-                        <div class="modal-note">${escapeHtml(memory.note || 'Aucune note associée.')}</div>
-                        <h3 class="modal-section-title">Fichiers touchés (${changes.length})</h3>
+                        <div class="modal-note">${noteHtml}</div>
+                        ${urlsHtml}
+                        <div style="margin-bottom: 12px;">
+                            <h3 class="modal-section-title">Fichiers touchés (${changes.length})</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;">
+                                ${fileChipsHtml}
+                            </div>
+                        </div>
                         <div class="tree-container">
                             ${treeHtml || '<div style="color: var(--text-muted);">Aucun fichier.</div>'}
                         </div>
                     `;
+
+                    // Bind file chips clicks to select file in right column
+                    modalLeftCol.querySelectorAll('.badge-file[data-file-chip]').forEach(chip => {
+                        chip.addEventListener('click', () => {
+                            const chipPath = chip.getAttribute('data-file-chip');
+                            if (chipPath) selectFile(chipPath);
+                        });
+                    });
 
                     // Handle File Selection in Tree View
                     const fileItems = modalLeftCol.querySelectorAll('.tree-file-item');

@@ -2,8 +2,8 @@
 Tests for the Dashboard API.
 """
 
-from unittest.mock import MagicMock
-from aivc.web.dashboard import DashboardHandler
+from unittest.mock import MagicMock, patch
+from aivc.web.dashboard import DashboardHandler, DashboardServer, is_client_disconnect_exception
 
 
 def test_dashboard_api_graph():
@@ -159,4 +159,56 @@ def test_dashboard_api_diff():
     assert res["lines_added"] == 1
     assert res["lines_removed"] == 1
     assert "+line2_modified" in res["diff"]
+
+
+def test_is_client_disconnect_exception():
+    assert is_client_disconnect_exception(ConnectionAbortedError(10053, "WinError 10053")) is True
+    assert is_client_disconnect_exception(ConnectionResetError()) is True
+    assert is_client_disconnect_exception(BrokenPipeError()) is True
+    assert is_client_disconnect_exception(OSError(10053, "Connection aborted")) is True
+    assert is_client_disconnect_exception(ValueError("Unrelated error")) is False
+    assert is_client_disconnect_exception(None) is False
+
+
+def test_dashboard_server_handle_error_suppresses_disconnect():
+    server = MagicMock(spec=DashboardServer)
+    server.handle_error = DashboardServer.handle_error.__get__(server, DashboardServer)
+
+    # Disconnect error should be caught and suppressed (no exception raised, returns None)
+    err = ConnectionAbortedError(10053, "WinError 10053")
+    with patch("sys.exc_info", return_value=(ConnectionAbortedError, err, None)):
+        server.handle_error(None, ("127.0.0.1", 12345))
+
+    # Generic error should call super().handle_error
+    err_val = ValueError("Unexpected error")
+    with patch("sys.exc_info", return_value=(ValueError, err_val, None)):
+        with patch("http.server.HTTPServer.handle_error") as mock_super_handle_error:
+            server.handle_error(None, ("127.0.0.1", 12345))
+            mock_super_handle_error.assert_called_once_with(None, ("127.0.0.1", 12345))
+
+
+def test_dashboard_handler_disconnect_handling():
+    handler = DashboardHandler.__new__(DashboardHandler)
+    handler.close_connection = False
+
+    # Test send_json disconnect suppression
+    handler.send_response = MagicMock(side_effect=ConnectionAbortedError(10053, "WinError 10053"))
+    handler.send_json({"data": 1})  # should not raise
+
+    # Test copyfile disconnect suppression
+    with patch("http.server.SimpleHTTPRequestHandler.copyfile", side_effect=ConnectionAbortedError(10053, "WinError 10053")):
+        handler.copyfile(MagicMock(), MagicMock())  # should not raise
+
+    # Test do_GET disconnect setting close_connection
+    with patch("http.server.SimpleHTTPRequestHandler.do_GET", side_effect=ConnectionAbortedError(10053, "WinError 10053")):
+        handler.path = "/index.html"
+        handler.do_GET()
+        assert handler.close_connection is True
+
+    # Test handle_one_request disconnect setting close_connection
+    handler.close_connection = False
+    with patch("http.server.SimpleHTTPRequestHandler.handle_one_request", side_effect=ConnectionResetError()):
+        handler.handle_one_request()
+        assert handler.close_connection is True
+
 

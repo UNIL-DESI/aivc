@@ -13,6 +13,35 @@ from urllib.parse import parse_qs, urlparse
 from aivc.semantic.engine import SemanticEngine
 
 
+def is_client_disconnect_exception(exc: Exception | None) -> bool:
+    """Check if an exception is caused by a client socket disconnect/abort."""
+    if exc is None:
+        return False
+    if isinstance(exc, (ConnectionError, BrokenPipeError)):
+        return True
+    if isinstance(exc, OSError):
+        winerror = getattr(exc, "winerror", None)
+        errno = getattr(exc, "errno", None)
+        if winerror in (10053, 10054, 10038, 10061) or errno in (32, 104, 10053, 10054, 10038):
+            return True
+        err_msg = str(exc).lower()
+        if any(msg in err_msg for msg in ("10053", "10054", "broken pipe", "connection aborted", "connection reset")):
+            return True
+    return False
+
+
+class DashboardServer(HTTPServer):
+    """Custom HTTPServer that silently handles client disconnect errors."""
+
+    def handle_error(self, request, client_address):
+        exctype, value, tb = sys.exc_info()
+        if value and is_client_disconnect_exception(value):
+            return
+        if exctype and issubclass(exctype, (ConnectionError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class DashboardHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, engine=None, **kwargs):
         self.engine = engine
@@ -20,68 +49,98 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         static_dir = Path(__file__).parent / "static"
         super().__init__(*args, directory=str(static_dir), **kwargs)
 
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            if is_client_disconnect_exception(e):
+                self.close_connection = True
+            else:
+                raise
+
+    def copyfile(self, infile, outfile):
+        try:
+            super().copyfile(infile, outfile)
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            if is_client_disconnect_exception(e):
+                pass
+            else:
+                raise
+
     def do_HEAD(self):
-        parsed = urlparse(self.path)
-        
-        if (
-            parsed.path in ("/api/graph", "/api/search", "/api/log", "/api/diff")
-            or parsed.path.startswith("/api/blob/")
-            or parsed.path.startswith("/api/memory/")
-        ):
-            self.send_response(200)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            return
+        try:
+            parsed = urlparse(self.path)
             
-        super().do_HEAD()
+            if (
+                parsed.path in ("/api/graph", "/api/search", "/api/log", "/api/diff")
+                or parsed.path.startswith("/api/blob/")
+                or parsed.path.startswith("/api/memory/")
+            ):
+                self.send_response(200)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                return
+                
+            super().do_HEAD()
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            if is_client_disconnect_exception(e):
+                self.close_connection = True
+            else:
+                raise
 
     def do_GET(self):
-        parsed = urlparse(self.path)
-        
-        if parsed.path == "/api/graph":
-            self.send_json(self._api_graph())
-            return
+        try:
+            parsed = urlparse(self.path)
             
-        if parsed.path == "/api/search":
-            qs = parse_qs(parsed.query)
-            query = qs.get("q", [""])[0]
-            self.send_json(self._api_search(query))
-            return
+            if parsed.path == "/api/graph":
+                self.send_json(self._api_graph())
+                return
+                
+            if parsed.path == "/api/search":
+                qs = parse_qs(parsed.query)
+                query = qs.get("q", [""])[0]
+                self.send_json(self._api_search(query))
+                return
 
-        if parsed.path == "/api/log":
-            qs = parse_qs(parsed.query)
-            offset = int(qs.get("offset", ["0"])[0])
-            limit = int(qs.get("limit", ["10"])[0])
-            self.send_json(self._api_log(offset=offset, limit=limit))
-            return
+            if parsed.path == "/api/log":
+                qs = parse_qs(parsed.query)
+                offset = int(qs.get("offset", ["0"])[0])
+                limit = int(qs.get("limit", ["10"])[0])
+                self.send_json(self._api_log(offset=offset, limit=limit))
+                return
 
-        if parsed.path == "/api/diff":
-            qs = parse_qs(parsed.query)
-            memory_id = qs.get("memory_id", [""])[0]
-            file_path = qs.get("path", [""])[0]
-            self.send_json(self._get_file_diff_and_stats(memory_id, file_path))
-            return
+            if parsed.path == "/api/diff":
+                qs = parse_qs(parsed.query)
+                memory_id = qs.get("memory_id", [""])[0]
+                file_path = qs.get("path", [""])[0]
+                self.send_json(self._get_file_diff_and_stats(memory_id, file_path))
+                return
 
-        if parsed.path.startswith("/api/blob/"):
-            blob_hash = parsed.path[len("/api/blob/"):]
-            self._serve_blob(blob_hash)
-            return
+            if parsed.path.startswith("/api/blob/"):
+                blob_hash = parsed.path[len("/api/blob/"):]
+                self._serve_blob(blob_hash)
+                return
 
-        if parsed.path.startswith("/api/memory/"):
-            memory_id = parsed.path[len("/api/memory/"):]
-            self.send_json(self._api_memory(memory_id))
-            return
+            if parsed.path.startswith("/api/memory/"):
+                memory_id = parsed.path[len("/api/memory/"):]
+                self.send_json(self._api_memory(memory_id))
+                return
 
-        if parsed.path.startswith("/api/file-history/"):
-            import urllib.parse
-            # The path might be url-encoded (e.g. spaces, slashes)
-            file_path = urllib.parse.unquote(parsed.path[len("/api/file-history/"):])
-            self.send_json(self._api_file_history(file_path))
-            return
-            
-        # Default behavior: serve static files
-        super().do_GET()
+            if parsed.path.startswith("/api/file-history/"):
+                import urllib.parse
+                # The path might be url-encoded (e.g. spaces, slashes)
+                file_path = urllib.parse.unquote(parsed.path[len("/api/file-history/"):])
+                self.send_json(self._api_file_history(file_path))
+                return
+                
+            # Default behavior: serve static files
+            super().do_GET()
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            if is_client_disconnect_exception(e):
+                self.close_connection = True
+            else:
+                raise
 
     def send_json(self, data: dict | list, status: int = 200):
         content = json.dumps(data).encode("utf-8")
@@ -92,9 +151,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
-        except (ConnectionResetError, BrokenPipeError):
-            # Client disconnected prematurely, harmless.
-            pass
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            if is_client_disconnect_exception(e):
+                pass
+            else:
+                raise
 
     def _serve_blob(self, blob_hash: str):
         """Serve raw binary or document blob with automatic MIME detection."""
@@ -125,8 +186,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
-        except (ConnectionResetError, BrokenPipeError):
-            pass
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            if is_client_disconnect_exception(e):
+                pass
+            else:
+                raise
 
     def _compute_change_line_stats(self, memory, change) -> tuple[int, int]:
         """Compute lines added and removed for a specific FileChange."""
@@ -213,6 +277,49 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             action = getattr(change, "action", "modified")
             path = getattr(change, "path", file_path)
             blob_hash = getattr(change, "blob_hash", None)
+
+        if action == "consulted":
+            content = None
+            is_binary = False
+            if blob_hash:
+                try:
+                    raw = self.engine._workspace._blob_store.retrieve(blob_hash)
+                    if b"\x00" in raw[:4096]:
+                        is_binary = True
+                    else:
+                        content = raw.decode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+
+            if content is None and not is_binary:
+                try:
+                    p = Path(path)
+                    if p.exists() and p.is_file():
+                        raw = p.read_bytes()
+                        if b"\x00" in raw[:4096]:
+                            is_binary = True
+                        else:
+                            content = raw.decode("utf-8", errors="ignore")
+                except (FileNotFoundError, OSError, PermissionError):
+                    content = None
+
+            if is_binary:
+                diff_text = "[Fichier binaire ou média]"
+            elif content is not None:
+                diff_text = content
+            else:
+                diff_text = "[Fichier non disponible]"
+
+            return {
+                "memory_id": memory_id,
+                "path": path,
+                "action": action,
+                "blob_hash": blob_hash,
+                "is_binary": is_binary,
+                "lines_added": 0,
+                "lines_removed": 0,
+                "diff": diff_text,
+            }
 
         old_text = ""
         new_text = ""
@@ -341,6 +448,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 "snippet": r.snippet,
                 "file_paths": r.file_paths,
                 "note": mem.note if mem else "",
+                "urls": getattr(mem, "urls", []) if mem else [],
                 "parent_id": getattr(mem, "parent_id", None) if mem else None,
                 "lines_added": total_added,
                 "lines_removed": total_removed,
@@ -402,6 +510,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             "title": getattr(memory, "title", ""),
             "timestamp": getattr(memory, "timestamp", ""),
             "note": getattr(memory, "note", ""),
+            "urls": getattr(memory, "urls", []),
             "parent_id": getattr(memory, "parent_id", None),
             "total_lines_added": total_added,
             "total_lines_removed": total_removed,
@@ -454,6 +563,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 "title": getattr(c, "title", ""),
                 "timestamp": getattr(c, "timestamp", ""),
                 "note": getattr(c, "note", ""),
+                "urls": getattr(c, "urls", []),
                 "parent_id": getattr(c, "parent_id", None),
                 "file_count": len(changes),
                 "lines_added": total_added,
@@ -491,7 +601,7 @@ def main():
     server = None
     for p in range(args.port, args.port + 20):
         try:
-            server = HTTPServer(("0.0.0.0", p), handler_factory)
+            server = DashboardServer(("0.0.0.0", p), handler_factory)
             port = p
             break
         except OSError as e:
