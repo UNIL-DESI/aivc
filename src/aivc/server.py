@@ -552,8 +552,11 @@ def get_recent_memories(limit: int = 10, offset: int = 0, only_local: bool = Fal
     """
     limit = min(limit, 50)
 
-    # get_log fetches `offset + limit` memories and then slices.
-    all_recent = _get_engine().get_log(limit=offset + limit)
+    all_recent = _get_engine().get_log(
+        limit=offset + limit,
+        include_remote=not only_local,
+        only_local=only_local,
+    )
     
     if only_local:
         all_recent = [m for m in all_recent if m.machine_id == _local_machine_id]
@@ -791,8 +794,7 @@ if __name__ == "__main__":
     def _on_sync_pull():
         try:
             _get_engine().migrate_index()
-            # Safely set warmed_up to False to trigger a synchronous warmup on the next user query
-            _get_engine()._warmed_up = False
+            _get_engine().warmup_async()
         except Exception as e:
             import sys
             print(f"Error during sync post-processing: {e}", file=sys.stderr)

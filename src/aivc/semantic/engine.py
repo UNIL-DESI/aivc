@@ -255,6 +255,13 @@ class SemanticEngine:
             
             self._warmed_up = True
 
+    def warmup_async(self) -> None:
+        """Trigger background vector indexing of missing memories in a daemon thread."""
+        self._warmed_up = False
+        thread = threading.Thread(target=self.warmup, daemon=True, name="AIVC-SyncWarmup")
+        thread.start()
+
+
 
     # ------------------------------------------------------------------
     # Lazy properties for heavy ML components
@@ -468,9 +475,20 @@ class SemanticEngine:
         return self._workspace.get_tracked_paths()
 
 
-    def get_log(self, limit: int = 20, offset: int = 0) -> list[Memory]:
+    def get_log(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        include_remote: bool = True,
+        only_local: bool = False,
+    ) -> list[Memory]:
         """Return up to *limit* memories in reverse chronological order."""
-        return self._workspace.get_log(limit, offset)
+        return self._workspace.get_log(
+            limit=limit,
+            offset=offset,
+            include_remote=include_remote,
+            only_local=only_local,
+        )
 
     def get_file_history(self, file_path: str) -> list[dict]:
         """Return memories that touched *file_path* with metadata.

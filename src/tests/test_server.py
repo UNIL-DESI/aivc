@@ -118,14 +118,14 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
         _mock_engine.create_memory.return_value = _make_memory()
         _mock_engine.get_tracked_paths.return_value = []
         await _remember("T", "N")
-        _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=[], edited_files=[])
+        _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=[], edited_files=[], urls=[])
 
     async def test_delegates_to_engine_with_consulted(self):
         from pathlib import Path
         _mock_engine.create_memory.return_value = _make_memory()
         _mock_engine.get_tracked_paths.return_value = [str(Path("f1.py").resolve())]
         await _remember("T", "N", read_files=["f1.py"])
-        _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=["f1.py"], edited_files=[])
+        _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=["f1.py"], edited_files=[], urls=[])
 
     async def test_remember_validation_errors(self):
         _mock_engine.create_memory.side_effect = ValueError("Validation error")
@@ -333,7 +333,7 @@ class TestGetRecentMemories(unittest.TestCase):
         _mock_engine.get_log.return_value = []
         _get_recent_memories(limit=200)
         # Must request offset+50 at most
-        _mock_engine.get_log.assert_called_once_with(limit=50)
+        _mock_engine.get_log.assert_called_once_with(limit=50, include_remote=True, only_local=False)
 
 
 class TestGetFileHistoryMetadata(unittest.TestCase):

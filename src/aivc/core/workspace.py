@@ -20,6 +20,7 @@ from aivc.core.blob_store import BlobStore
 from aivc.core.memory import Memory, FileChange, memory_from_dict, memory_to_dict
 from aivc.core.diff import compute_diff
 from aivc.core.index import CoreIndex
+from aivc.config import get_machine_id
 
 
 @dataclass
@@ -472,29 +473,34 @@ class Workspace:
         """
         return self._load_memory(memory_id)
 
-    def get_log(self, limit: int = 20, offset: int = 0) -> list[Memory]:
+    def get_log(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        include_remote: bool = True,
+        only_local: bool = False,
+    ) -> list[Memory]:
         """Return up to `limit` memories in reverse chronological order.
 
-        Traverses the memory chain via parent_id starting from HEAD.
-        Skips the first `offset` memories for pagination support.
+        Uses CoreIndex for fast ordering and machine_id filtering across local
+        and remote memories.
         """
         self._reload_state_if_needed()
+        self._index.migrate_from_json(self._commits_dir)
+
+        local_m_id = get_machine_id() if (only_local or not include_remote) else None
+        commit_ids = self._index.get_recent_commits(
+            limit=limit, offset=offset, only_local_machine_id=local_m_id
+        )
+
         memories: list[Memory] = []
-        current_id = self._state["head_commit_id"]
-        skipped = 0
-        while current_id is not None and len(memories) < limit:
+        for cid in commit_ids:
             try:
-                memory = self._load_memory(current_id)
+                memories.append(self._load_memory(cid))
             except KeyError:
                 sys.stderr.write(
-                    f"Warning: Commit chain broken. Commit {current_id!r} not found.\n"
+                    f"Warning: Commit {cid!r} present in index but not found on disk.\n"
                 )
-                break
-            if skipped < offset:
-                skipped += 1
-            else:
-                memories.append(memory)
-            current_id = memory.parent_id
         return memories
 
     def find_child_memory(self, memory_id: str) -> Memory | None:

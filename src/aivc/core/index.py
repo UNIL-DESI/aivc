@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS commits (
     commit_id  TEXT PRIMARY KEY,
     parent_id  TEXT,
     timestamp  TEXT NOT NULL,
-    title      TEXT NOT NULL
+    title      TEXT NOT NULL,
+    machine_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_commits_parent ON commits(parent_id);
@@ -60,6 +61,10 @@ class CoreIndex:
         self._conn.execute("PRAGMA journal_mode=WAL;")
         self._conn.execute("PRAGMA foreign_keys=ON;")
         self._conn.executescript(_SCHEMA)
+        try:
+            self._conn.execute("ALTER TABLE commits ADD COLUMN machine_id TEXT")
+        except Exception:
+            pass
         self._conn.commit()
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
@@ -71,8 +76,8 @@ class CoreIndex:
         Idempotent: uses INSERT OR REPLACE.
         """
         self._execute(
-            "INSERT OR REPLACE INTO commits (commit_id, parent_id, timestamp, title) VALUES (?, ?, ?, ?)",
-            (memory.id, memory.parent_id, memory.timestamp, memory.title),
+            "INSERT OR REPLACE INTO commits (commit_id, parent_id, timestamp, title, machine_id) VALUES (?, ?, ?, ?, ?)",
+            (memory.id, memory.parent_id, memory.timestamp, memory.title, getattr(memory, "machine_id", "")),
         )
 
         for fc in memory.changes:
@@ -82,6 +87,31 @@ class CoreIndex:
                 (memory.id, fc.path, fc.action, fc.blob_hash, fc.bytes_added, fc.bytes_removed),
             )
         self._conn.commit()
+
+    def get_recent_commits(
+        self, limit: int = 20, offset: int = 0, only_local_machine_id: str | None = None
+    ) -> list[str]:
+        """Return commit IDs in reverse chronological order.
+
+        Args:
+            limit: Maximum number of commit IDs to return.
+            offset: Number of commit IDs to skip.
+            only_local_machine_id: If provided, filter to commits matching this machine_id, NULL, or empty.
+
+        Returns:
+            List of commit_id strings.
+        """
+        if only_local_machine_id is not None:
+            rows = self._execute(
+                "SELECT commit_id FROM commits WHERE machine_id = ? OR machine_id IS NULL OR machine_id = '' ORDER BY timestamp DESC, commit_id DESC LIMIT ? OFFSET ?",
+                (only_local_machine_id, limit, offset),
+            ).fetchall()
+        else:
+            rows = self._execute(
+                "SELECT commit_id FROM commits ORDER BY timestamp DESC, commit_id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        return [r[0] for r in rows]
 
     def remove_file_changes(self, file_path: str) -> None:
         """Remove all file_change entries for a specific path (used for untrack)."""

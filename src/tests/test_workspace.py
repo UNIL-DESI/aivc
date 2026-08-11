@@ -237,9 +237,9 @@ def test_get_log_with_broken_chain(tmp_path: Path, ws: Workspace) -> None:
     assert m2_file.exists()
     m2_file.unlink()
 
-    # 3. get_log() should only return m3 (recent commits before the break) without KeyError
+    # 3. get_log() should return all available commit files (m3 and m1) without KeyError when intermediate m2 is missing
     broken_log = ws.get_log()
-    assert [m.id for m in broken_log] == [m3.id]
+    assert [m.id for m in broken_log] == [m3.id, m1.id]
 
 
 def test_workspace_init_with_missing_head(tmp_path: Path) -> None:
