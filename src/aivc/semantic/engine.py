@@ -13,6 +13,7 @@ Lazy Loading: The Indexer (ChromaDB + SentenceTransformer) and Searcher
 for CLI-style invocations that only need Workspace or Graph features.
 """
 
+import logging
 import threading
 import queue
 import time
@@ -27,6 +28,8 @@ from aivc.core.workspace import FileStatus, Workspace
 from aivc.semantic.graph import CooccurrenceGraph
 from aivc.config import get_machine_id
 from aivc.sync.drive import NativeDriveSyncManager
+
+logger = logging.getLogger(__name__)
 
 
 class SemanticEngine:
@@ -91,14 +94,10 @@ class SemanticEngine:
                 if not self._warmed_up:
                     self.warmup()
 
-                # 1. Semantic indexing (triggers lazy load of indexer if needed)
+                # Semantic indexing (triggers lazy load of indexer if needed)
                 indexer = self._indexer
                 if indexer is not None:
                     indexer.index_memory(memory)
-                
-                # 2. Forward to sync queue if enabled
-                if self._sync_manager.enabled:
-                    self._sync_queue.put(memory)
             except Exception as e:
                 # If we catch a late 'atexit' error here despite the property check
                 if "atexit" in str(e):
@@ -126,14 +125,12 @@ class SemanticEngine:
 
     def shutdown(self, timeout: float = 5.0):
         """Signal workers to stop and wait for them to finish."""
-        # 1. Signal indexing
+        # 1. Signal indexing and sync independently
         self._index_queue.put(None)
-        # 2. Wait for indexing to finish (so it pushes remaining to sync)
-        self._indexing_thread.join(timeout=timeout/2)
-        
-        # 3. Signal sync
         self._sync_queue.put(None)
-        # 4. Wait for sync
+
+        # 2. Wait for indexing and sync threads to finish
+        self._indexing_thread.join(timeout=timeout/2)
         self._sync_thread.join(timeout=timeout/2)
 
     def get_index_queue_size(self) -> int:
@@ -350,8 +347,13 @@ class SemanticEngine:
         # Step 2: graph update (SQLite, always fast)
         self._graph.add_memory(memory)
 
-        # Step 3: async semantic indexing
+        # Step 3: async semantic indexing & cloud sync
         self._index_queue.put(memory)
+        try:
+            if self._sync_manager.enabled:
+                self._sync_queue.put(memory)
+        except Exception as e:
+            logger.warning("Failed to queue memory %s for sync: %s", memory.id, e)
 
         # Step 4: Invalidate hints cache (new files might have been auto-tracked)
         self._local_hints_index = None

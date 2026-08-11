@@ -118,7 +118,28 @@ import threading
 
 _engine: SemanticEngine | None = None
 _local_machine_id: str | None = None
+_syncer: BackgroundSyncer | None = None
 _lock = threading.Lock()
+
+
+def _on_sync_pull():
+    try:
+        _get_engine().migrate_index()
+        _get_engine().warmup_async()
+    except Exception as e:
+        import sys
+        print(f"Error during sync post-processing: {e}", file=sys.stderr)
+
+
+def _get_syncer() -> BackgroundSyncer:
+    global _syncer
+    if _syncer is None:
+        with _lock:
+            if _syncer is None:
+                _syncer = BackgroundSyncer(_storage_root, on_pull_callback=_on_sync_pull)
+                _syncer.start()
+    return _syncer
+
 
 def _get_engine() -> SemanticEngine:
     """Lazy-load the SemanticEngine on the first tool call.
@@ -131,6 +152,7 @@ def _get_engine() -> SemanticEngine:
             if _engine is None:
                 _engine = SemanticEngine(_storage_root)
                 _local_machine_id = get_machine_id()
+        _get_syncer()
     return _engine
 
 # ---------------------------------------------------------------------------
@@ -339,6 +361,12 @@ async def remember(
         edited_files=actual_edited_files,
         urls=actual_urls,
     )
+
+    try:
+        _get_syncer().trigger_sync()
+    except Exception as e:
+        import sys
+        print(f"Warning: Failed to trigger instant sync push: {e}", file=sys.stderr)
 
     changes_summary_str = _format_changes_compressed(memory.changes, memory.machine_id, memory.id, memory.parent_id)
 
@@ -770,10 +798,8 @@ def read_past_file_content(file_path: str, memory_id: str, diff_against: str = "
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import threading
     import sys
     import os
-    from aivc.sync.background import BackgroundSyncer
     
     # Under Windows, completely disable the heavy CrossEncoder by default.
     # This prevents PyTorch thread collisions and DLL Loader Lock deadlocks,
@@ -791,18 +817,8 @@ if __name__ == "__main__":
 
     # Note: We completely removed the background thread warmup here to prevent Windows native GIL / ONNX DLL deadlock.
 
-    def _on_sync_pull():
-        try:
-            _get_engine().migrate_index()
-            _get_engine().warmup_async()
-        except Exception as e:
-            import sys
-            print(f"Error during sync post-processing: {e}", file=sys.stderr)
-
-    _syncer = BackgroundSyncer(_storage_root, on_pull_callback=_on_sync_pull)
-    
-    # Start background tasks
-    _syncer.start()
+    # Ensure background syncer is started
+    _get_syncer()
     
     # Run MCP server
     mcp.run(transport="stdio")
