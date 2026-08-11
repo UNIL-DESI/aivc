@@ -22,12 +22,12 @@ AIVC transforms **memories** (formerly commits) into a searchable knowledge base
 
 #### Unix / macOS / Windows (Git Bash)
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/hjamet/aivc/main/install.sh" | bash
+curl -fsSL "https://raw.githubusercontent.com/UNIL-DESI/aivc/main/install.sh" | bash
 ```
 
 #### Windows (PowerShell)
 ```powershell
-powershell -c "irm https://raw.githubusercontent.com/hjamet/aivc/main/install.sh -OutFile install.sh; & 'C:\Program Files\Git\bin\bash.exe' install.sh; Remove-Item install.sh"
+powershell -c "irm https://raw.githubusercontent.com/UNIL-DESI/aivc/main/install.sh -OutFile install.sh; & 'C:\Program Files\Git\bin\bash.exe' install.sh; Remove-Item install.sh"
 ```
 
 > [!NOTE]

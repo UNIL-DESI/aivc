@@ -59,7 +59,7 @@ else
     if [[ -d "${REPO_DIR}/.git" ]]; then
         git -C "${REPO_DIR}" pull --ff-only
     else
-        REPO_URL="${AIVC_REPO_URL:-https://github.com/hjamet/aivc.git}"
+        REPO_URL="${AIVC_REPO_URL:-https://github.com/UNIL-DESI/aivc.git}"
         git clone "${REPO_URL}" "${REPO_DIR}"
     fi
     SOURCE_DIR="${REPO_DIR}"
