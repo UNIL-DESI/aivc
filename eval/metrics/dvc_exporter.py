@@ -2,20 +2,19 @@
 DVC Exporter & Metrics Aggregator for AIVC Evaluation Pipeline.
 
 Consolidates benchmark evaluation metrics from multiple benchmark suites:
+- dry_run_metrics.json
 - swebench_cl_metrics.json
 - devbench_metrics.json
-- agentic_rag_metrics.json
+- intercode_metrics.json
 
 Aggregates token usage, OpenRouter execution costs, Exploration Overhead Ratio (EOR),
 Memory Utility Index (MUI), Cumulative Cost Savings Ratio (CCSR), and task pass rates.
-Supports profile-partitioned metric directories (e.g. eval/metrics/dry_run, eval/metrics/production).
 
 Exports:
 - eval/metrics/summary_metrics.json (Consolidated JSON summary)
 - eval/plots/comparative_summary.csv (Comparative tabular CSV for DVC plots)
 """
 
-import argparse
 import csv
 import json
 import os
@@ -42,9 +41,9 @@ PROMPT_PRICE_PER_1M = 0.03
 COMPLETION_PRICE_PER_1M = 0.13
 
 BENCHMARK_FILES = [
+    "dry_run_metrics.json",
     "swebench_cl_metrics.json",
     "devbench_metrics.json",
-    "agentic_rag_metrics.json",
 ]
 
 
@@ -96,6 +95,22 @@ class BenchmarkMetrics:
 
 # Default fallback / sample benchmark profiles used when raw JSON files do not exist yet
 SAMPLE_BENCHMARKS: Dict[str, Dict[str, Any]] = {
+    "dry_run": {
+        "benchmark_name": "dry_run",
+        "model_name": "qwen/qwen3.7-flash",
+        "total_tasks": 5,
+        "successful_tasks": 5,
+        "pass_rate": 1.0,
+        "prompt_tokens": 2550,
+        "completion_tokens": 525,
+        "total_tokens": 3075,
+        "prompt_cost_usd": 0.0000765,
+        "completion_cost_usd": 0.00006825,
+        "total_cost_usd": 0.00014475,
+        "eor": 0.375,
+        "mui": 0.625,
+        "ccsr": 0.400,
+    },
     "swebench_cl": {
         "benchmark_name": "swebench_cl",
         "model_name": "qwen/qwen3.7-flash",
@@ -128,21 +143,21 @@ SAMPLE_BENCHMARKS: Dict[str, Dict[str, Any]] = {
         "mui": 0.745,
         "ccsr": 0.420,
     },
-    "agentic_rag": {
-        "benchmark_name": "agentic_rag",
+    "intercode": {
+        "benchmark_name": "intercode",
         "model_name": "qwen/qwen3.7-flash",
-        "total_tasks": 30,
-        "successful_tasks": 26,
-        "pass_rate": 0.8667,
-        "prompt_tokens": 95000,
-        "completion_tokens": 22000,
-        "total_tokens": 117000,
-        "prompt_cost_usd": 0.00285,
-        "completion_cost_usd": 0.00286,
-        "total_cost_usd": 0.00571,
-        "eor": 0.150,
-        "mui": 0.790,
-        "ccsr": 0.450,
+        "total_tasks": 25,
+        "successful_tasks": 18,
+        "pass_rate": 0.72,
+        "prompt_tokens": 68000,
+        "completion_tokens": 16000,
+        "total_tokens": 84000,
+        "prompt_cost_usd": 0.00204,
+        "completion_cost_usd": 0.00208,
+        "total_cost_usd": 0.00412,
+        "eor": 0.240,
+        "mui": 0.660,
+        "ccsr": 0.350,
     },
 }
 
@@ -150,69 +165,29 @@ SAMPLE_BENCHMARKS: Dict[str, Dict[str, Any]] = {
 class DVCExporter:
     """
     Exportateur & Agrégateur de métriques DVC pour AIVC.
-    Reads individual benchmark JSON metrics across SWE-bench-CL, DevBench, and Agentic RAG,
-    consolidates them, and exports JSON & CSV summaries.
-    Supports partition directories by evaluation profile.
+    Reads individual benchmark JSON metrics, consolidates them, and exports JSON & CSV summaries.
     """
 
-    def __init__(
-        self,
-        eval_dir: Optional[Path] = None,
-        profile: Optional[str] = None,
-        metrics_dir: Optional[Path] = None,
-        plots_dir: Optional[Path] = None,
-    ):
+    def __init__(self, eval_dir: Optional[Path] = None):
         self.eval_dir = eval_dir or EVAL_DIR
-        self.profile = profile
-        if metrics_dir is not None:
-            self.metrics_dir = metrics_dir
-        elif profile:
-            self.metrics_dir = self.eval_dir / "metrics" / profile
-        else:
-            self.metrics_dir = self.eval_dir / "metrics"
-
-        if plots_dir is not None:
-            self.plots_dir = plots_dir
-        elif profile:
-            self.plots_dir = self.eval_dir / "plots" / profile
-        else:
-            self.plots_dir = self.eval_dir / "plots"
+        self.metrics_dir = self.eval_dir / "metrics"
+        self.plots_dir = self.eval_dir / "plots"
 
         # Ensure target export directories exist
         self.metrics_dir.mkdir(parents=True, exist_ok=True)
         self.plots_dir.mkdir(parents=True, exist_ok=True)
-        (self.eval_dir / "metrics").mkdir(parents=True, exist_ok=True)
-        (self.eval_dir / "plots").mkdir(parents=True, exist_ok=True)
 
     def find_benchmark_file(self, filename: str) -> Optional[Path]:
-        """Look for benchmark file in profile metrics dir, metrics_dir, eval_dir, or repo root."""
-        candidates: List[Path] = [
+        """Look for benchmark file in metrics_dir, eval_dir, or repo root."""
+        candidates = [
             self.metrics_dir / filename,
-        ]
-        if self.profile:
-            candidates.append(self.eval_dir / "metrics" / self.profile / filename)
-
-        candidates.extend([
-            self.eval_dir / "metrics" / filename,
             self.eval_dir / filename,
-            REPO_ROOT / "eval" / "metrics" / filename,
             REPO_ROOT / filename,
             REPO_ROOT / "metrics" / filename,
-        ])
-
+        ]
         for candidate in candidates:
             if candidate.exists() and candidate.is_file():
                 return candidate
-
-        # Auto-discovery across any profile partition subdirectory in eval/metrics/
-        base_metrics = self.eval_dir / "metrics"
-        if base_metrics.exists() and base_metrics.is_dir():
-            for sub in sorted(base_metrics.iterdir()):
-                if sub.is_dir():
-                    cand = sub / filename
-                    if cand.exists() and cand.is_file():
-                        return cand
-
         return None
 
     def parse_metrics_json(self, filename: str) -> BenchmarkMetrics:
@@ -224,7 +199,7 @@ class DVCExporter:
         file_path = self.find_benchmark_file(filename)
 
         if not file_path:
-            sample = SAMPLE_BENCHMARKS.get(bmark_key, SAMPLE_BENCHMARKS["agentic_rag"])
+            sample = SAMPLE_BENCHMARKS.get(bmark_key, SAMPLE_BENCHMARKS["dry_run"])
             bm = BenchmarkMetrics(**sample)
             bm.benchmark_name = bmark_key
             bm.is_sample_data = True
@@ -238,8 +213,7 @@ class DVCExporter:
             summary_block = data.get("summary", {}) if isinstance(data.get("summary"), dict) else {}
             resource_block = data.get("resource_consumption", {}) if isinstance(data.get("resource_consumption"), dict) else {}
 
-            # Standardize benchmark identifier key
-            b_name = bmark_key
+            b_name = data.get("benchmark_name") or data.get("benchmark") or bmark_key
             m_name = data.get("model_name") or data.get("active_model") or DEFAULT_MODEL
             tot_tasks = int(
                 data.get("total_tasks")
@@ -360,7 +334,7 @@ class DVCExporter:
 
         except Exception as e:
             print(f"[Warning] Failed to parse {file_path} ({e}). Using sample benchmark fallback.")
-            sample = SAMPLE_BENCHMARKS.get(bmark_key, SAMPLE_BENCHMARKS["agentic_rag"])
+            sample = SAMPLE_BENCHMARKS.get(bmark_key, SAMPLE_BENCHMARKS["dry_run"])
             bm = BenchmarkMetrics(**sample)
             bm.benchmark_name = bmark_key
             bm.is_sample_data = True
@@ -387,10 +361,9 @@ class DVCExporter:
         ccsr_sum = 0.0
 
         for bfile in BENCHMARK_FILES:
-            bmark_key = bfile.replace("_metrics.json", "")
             bm = self.parse_metrics_json(bfile)
             benchmark_metrics_list.append(bm)
-            benchmarks_dict[bmark_key] = bm.to_dict()
+            benchmarks_dict[bm.benchmark_name] = bm.to_dict()
 
             total_tasks_all += bm.total_tasks
             successful_tasks_all += bm.successful_tasks
@@ -415,7 +388,6 @@ class DVCExporter:
 
         consolidated = {
             "aggregated_at": now_utc,
-            "profile": self.profile or "default",
             "total_benchmarks": len(benchmark_metrics_list),
             "overall_summary": {
                 "total_tasks": total_tasks_all,
@@ -443,21 +415,14 @@ class DVCExporter:
         return consolidated, benchmark_metrics_list
 
     def export_summary_json(self, consolidated: Dict[str, Any]) -> Path:
-        """Export consolidated metrics to summary_metrics.json."""
+        """Export consolidated metrics to eval/metrics/summary_metrics.json."""
         out_path = self.metrics_dir / "summary_metrics.json"
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(consolidated, f, indent=2)
-
-        # Also write root summary if partition is active
-        root_summary = self.eval_dir / "metrics" / "summary_metrics.json"
-        if root_summary != out_path:
-            with open(root_summary, "w", encoding="utf-8") as f:
-                json.dump(consolidated, f, indent=2)
-
         return out_path
 
     def export_comparative_csv(self, metrics_list: List[BenchmarkMetrics]) -> Path:
-        """Export comparative plots table to comparative_summary.csv."""
+        """Export comparative plots table to eval/plots/comparative_summary.csv."""
         out_path = self.plots_dir / "comparative_summary.csv"
 
         fieldnames = [
@@ -478,38 +443,30 @@ class DVCExporter:
             "is_sample_data",
         ]
 
-        def _write_csv(target_p: Path) -> None:
-            with open(target_p, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
+        with open(out_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
 
-                for bm in metrics_list:
-                    writer.writerow(
-                        {
-                            "benchmark": bm.benchmark_name,
-                            "model_name": bm.model_name,
-                            "total_tasks": bm.total_tasks,
-                            "successful_tasks": bm.successful_tasks,
-                            "pass_rate": round(bm.pass_rate, 4),
-                            "prompt_tokens": bm.prompt_tokens,
-                            "completion_tokens": bm.completion_tokens,
-                            "total_tokens": bm.total_tokens,
-                            "prompt_cost_usd": round(bm.prompt_cost_usd, 6),
-                            "completion_cost_usd": round(bm.completion_cost_usd, 6),
-                            "total_cost_usd": round(bm.total_cost_usd, 6),
-                            "eor": round(bm.eor, 4),
-                            "mui": round(bm.mui, 4),
-                            "ccsr": round(bm.ccsr, 4),
-                            "is_sample_data": bm.is_sample_data,
-                        }
-                    )
-
-        _write_csv(out_path)
-
-        # Also write root CSV if partition is active
-        root_csv = self.eval_dir / "plots" / "comparative_summary.csv"
-        if root_csv != out_path:
-            _write_csv(root_csv)
+            for bm in metrics_list:
+                writer.writerow(
+                    {
+                        "benchmark": bm.benchmark_name,
+                        "model_name": bm.model_name,
+                        "total_tasks": bm.total_tasks,
+                        "successful_tasks": bm.successful_tasks,
+                        "pass_rate": round(bm.pass_rate, 4),
+                        "prompt_tokens": bm.prompt_tokens,
+                        "completion_tokens": bm.completion_tokens,
+                        "total_tokens": bm.total_tokens,
+                        "prompt_cost_usd": round(bm.prompt_cost_usd, 6),
+                        "completion_cost_usd": round(bm.completion_cost_usd, 6),
+                        "total_cost_usd": round(bm.total_cost_usd, 6),
+                        "eor": round(bm.eor, 4),
+                        "mui": round(bm.mui, 4),
+                        "ccsr": round(bm.ccsr, 4),
+                        "is_sample_data": bm.is_sample_data,
+                    }
+                )
 
         return out_path
 
@@ -521,19 +478,9 @@ class DVCExporter:
         return json_path, csv_path
 
 
-def export_dvc_metrics(
-    eval_dir: Optional[Path] = None,
-    profile: Optional[str] = None,
-    metrics_dir: Optional[Path] = None,
-    plots_dir: Optional[Path] = None,
-) -> Tuple[Path, Path]:
+def export_dvc_metrics(eval_dir: Optional[Path] = None) -> Tuple[Path, Path]:
     """Convenience function to run DVCExporter."""
-    exporter = DVCExporter(
-        eval_dir=eval_dir,
-        profile=profile,
-        metrics_dir=metrics_dir,
-        plots_dir=plots_dir,
-    )
+    exporter = DVCExporter(eval_dir=eval_dir)
     return exporter.run()
 
 
@@ -544,19 +491,11 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-    parser = argparse.ArgumentParser(description="AIVC DVC Exporter & Aggregator")
-    parser.add_argument("--profile", type=str, default=None, help="Evaluation profile partition name")
-    parser.add_argument("--eval-dir", type=str, default=None, help="Custom eval base directory")
-    parsed = parser.parse_args()
-
-    eval_base = Path(parsed.eval_dir) if parsed.eval_dir else None
-
     print("=" * 70)
     print("[AIVC DVC Exporter & Aggregator Builder]")
-    print(f"Profile: {parsed.profile or 'default'}")
     print("=" * 70)
 
-    exporter = DVCExporter(eval_dir=eval_base, profile=parsed.profile)
+    exporter = DVCExporter()
     json_p, csv_p = exporter.run()
 
     print(f"[SUCCESS] Consolidated summary JSON exported to: {json_p}")

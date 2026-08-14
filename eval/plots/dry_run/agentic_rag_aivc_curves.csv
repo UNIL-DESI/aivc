@@ -1,0 +1,4 @@
+query_index,query_id,repo,arm,model_name,timestamp,resolved,cumulative_resolved,resolve_rate,tool_calls_count,cumulative_tool_calls,exploration_tool_calls,tool_call_decay_ratio,cost_usd,cumulative_cost_usd,duration_seconds,eor,cumulative_eor,mui,cumulative_mui,ccsr,cumulative_ccsr,precision_at_1,precision_at_3,recall_at_1,recall_at_3,mrr
+1,RAG-CL-001,django/django,aivc,qwen/qwen3.7-flash,2026-08-14T13:12:06.138790+00:00,1,1,1.0,3,3,0,1.0,4.5e-05,4.5e-05,0.001,0.0,0.0,0.0,0.0,0.997,0.997,1.0,1.0,0.3333,1.0,1.0
+2,RAG-CL-002,django/django,aivc,qwen/qwen3.7-flash,2026-08-14T13:12:06.140790+00:00,1,2,1.0,2,5,0,0.6667,4.8e-05,9.3e-05,0.0,0.0,0.0,0.0,0.0,0.9934,0.9952,1.0,1.0,0.3333,1.0,1.0
+3,RAG-CL-003,django/django,aivc,qwen/qwen3.7-flash,2026-08-14T13:12:06.141790+00:00,1,3,1.0,2,7,0,0.6667,4.8e-05,0.000141,0.0,0.0,0.0,0.0,0.0,0.9912,0.9939,1.0,1.0,0.3333,1.0,1.0
