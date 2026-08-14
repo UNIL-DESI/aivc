@@ -1,6 +1,11 @@
 """
 InterCode Benchmark Runner for AIVC Evaluation Pipeline.
 
+[DEPRECATED & DEACTIVATED]
+This benchmark runner is disabled and removed from the active DVC pipeline (dvc.yaml).
+Evaluation is concentrated on SWE-bench-CL (continual software engineering) and
+DevBench (multi-phase SDLC).
+
 Implements:
 1. InterCode BashEnv Gymnasium loop (reset, step, action execution).
 2. Incremental JSONL checkpointing in eval/checkpoints/intercode_checkpoint.jsonl

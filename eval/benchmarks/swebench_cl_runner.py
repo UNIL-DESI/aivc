@@ -258,6 +258,68 @@ class CheckpointManager:
 # Dataset Loader
 # ---------------------------------------------------------------------------
 
+def _parse_raw_swebench_cl_json(data: Any, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Parse raw JSON structure (sequences or list) from SWE-Bench-CL."""
+    instances: List[Dict[str, Any]] = []
+
+    if isinstance(data, dict) and "sequences" in data:
+        # Hierarchical multi-repo continual learning sequences
+        for seq in data.get("sequences", []):
+            seq_repo = seq.get("repo", "django/django")
+            for task in seq.get("tasks", []):
+                meta = task.get("metadata", {}) if isinstance(task.get("metadata"), dict) else {}
+                t_block = task.get("task", {}) if isinstance(task.get("task"), dict) else {}
+                e_block = task.get("evaluation", {}) if isinstance(task.get("evaluation"), dict) else {}
+
+                instance_id = meta.get("instance_id") or task.get("instance_id", f"SWE-{len(instances)+1}")
+                repo = meta.get("repo") or seq_repo
+                problem = t_block.get("problem_statement") or task.get("problem_statement", "")
+                created_at = meta.get("created_at") or task.get("created_at", datetime.now(timezone.utc).isoformat())
+                patch = e_block.get("patch") or task.get("patch", "")
+                test_patch = e_block.get("test_patch") or task.get("test_patch", "")
+                hints_text = t_block.get("hints_text") or task.get("hints_text", "")
+
+                instances.append({
+                    "instance_id": instance_id,
+                    "repo": repo,
+                    "problem_statement": problem,
+                    "created_at": str(created_at),
+                    "patch": patch,
+                    "test_patch": test_patch,
+                    "hints_text": hints_text,
+                })
+                if limit and len(instances) >= limit:
+                    return instances
+
+    elif isinstance(data, list):
+        for item in data:
+            meta = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
+            t_block = item.get("task", {}) if isinstance(item.get("task"), dict) else {}
+            e_block = item.get("evaluation", {}) if isinstance(item.get("evaluation"), dict) else {}
+
+            instance_id = meta.get("instance_id") or item.get("instance_id") or item.get("id", f"SWE-{len(instances)+1}")
+            repo = meta.get("repo") or item.get("repo", "django/django")
+            problem = t_block.get("problem_statement") or item.get("problem_statement") or item.get("prompt", "")
+            created_at = meta.get("created_at") or item.get("created_at", datetime.now(timezone.utc).isoformat())
+            patch = e_block.get("patch") or item.get("patch", "")
+            test_patch = e_block.get("test_patch") or item.get("test_patch", "")
+            hints_text = t_block.get("hints_text") or item.get("hints_text", "")
+
+            instances.append({
+                "instance_id": instance_id,
+                "repo": repo,
+                "problem_statement": problem,
+                "created_at": str(created_at),
+                "patch": patch,
+                "test_patch": test_patch,
+                "hints_text": hints_text,
+            })
+            if limit and len(instances) >= limit:
+                break
+
+    return instances
+
+
 def load_swebench_cl_dataset(
     dataset_name: str = "thomasjoshi/swe-bench-cl",
     split: str = "test",
@@ -265,9 +327,47 @@ def load_swebench_cl_dataset(
 ) -> Tuple[List[Dict[str, Any]], str]:
     """
     Load SWE-bench-CL dataset instances.
-    Tries primary dataset 'thomasjoshi/swe-bench-cl', falls back to 'princeton-nlp/SWE-bench_CL'.
-    If offline or library unavailable, generates synthetic mock instances for dry-runs.
+    Tries:
+    1. Direct JSON extraction from local HuggingFace cache or hf_hub_download.
+    2. datasets.load_dataset.
+    3. Direct raw URL download.
+    4. Fallback synthetic mock instances.
     """
+    # 1. Check local HuggingFace cache for SWE-Bench-CL.json
+    try:
+        import glob
+        cache_patterns = [
+            os.path.expanduser("~/.cache/huggingface/hub/**/SWE-Bench-CL.json"),
+            os.path.expanduser("~/.cache/huggingface/hub/datasets--thomasjoshi--swe-bench-cl/**/*.json"),
+            str(EVAL_DIR / "data" / "SWE-Bench-CL.json"),
+        ]
+        for pattern in cache_patterns:
+            matches = glob.glob(pattern, recursive=True)
+            for m in matches:
+                if Path(m).is_file():
+                    with open(m, "r", encoding="utf-8") as f:
+                        raw_data = json.load(f)
+                    instances = _parse_raw_swebench_cl_json(raw_data, limit=limit)
+                    if instances:
+                        print(f"[DATASET] Successfully loaded {len(instances)} instances from cached JSON '{Path(m).name}'.")
+                        return instances, dataset_name
+    except Exception as e:
+        print(f"[DATASET NOTICE] Local cache search notice: {e}")
+
+    # 2. Try huggingface_hub hf_hub_download
+    try:
+        from huggingface_hub import hf_hub_download
+        downloaded_path = hf_hub_download(repo_id="thomasjoshi/swe-bench-cl", repo_type="dataset", filename="SWE-Bench-CL.json")
+        with open(downloaded_path, "r", encoding="utf-8") as f:
+            raw_data = json.load(f)
+        instances = _parse_raw_swebench_cl_json(raw_data, limit=limit)
+        if instances:
+            print(f"[DATASET] Successfully loaded {len(instances)} instances via hf_hub_download.")
+            return instances, dataset_name
+    except Exception as e:
+        pass
+
+    # 3. Try standard datasets library
     candidates = [dataset_name]
     if dataset_name != "princeton-nlp/SWE-bench_CL":
         candidates.append("princeton-nlp/SWE-bench_CL")
@@ -304,7 +404,7 @@ def load_swebench_cl_dataset(
                 break
         return instances, used_dataset_name
 
-    # Fallback synthetic mock dataset generator for dry-run/testing
+    # 4. Fallback synthetic mock dataset generator for dry-run/testing
     print("[DATASET INFO] Generating synthetic SWE-bench-CL instances for dry-run/evaluation context.")
     used_dataset_name = f"{dataset_name} (Synthetic Fallback)"
     mock_repos = [

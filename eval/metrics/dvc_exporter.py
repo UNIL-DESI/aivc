@@ -44,7 +44,6 @@ BENCHMARK_FILES = [
     "dry_run_metrics.json",
     "swebench_cl_metrics.json",
     "devbench_metrics.json",
-    "intercode_metrics.json",
 ]
 
 
@@ -211,32 +210,109 @@ class DVCExporter:
                 data = json.load(f)
 
             # Support nested or flat data formats
+            summary_block = data.get("summary", {}) if isinstance(data.get("summary"), dict) else {}
+            resource_block = data.get("resource_consumption", {}) if isinstance(data.get("resource_consumption"), dict) else {}
+
             b_name = data.get("benchmark_name") or data.get("benchmark") or bmark_key
             m_name = data.get("model_name") or data.get("active_model") or DEFAULT_MODEL
-            tot_tasks = int(data.get("total_tasks") or data.get("total_steps") or data.get("tasks") or 0)
-            succ_tasks = int(data.get("successful_tasks") or data.get("successful_steps") or 0)
+            tot_tasks = int(
+                data.get("total_tasks")
+                or data.get("total_steps")
+                or data.get("tasks")
+                or summary_block.get("total_instances")
+                or summary_block.get("total_repos")
+                or summary_block.get("total_phases_executed")
+                or 0
+            )
+            succ_tasks = int(
+                data.get("successful_tasks")
+                or data.get("successful_steps")
+                or summary_block.get("resolved_instances")
+                or summary_block.get("completed_sdlc_repos")
+                or 0
+            )
 
             # Pass rate
-            pass_rate = float(data.get("pass_rate") or data.get("accuracy") or 0.0)
+            pass_rate = float(
+                data.get("pass_rate")
+                or data.get("accuracy")
+                or summary_block.get("resolve_rate_pass_at_1")
+                or summary_block.get("sdlc_completion_rate")
+                or summary_block.get("phase_pass_rate")
+                or 0.0
+            )
             if pass_rate <= 0.0 and tot_tasks > 0 and succ_tasks > 0:
                 pass_rate = succ_tasks / float(tot_tasks)
 
             # Token usage & costs (nested or flat)
             tc_data = data.get("token_cost") or data.get("token_counts") or {}
-            p_tok = int(tc_data.get("prompt_tokens") or data.get("prompt_tokens") or 0)
-            c_tok = int(tc_data.get("completion_tokens") or data.get("completion_tokens") or 0)
-            tot_tok = int(tc_data.get("total_tokens") or data.get("total_tokens") or (p_tok + c_tok))
+            p_tok = int(
+                tc_data.get("prompt_tokens")
+                or data.get("prompt_tokens")
+                or summary_block.get("total_prompt_tokens")
+                or resource_block.get("prompt_tokens")
+                or 0
+            )
+            c_tok = int(
+                tc_data.get("completion_tokens")
+                or data.get("completion_tokens")
+                or summary_block.get("total_completion_tokens")
+                or resource_block.get("completion_tokens")
+                or 0
+            )
+            tot_tok = int(
+                tc_data.get("total_tokens")
+                or data.get("total_tokens")
+                or summary_block.get("total_tokens")
+                or resource_block.get("total_tokens")
+                or (p_tok + c_tok)
+            )
 
             cost_data = data.get("openrouter_costs_usd") or tc_data or {}
-            p_cost = float(cost_data.get("prompt_cost_usd") or data.get("prompt_cost_usd") or (p_tok / 1e6 * PROMPT_PRICE_PER_1M))
-            c_cost = float(cost_data.get("completion_cost_usd") or data.get("completion_cost_usd") or (c_tok / 1e6 * COMPLETION_PRICE_PER_1M))
-            tot_cost = float(cost_data.get("total_cost_usd") or data.get("total_cost_usd") or (p_cost + c_cost))
+            p_cost = float(
+                cost_data.get("prompt_cost_usd")
+                or data.get("prompt_cost_usd")
+                or (p_tok / 1e6 * PROMPT_PRICE_PER_1M)
+            )
+            c_cost = float(
+                cost_data.get("completion_cost_usd")
+                or data.get("completion_cost_usd")
+                or (c_tok / 1e6 * COMPLETION_PRICE_PER_1M)
+            )
+            tot_cost = float(
+                cost_data.get("total_cost_usd")
+                or data.get("total_cost_usd")
+                or summary_block.get("total_cost_usd")
+                or resource_block.get("aivc_total_cost_usd")
+                or (p_cost + c_cost)
+            )
 
             # Evaluation Ratios
             ratios_data = data.get("evaluation_ratios") or data.get("metrics") or {}
-            eor = float(ratios_data.get("exploration_overhead_ratio_eor") or data.get("eor") or data.get("exploration_overhead_ratio") or 0.0)
-            mui = float(ratios_data.get("memory_utility_index_mui") or data.get("mui") or data.get("memory_utility_index") or 0.0)
-            ccsr = float(ratios_data.get("cumulative_cost_savings_ratio_ccsr") or data.get("ccsr") or data.get("cumulative_cost_savings_ratio") or 0.0)
+            eor = float(
+                ratios_data.get("exploration_overhead_ratio_eor")
+                or data.get("eor")
+                or data.get("exploration_overhead_ratio")
+                or summary_block.get("average_exploration_overhead_ratio_eor")
+                or summary_block.get("avg_eor")
+                or 0.0
+            )
+            mui = float(
+                ratios_data.get("memory_utility_index_mui")
+                or data.get("mui")
+                or data.get("memory_utility_index")
+                or summary_block.get("average_memory_utility_index_mui")
+                or summary_block.get("avg_mui")
+                or 0.0
+            )
+            ccsr = float(
+                ratios_data.get("cumulative_cost_savings_ratio_ccsr")
+                or data.get("ccsr")
+                or data.get("cumulative_cost_savings_ratio")
+                or summary_block.get("average_cumulative_cost_savings_ratio_ccsr")
+                or summary_block.get("overall_ccsr")
+                or 0.0
+            )
 
             return BenchmarkMetrics(
                 benchmark_name=b_name,

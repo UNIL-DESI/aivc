@@ -1,5 +1,4 @@
 benchmark,model_name,total_tasks,successful_tasks,pass_rate,prompt_tokens,completion_tokens,total_tokens,prompt_cost_usd,completion_cost_usd,total_cost_usd,eor,mui,ccsr,is_sample_data
 dry_run,qwen/qwen3.7-flash,5,5,1.0,0,0,0,0.0,0.0,0.0,1.0,0.0,0.9935,False
-SWE-bench-CL Continual Learning,qwen/qwen3.7-flash,0,0,0.0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,False
-DevBench,qwen/qwen3.7-flash,0,0,0.0,0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,False
-InterCode BashEnv Gymnasium,qwen/qwen3.7-flash,5,5,1.0,2125,350,2475,6.4e-05,4.6e-05,0.000109,0.0,0.0,0.0,False
+SWE-bench-CL Continual Learning,qwen/qwen3.7-flash,25,20,0.8,18125,4875,23000,0.000544,0.000634,0.003621,0.25,0.5625,0.9788,False
+DevBench,qwen/qwen3.7-flash,5,5,1.0,10690,3490,14180,0.000321,0.000454,0.000774,1.0,0.0,0.9897,False

@@ -19,45 +19,37 @@ stages:
   eval_swebench_cl:
     cmd: python eval/benchmarks/swebench_cl_runner.py --limit 10
     deps:
-    - path: .dvc-viewer/hashes/eval_swebench_cl.hash
-      hash: md5
-      md5: b548b4f90ee30a297823ca11e678d2de
-      size: 64
     - path: eval/benchmarks/swebench_cl_runner.py
       hash: md5
-      md5: 33dbc38ec344236438a1ae699be59909
-      size: 28368
+      md5: d4f8f8122224895573773615398d5d2a
+      size: 34196
     params:
       params.yaml:
         eval.limit: 10
     outs:
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 52c00a1b754c860a54a13ab1a77820c5
-      size: 704
+      md5: abfe96791516d92bc6e59e37b373b289
+      size: 705
     - path: eval/plots/swebench_cl_curves.csv
       hash: md5
-      md5: c76f105c2232d761c3d464af83876403
-      size: 1827
+      md5: b5944c964cbf4668b78b4b081c4a2ab5
+      size: 2937
   eval_devbench:
     cmd: python eval/benchmarks/devbench_runner.py --limit 10
     deps:
-    - path: .dvc-viewer/hashes/eval_devbench.hash
-      hash: md5
-      md5: f77b4e4beb2238fe87e801d9a78ab1ad
-      size: 64
     - path: eval/benchmarks/devbench_runner.py
       hash: md5
-      md5: 767a52be02020e0df008468a7c4dcff5
-      size: 29536
+      md5: 09b8d5fecec5103d00b91eef6154038c
+      size: 30277
     params:
       params.yaml:
         eval.limit: 10
     outs:
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: 205f86d930f7eead81a5301a278cb08e
-      size: 15003
+      md5: 20e1da624c09996627d083c7c22d4e64
+      size: 15543
     - path: eval/plots/devbench_curves.csv
       hash: md5
       md5: 2de36b56dbbea5aebfea33420578a6d8
@@ -84,31 +76,27 @@ stages:
   eval:
     cmd: python eval/scripts/aggregate_metrics.py
     deps:
-    - path: .dvc-viewer/hashes/eval.hash
-      hash: md5
-      md5: 3c953d6b6fe2237f3504c43f8cb5fcd2
-      size: 64
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: 205f86d930f7eead81a5301a278cb08e
-      size: 15003
+      md5: 20e1da624c09996627d083c7c22d4e64
+      size: 15543
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 52c00a1b754c860a54a13ab1a77820c5
-      size: 704
+      md5: abfe96791516d92bc6e59e37b373b289
+      size: 705
     - path: eval/scripts/aggregate_metrics.py
       hash: md5
-      md5: a378bee9fe04b3a187d4dd604fc096dc
-      size: 452
+      md5: ff53bbcb48a6a321a1df05b4d6e4ae68
+      size: 471
     outs:
     - path: eval/metrics/summary_metrics.json
       hash: md5
-      md5: 09d0fcfbe388cd7e99aac80de7d7c858
-      size: 3393
+      md5: 12e632d3d67c90acc037f817d2a94db6
+      size: 2859
     - path: eval/plots/comparative_summary.csv
       hash: md5
-      md5: 09e714f679ed9b2a0063dcb51bf86ef0
-      size: 542
+      md5: 75adf750f91095ddb25af5859ba2fbaf
+      size: 493
   dvc-code-analysis:
     cmd: bash .dvc-viewer/bootstrap.sh && dvc-viewer hash
     outs:

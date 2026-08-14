@@ -1,24 +1,24 @@
 {
-  "aggregated_at": "2026-08-14T12:04:10.623861+00:00",
-  "total_benchmarks": 4,
+  "aggregated_at": "2026-08-14T12:06:01.638504+00:00",
+  "total_benchmarks": 3,
   "overall_summary": {
-    "total_tasks": 10,
-    "total_successful_tasks": 10,
-    "overall_pass_rate": 1.0,
+    "total_tasks": 35,
+    "total_successful_tasks": 30,
+    "overall_pass_rate": 0.8571,
     "token_counts": {
-      "total_prompt_tokens": 2125,
-      "total_completion_tokens": 350,
-      "total_tokens": 2475
+      "total_prompt_tokens": 28815,
+      "total_completion_tokens": 8365,
+      "total_tokens": 37180
     },
     "openrouter_execution_costs_usd": {
-      "total_prompt_cost_usd": 6.4e-05,
-      "total_completion_cost_usd": 4.6e-05,
-      "total_execution_cost_usd": 0.000109
+      "total_prompt_cost_usd": 0.000864,
+      "total_completion_cost_usd": 0.001087,
+      "total_execution_cost_usd": 0.004395
     },
     "mean_evaluation_ratios": {
-      "mean_exploration_overhead_ratio_eor": 0.25,
-      "mean_memory_utility_index_mui": 0.0,
-      "mean_cumulative_cost_savings_ratio_ccsr": 0.2484
+      "mean_exploration_overhead_ratio_eor": 0.75,
+      "mean_memory_utility_index_mui": 0.1875,
+      "mean_cumulative_cost_savings_ratio_ccsr": 0.9873
     }
   },
   "benchmarks": {
@@ -48,69 +48,46 @@
     "SWE-bench-CL Continual Learning": {
       "benchmark_name": "SWE-bench-CL Continual Learning",
       "model_name": "qwen/qwen3.7-flash",
-      "total_tasks": 0,
-      "successful_tasks": 0,
-      "pass_rate": 0.0,
+      "total_tasks": 25,
+      "successful_tasks": 20,
+      "pass_rate": 0.8,
       "token_counts": {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0
+        "prompt_tokens": 18125,
+        "completion_tokens": 4875,
+        "total_tokens": 23000
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.0,
-        "completion_cost_usd": 0.0,
-        "total_cost_usd": 0.0
+        "prompt_cost_usd": 0.000544,
+        "completion_cost_usd": 0.000634,
+        "total_cost_usd": 0.003621
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.0,
-        "memory_utility_index_mui": 0.0,
-        "cumulative_cost_savings_ratio_ccsr": 0.0
+        "exploration_overhead_ratio_eor": 0.25,
+        "memory_utility_index_mui": 0.5625,
+        "cumulative_cost_savings_ratio_ccsr": 0.9788
       },
       "is_sample_data": false
     },
     "DevBench": {
       "benchmark_name": "DevBench",
       "model_name": "qwen/qwen3.7-flash",
-      "total_tasks": 0,
-      "successful_tasks": 0,
-      "pass_rate": 0.0,
-      "token_counts": {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0
-      },
-      "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.0,
-        "completion_cost_usd": 0.0,
-        "total_cost_usd": 0.0
-      },
-      "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.0,
-        "memory_utility_index_mui": 0.0,
-        "cumulative_cost_savings_ratio_ccsr": 0.0
-      },
-      "is_sample_data": false
-    },
-    "InterCode BashEnv Gymnasium": {
-      "benchmark_name": "InterCode BashEnv Gymnasium",
-      "model_name": "qwen/qwen3.7-flash",
       "total_tasks": 5,
       "successful_tasks": 5,
       "pass_rate": 1.0,
       "token_counts": {
-        "prompt_tokens": 2125,
-        "completion_tokens": 350,
-        "total_tokens": 2475
+        "prompt_tokens": 10690,
+        "completion_tokens": 3490,
+        "total_tokens": 14180
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 6.4e-05,
-        "completion_cost_usd": 4.6e-05,
-        "total_cost_usd": 0.000109
+        "prompt_cost_usd": 0.000321,
+        "completion_cost_usd": 0.000454,
+        "total_cost_usd": 0.000774
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.0,
+        "exploration_overhead_ratio_eor": 1.0,
         "memory_utility_index_mui": 0.0,
-        "cumulative_cost_savings_ratio_ccsr": 0.0
+        "cumulative_cost_savings_ratio_ccsr": 0.9897
       },
       "is_sample_data": false
     }
