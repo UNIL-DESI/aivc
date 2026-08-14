@@ -1,15 +1,4 @@
 stages:
-  dry_run:
-    cmd: python eval/scripts/run_dry_run.py
-    deps:
-      - eval/scripts/run_dry_run.py
-    metrics:
-      - eval/metrics/dry_run_metrics.json:
-          cache: false
-    plots:
-      - eval/plots/dry_run_curves.csv:
-          cache: false
-
   eval_swebench_cl:
     cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model ${eval.model} --reset-checkpoint
     params:
@@ -44,12 +33,30 @@ stages:
       - eval/plots/devbench_curves.csv:
           cache: false
 
-  eval:
+  eval_agentic_rag:
+    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model ${eval.model} --reset-checkpoint
+    params:
+      - eval.limit
+      - eval.max_turns
+      - eval.max_tokens
+      - eval.max_cost_per_instance_usd
+      - eval.model
+    deps:
+      - eval/benchmarks/agentic_rag_runner.py
+    metrics:
+      - eval/metrics/agentic_rag_metrics.json:
+          cache: false
+    plots:
+      - eval/plots/agentic_rag_curves.csv:
+          cache: false
+
+  aggregate_metrics:
     cmd: python eval/scripts/aggregate_metrics.py
     deps:
       - eval/scripts/aggregate_metrics.py
       - eval/metrics/swebench_cl_metrics.json
       - eval/metrics/devbench_metrics.json
+      - eval/metrics/agentic_rag_metrics.json
     metrics:
       - eval/metrics/summary_metrics.json:
           cache: false

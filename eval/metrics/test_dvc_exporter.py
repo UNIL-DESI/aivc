@@ -64,7 +64,7 @@ def test_dvc_exporter_consolidation_and_export(tmp_path):
         summary_data = json.load(f)
 
     assert "overall_summary" in summary_data
-    assert summary_data["total_benchmarks"] == 3
+    assert summary_data["total_benchmarks"] == 4
     assert summary_data["benchmarks"]["dry_run"]["total_tasks"] == 5
     assert summary_data["benchmarks"]["dry_run"]["pass_rate"] == 1.0
 
@@ -75,3 +75,4 @@ def test_dvc_exporter_consolidation_and_export(tmp_path):
     assert "dry_run" in csv_content
     assert "swebench_cl" in csv_content
     assert "devbench" in csv_content
+    assert "agentic_rag" in csv_content

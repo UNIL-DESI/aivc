@@ -44,6 +44,7 @@ BENCHMARK_FILES = [
     "dry_run_metrics.json",
     "swebench_cl_metrics.json",
     "devbench_metrics.json",
+    "agentic_rag_metrics.json",
 ]
 
 
@@ -159,6 +160,22 @@ SAMPLE_BENCHMARKS: Dict[str, Dict[str, Any]] = {
         "mui": 0.660,
         "ccsr": 0.350,
     },
+    "agentic_rag": {
+        "benchmark_name": "agentic_rag",
+        "model_name": "qwen/qwen3.7-flash",
+        "total_tasks": 15,
+        "successful_tasks": 15,
+        "pass_rate": 1.00,
+        "prompt_tokens": 14850,
+        "completion_tokens": 1975,
+        "total_tokens": 16825,
+        "prompt_cost_usd": 0.0004455,
+        "completion_cost_usd": 0.00025675,
+        "total_cost_usd": 0.00070225,
+        "eor": 0.050,
+        "mui": 0.850,
+        "ccsr": 0.650,
+    },
 }
 
 
@@ -222,6 +239,7 @@ class DVCExporter:
                 or summary_block.get("total_instances")
                 or summary_block.get("total_repos")
                 or summary_block.get("total_phases_executed")
+                or summary_block.get("total_queries")
                 or 0
             )
             succ_tasks = int(
@@ -229,6 +247,7 @@ class DVCExporter:
                 or data.get("successful_steps")
                 or summary_block.get("resolved_instances")
                 or summary_block.get("completed_sdlc_repos")
+                or summary_block.get("resolved_queries")
                 or 0
             )
 
@@ -239,6 +258,7 @@ class DVCExporter:
                 or summary_block.get("resolve_rate_pass_at_1")
                 or summary_block.get("sdlc_completion_rate")
                 or summary_block.get("phase_pass_rate")
+                or summary_block.get("pass_rate")
                 or 0.0
             )
             if pass_rate <= 0.0 and tot_tasks > 0 and succ_tasks > 0:
