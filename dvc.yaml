@@ -11,9 +11,13 @@ stages:
           cache: false
 
   eval_swebench_cl:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit}
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model ${eval.model} --reset-checkpoint
     params:
       - eval.limit
+      - eval.max_turns
+      - eval.max_tokens
+      - eval.max_cost_per_instance_usd
+      - eval.model
     deps:
       - eval/benchmarks/swebench_cl_runner.py
     metrics:
@@ -24,9 +28,13 @@ stages:
           cache: false
 
   eval_devbench:
-    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit}
+    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model ${eval.model} --reset-checkpoint
     params:
       - eval.limit
+      - eval.max_turns
+      - eval.max_tokens
+      - eval.max_cost_per_instance_usd
+      - eval.model
     deps:
       - eval/benchmarks/devbench_runner.py
     metrics:
@@ -48,4 +56,3 @@ stages:
     plots:
       - eval/plots/comparative_summary.csv:
           cache: false
-

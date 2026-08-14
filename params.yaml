@@ -1,2 +1,6 @@
 eval:
-  limit: 10
+  limit: 15
+  max_turns: 50
+  max_tokens: 4096
+  max_cost_per_instance_usd: 0.10
+  model: "qwen/qwen3.7-flash"
