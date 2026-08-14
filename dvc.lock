@@ -101,3 +101,11 @@ stages:
       hash: md5
       md5: 09e714f679ed9b2a0063dcb51bf86ef0
       size: 542
+  dvc-code-analysis:
+    cmd: bash .dvc-viewer/bootstrap.sh && dvc-viewer hash
+    outs:
+    - path: .dvc-viewer/hashes
+      hash: md5
+      md5: 59eb4d574d8a105d4f5b81e27487aebf.dir
+      size: 1418
+      nfiles: 8
