@@ -1,0 +1,26 @@
+# AIVC Evaluation Profile: Full Paper Production Benchmark
+# Full continual learning evaluation across 3 target frontier models.
+
+profile: "production"
+dry_run: false
+
+# Target models evaluated in the scientific paper
+model: "deepseek/deepseek-v4-flash-0731"
+models:
+  - "deepseek/deepseek-v4-flash-0731"
+  - "google/gemini-3.7-flash"
+  - "openai/gpt-5.6-luna-pro"
+
+# Full dataset budget & crash-recovery policy
+limit: 273  # Full benchmark sequence (273 episodes)
+reset_checkpoint: false  # Incremental persistence & resume capability on crash/restart
+max_turns: 50
+max_tokens: 4096
+max_cost_per_instance_usd: 0.50
+
+# Output paths supporting {model_slug} variable expansion
+paths:
+  checkpoints_dir: "eval/checkpoints/production/{model_slug}"
+  metrics_dir: "eval/metrics/production/{model_slug}"
+  plots_dir: "eval/plots/production/{model_slug}"
+  scratch_dir: "eval/scratch/production/{model_slug}"

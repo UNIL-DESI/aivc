@@ -40,28 +40,34 @@ stages:
       md5: b5944c964cbf4668b78b4b081c4a2ab5
       size: 2937
   eval_devbench:
-    cmd: python eval/benchmarks/devbench_runner.py --limit 10
+    cmd: python eval/benchmarks/devbench_runner.py --limit 15 --max-turns 50 
+      --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash 
+      --reset-checkpoint
     deps:
     - path: .dvc-viewer/hashes/eval_devbench.hash
       hash: md5
-      md5: f77b4e4beb2238fe87e801d9a78ab1ad
+      md5: 0b791862df0ba00edc483a958f7ce150
       size: 64
     - path: eval/benchmarks/devbench_runner.py
       hash: md5
-      md5: 767a52be02020e0df008468a7c4dcff5
-      size: 29536
+      md5: 91f329f0e3fdcd306f51a14f788e152e
+      size: 45538
     params:
       params.yaml:
-        eval.limit: 10
+        eval.limit: 15
+        eval.max_cost_per_instance_usd: 0.1
+        eval.max_tokens: 4096
+        eval.max_turns: 50
+        eval.model: qwen/qwen3.7-flash
     outs:
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: 205f86d930f7eead81a5301a278cb08e
-      size: 15003
+      md5: 58abfd0f9bc4fa06c2a278a15c35b91a
+      size: 20140
     - path: eval/plots/devbench_curves.csv
       hash: md5
-      md5: 2de36b56dbbea5aebfea33420578a6d8
-      size: 2197
+      md5: 1970223882f4694dd76cb740f06135a3
+      size: 1897
   eval_intercode:
     cmd: python eval/benchmarks/intercode_runner.py --limit 10
     deps:
@@ -114,6 +120,6 @@ stages:
     outs:
     - path: .dvc-viewer/hashes
       hash: md5
-      md5: 041ca0343350a0e38b26569e14959e1d.dir
+      md5: 723e9b7cde4828471b878152f8cf7583.dir
       size: 1418
       nfiles: 8

@@ -1,0 +1,24 @@
+# AIVC Evaluation Profile: Fast Dry Run Testing
+# Optimized for quick validation, smoke tests, and CI/CD runs.
+
+profile: "dry_run"
+dry_run: true
+
+# Models configuration
+model: "qwen/qwen3.7-flash"
+models:
+  - "qwen/qwen3.7-flash"
+
+# Execution limits & budgets
+limit: 15
+reset_checkpoint: true
+max_turns: 50
+max_tokens: 4096
+max_cost_per_instance_usd: 0.10
+
+# Output paths
+paths:
+  checkpoints_dir: "eval/checkpoints/dry_run"
+  metrics_dir: "eval/metrics/dry_run"
+  plots_dir: "eval/plots/dry_run"
+  scratch_dir: "eval/scratch/dry_run"

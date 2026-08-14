@@ -1,3 +1,5 @@
+profile: "dry_run"
+
 eval:
   limit: 15
   max_turns: 50

@@ -1,0 +1,59 @@
+# OpenRouter Models Registry for AIVC Evaluation & Benchmarks
+# Centralized registry of supported LLMs, token pricing ($/1M tokens), context windows, and capabilities.
+
+default_model: "qwen/qwen3.7-flash"
+
+models:
+  "qwen/qwen3.7-flash":
+    name: "Qwen 3.7 Flash"
+    provider: "openrouter"
+    prompt_price_per_1m: 0.03
+    completion_price_per_1m: 0.13
+    context_window: 128000
+    supports_tools: true
+    description: "Fast, cost-effective baseline model for dry runs and fast feedback loops."
+
+  "deepseek/deepseek-v4-flash-0731":
+    name: "DeepSeek v4 Flash"
+    provider: "openrouter"
+    prompt_price_per_1m: 0.07
+    completion_price_per_1m: 0.28
+    context_window: 64000
+    supports_tools: true
+    description: "High-performance, cost-effective production benchmark model for coding & memory evaluations."
+
+  "google/gemini-3.7-flash":
+    name: "Gemini 3.7 Flash"
+    provider: "openrouter"
+    prompt_price_per_1m: 0.05
+    completion_price_per_1m: 0.20
+    context_window: 1000000
+    supports_tools: true
+    description: "Frontier multimodal & long-context model with 1M context window."
+
+  "openai/gpt-5.6-luna-pro":
+    name: "GPT-5.6 Luna Pro"
+    provider: "openrouter"
+    prompt_price_per_1m: 1.50
+    completion_price_per_1m: 6.00
+    context_window: 256000
+    supports_tools: true
+    description: "Frontier reasoning model for complex SWE tasks and Continual Learning."
+
+  "anthropic/claude-sonnet-5":
+    name: "Claude Sonnet 5"
+    provider: "openrouter"
+    prompt_price_per_1m: 3.00
+    completion_price_per_1m: 15.00
+    context_window: 200000
+    supports_tools: true
+    description: "Frontier coding agent model for reference and comparison benchmarks."
+
+  "z-ai/glm-5.2":
+    name: "GLM 5.2"
+    provider: "openrouter"
+    prompt_price_per_1m: 0.10
+    completion_price_per_1m: 0.40
+    context_window: 128000
+    supports_tools: true
+    description: "Candidate high-efficiency open-weights model."
