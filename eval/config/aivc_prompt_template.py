@@ -405,6 +405,57 @@ WORKSPACE_TOOLS_SCHEMA: List[Dict[str, Any]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# 3. DevBench SDLC System Instructions & Deliverable Schema
+# ---------------------------------------------------------------------------
+
+AIVC_DEVBENCH_SYSTEM_PROMPT: str = """# AIVC — AI Version Control (Long-Term Memory) for DevBench SDLC
+
+You are an expert autonomous software engineer working through the Software Development Life Cycle (SDLC).
+You have access to persistent AIVC long-term memory to coordinate architecture, environment configuration, code changes, and test suites across SDLC phases.
+
+## Core AIVC Memory Tools:
+1. `remember(title: str, note: str, read_files: list, edited_files: list)`: Save memory note and file snapshots.
+2. `recall(query: str, limit: int = 5)`: Semantic search over past memory notes across this and previous phases.
+3. `get_recent_memories(limit: int = 10, offset: int = 0)`: Get recent memory logs chronologically.
+4. `consult_memory(memory_id: str)`: Read a specific memory note in full.
+5. `get_file_history_metadata(filepath: str)`: Get version history metadata for a file.
+6. `read_past_file_content(filepath: str, memory_id: str)`: Read past file snapshot.
+
+## Additional Workspace Tools:
+7. `view_file(filepath: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file.
+8. `grep_search(query: str, search_path: str = ".")`: Search pattern across codebase.
+9. `list_dir(directory: str = ".")`: List contents of a directory.
+10. `submit_phase_deliverable(deliverable: str, notes: str)`: Submit the final deliverable for the current SDLC phase.
+
+## Protocol Rules:
+- At each new SDLC phase, call `recall` to consult previous phases' design decisions and file contracts.
+- Always call `remember` after drafting or implementing code/config.
+- Call `submit_phase_deliverable` when the phase goal is achieved.
+"""
+
+DEVBENCH_DELIVERABLE_TOOL_SCHEMA: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "submit_phase_deliverable",
+        "description": "Submit final deliverable (design document, environment script, code changes, or unit tests) for the current SDLC phase.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "deliverable": {
+                    "type": "string",
+                    "description": "Structured content or patch for the phase deliverable.",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Explanatory notes and verification details.",
+                },
+            },
+            "required": ["deliverable"],
+        },
+    },
+}
+
 BASH_TOOL_SCHEMA: Dict[str, Any] = {
     "type": "function",
     "function": {
@@ -430,10 +481,17 @@ BASH_TOOL_SCHEMA: Dict[str, Any] = {
 
 def get_aivc_system_prompt(
     benchmark_mode: bool = False,
+    benchmark_type: Optional[str] = None,
     task_instructions: Optional[str] = None,
 ) -> str:
     """Return the system prompt for AIVC, optionally including benchmark instructions."""
-    base = AIVC_BENCHMARK_PROMPT if benchmark_mode else AIVC_SYSTEM_PROMPT
+    if benchmark_type in ("devbench", "sdlc"):
+        base = AIVC_DEVBENCH_SYSTEM_PROMPT
+    elif benchmark_mode or benchmark_type in ("swebench_cl", "swebench", "agentic_rag", "rag"):
+        base = AIVC_BENCHMARK_PROMPT
+    else:
+        base = AIVC_SYSTEM_PROMPT
+
     if task_instructions:
         return f"{base}\n\n## Current Task Context:\n{task_instructions}"
     return base
@@ -442,11 +500,19 @@ def get_aivc_system_prompt(
 def get_benchmark_tools_schema(
     include_workspace: bool = True,
     include_bash: bool = False,
+    benchmark_type: str = "swebench_cl",
 ) -> List[Dict[str, Any]]:
     """Return harmonized list of tool schemas for benchmark agent execution."""
     tools: List[Dict[str, Any]] = copy.deepcopy(AIVC_CORE_TOOLS_SCHEMA)
     if include_workspace:
-        tools.extend(copy.deepcopy(WORKSPACE_TOOLS_SCHEMA))
+        ws_tools = [t for t in WORKSPACE_TOOLS_SCHEMA if t["function"]["name"] != "submit_patch"]
+        tools.extend(copy.deepcopy(ws_tools))
+        if benchmark_type in ("devbench", "sdlc"):
+            tools.append(copy.deepcopy(DEVBENCH_DELIVERABLE_TOOL_SCHEMA))
+        else:
+            submit_tool = [t for t in WORKSPACE_TOOLS_SCHEMA if t["function"]["name"] == "submit_patch"]
+            if submit_tool:
+                tools.extend(copy.deepcopy(submit_tool))
     if include_bash:
         tools.append(copy.deepcopy(BASH_TOOL_SCHEMA))
     return tools

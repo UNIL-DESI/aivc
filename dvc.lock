@@ -17,28 +17,34 @@ stages:
       md5: 91a05669b9be0ec3372d256aa9dcb584
       size: 638
   eval_swebench_cl:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit 10
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit 15 --max-turns 50 
+      --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash 
+      --reset-checkpoint
     deps:
     - path: .dvc-viewer/hashes/eval_swebench_cl.hash
       hash: md5
-      md5: e9db9d5f4848ef2e006d8e249c54bbe3
+      md5: 1012a160948758e65ac55c364cb98549
       size: 64
     - path: eval/benchmarks/swebench_cl_runner.py
       hash: md5
-      md5: 5b168d65927147b169d10e1bd2a30287
-      size: 33337
+      md5: f57b9a0fc84817a9f88d8963d692228d
+      size: 46871
     params:
       params.yaml:
-        eval.limit: 10
+        eval.limit: 15
+        eval.max_cost_per_instance_usd: 0.1
+        eval.max_tokens: 4096
+        eval.max_turns: 50
+        eval.model: qwen/qwen3.7-flash
     outs:
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: c63f8d1a5d227473a93edcd7bfacaaa4
-      size: 684
+      md5: 9f7ac013a46ff51156935e532fca267b
+      size: 694
     - path: eval/plots/swebench_cl_curves.csv
       hash: md5
-      md5: b5944c964cbf4668b78b4b081c4a2ab5
-      size: 2937
+      md5: cf30f8acf5780c29c991c90bc496a115
+      size: 1767
   eval_devbench:
     cmd: python eval/benchmarks/devbench_runner.py --limit 15 --max-turns 50 
       --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash 
@@ -96,12 +102,12 @@ stages:
       size: 64
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: 205f86d930f7eead81a5301a278cb08e
-      size: 15003
+      md5: 58abfd0f9bc4fa06c2a278a15c35b91a
+      size: 20140
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: c63f8d1a5d227473a93edcd7bfacaaa4
-      size: 684
+      md5: 9f7ac013a46ff51156935e532fca267b
+      size: 694
     - path: eval/scripts/aggregate_metrics.py
       hash: md5
       md5: a378bee9fe04b3a187d4dd604fc096dc
@@ -109,12 +115,12 @@ stages:
     outs:
     - path: eval/metrics/summary_metrics.json
       hash: md5
-      md5: cdc165c708eab927a43b73097a322af6
-      size: 2765
+      md5: af04e2af674e18555b27ce0c9efa75f7
+      size: 2787
     - path: eval/plots/comparative_summary.csv
       hash: md5
-      md5: 75adf750f91095ddb25af5859ba2fbaf
-      size: 493
+      md5: ce438f2aac21a9c983965be0dc5fae3a
+      size: 511
   dvc-code-analysis:
     cmd: bash .dvc-viewer/bootstrap.sh && dvc-viewer hash
     outs:

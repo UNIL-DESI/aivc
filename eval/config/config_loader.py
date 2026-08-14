@@ -467,6 +467,45 @@ def resolve_config_from_args(
     )
 
 
+def load_benchmark_config(
+    parser: Optional[argparse.ArgumentParser] = None,
+    args: Optional[argparse.Namespace] = None,
+    profile: Optional[str] = None,
+    model: Optional[str] = None,
+    limit: Optional[int] = None,
+    reset_checkpoint: Optional[bool] = None,
+    max_turns: Optional[int] = None,
+    max_tokens: Optional[int] = None,
+    max_cost_per_instance_usd: Optional[float] = None,
+    config_dir: Optional[Path] = None,
+    params_path: Optional[Path] = None,
+    models_path: Optional[Path] = None,
+) -> EvalProfileConfig:
+    """
+    Load and resolve evaluation configuration for benchmark runners.
+    If args is provided, resolves from namespace.
+    If parser is provided (and args is None), parses known CLI arguments.
+    Otherwise resolves directly from provided parameters or defaults.
+    """
+    if args is not None:
+        return resolve_config_from_args(args, config_dir=config_dir)
+    if parser is not None:
+        parsed_args, _ = parser.parse_known_args()
+        return resolve_config_from_args(parsed_args, config_dir=config_dir)
+    return resolve_config(
+        profile=profile,
+        model=model,
+        limit=limit,
+        reset_checkpoint=reset_checkpoint,
+        max_turns=max_turns,
+        max_tokens=max_tokens,
+        max_cost_per_instance_usd=max_cost_per_instance_usd,
+        config_dir=config_dir,
+        params_path=params_path,
+        models_path=models_path,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 5. CLI Inspection Utility
 # ---------------------------------------------------------------------------

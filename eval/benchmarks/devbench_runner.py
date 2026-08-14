@@ -71,186 +71,14 @@ EXPLORATION_TOOLS = {
     "read_past_file_content",
 }
 
-# ---------------------------------------------------------------------------
-# AIVC MCP Tool Definitions & System Instructions for DevBench
-# ---------------------------------------------------------------------------
-
-AIVC_DEVBENCH_SYSTEM_PROMPT = """
-# AIVC — AI Version Control (Long-Term Memory) for DevBench SDLC
-
-You are an expert autonomous software engineer working through the Software Development Life Cycle (SDLC).
-You have access to persistent AIVC long-term memory to coordinate architecture, environment configuration, code changes, and test suites across SDLC phases.
-
-## Core AIVC Memory Tools:
-1. `remember(title: str, note: str, read_files: list, edited_files: list)`: Save memory note and file snapshots.
-2. `recall(query: str, limit: int = 5)`: Semantic search over past memory notes across this and previous phases.
-3. `get_recent_memories(limit: int = 10, offset: int = 0)`: Get recent memory logs chronologically.
-4. `consult_memory(memory_id: str)`: Read a specific memory note in full.
-5. `get_file_history_metadata(filepath: str)`: Get version history metadata for a file.
-6. `read_past_file_content(filepath: str, memory_id: str)`: Read past file snapshot.
-
-## Additional Workspace Tools:
-7. `view_file(filepath: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file.
-8. `grep_search(query: str, search_path: str = ".")`: Search pattern across codebase.
-9. `list_dir(directory: str = ".")`: List contents of a directory.
-10. `submit_phase_deliverable(deliverable: str, notes: str)`: Submit the final deliverable for the current SDLC phase.
-
-## Protocol Rules:
-- At each new SDLC phase, call `recall` to consult previous phases' design decisions and file contracts.
-- Always call `remember` after drafting or implementing code/config.
-- Call `submit_phase_deliverable` when the phase goal is achieved.
-"""
-
-DEVBENCH_MCP_TOOLS_SCHEMA: List[Dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "remember",
-            "description": "Save a detailed memory checkpoint with optional read and edited file tracking.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Short memory title"},
-                    "note": {"type": "string", "description": "Detailed markdown note explaining decisions and solution"},
-                    "read_files": {"type": "array", "items": {"type": "string"}, "description": "List of consulted files"},
-                    "edited_files": {"type": "array", "items": {"type": "string"}, "description": "List of modified or created files"},
-                },
-                "required": ["title", "note"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall",
-            "description": "Perform semantic search over past memory notes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Semantic search query"},
-                    "limit": {"type": "integer", "default": 5, "description": "Max memory candidates"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_recent_memories",
-            "description": "Retrieve recent memories in reverse chronological order.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {"type": "integer", "default": 10},
-                    "offset": {"type": "integer", "default": 0},
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "consult_memory",
-            "description": "Retrieve full markdown content of a memory by its ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "memory_id": {"type": "string", "description": "Target memory ID"},
-                },
-                "required": ["memory_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_file_history_metadata",
-            "description": "Get AIVC version history metadata for a tracked file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filepath": {"type": "string", "description": "Relative file path"},
-                },
-                "required": ["filepath"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_past_file_content",
-            "description": "Read past version content of a file at a specific memory snapshot.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filepath": {"type": "string", "description": "Relative file path"},
-                    "memory_id": {"type": "string", "description": "Memory snapshot ID"},
-                },
-                "required": ["filepath", "memory_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "view_file",
-            "description": "View contents of a file within a line range.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filepath": {"type": "string", "description": "Target file path"},
-                    "start_line": {"type": "integer", "default": 1, "description": "1-indexed starting line"},
-                    "end_line": {"type": "integer", "default": 100, "description": "1-indexed ending line"},
-                },
-                "required": ["filepath"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "grep_search",
-            "description": "Search for text or regex pattern in the repository.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Text pattern to find"},
-                    "search_path": {"type": "string", "default": ".", "description": "Directory or file to search"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_dir",
-            "description": "List files and directories in a given folder.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "directory": {"type": "string", "default": ".", "description": "Directory path to list"},
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "submit_phase_deliverable",
-            "description": "Submit final deliverable for the current SDLC phase.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "deliverable": {"type": "string", "description": "Code, configuration, design specification, or test code"},
-                    "notes": {"type": "string", "description": "Summary notes on deliverable"},
-                },
-                "required": ["deliverable"],
-            },
-        },
-    },
-]
+# Import unified configuration, prompt template, and tool schemas from eval.config
+from config import (
+    add_eval_args,
+    get_aivc_system_prompt,
+    get_benchmark_tools_schema,
+    load_benchmark_config,
+    load_models_registry,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +422,8 @@ class DevBenchRunner:
         max_tokens: int = 4096,
         max_cost_per_phase_usd: float = 0.10,
         dry_run: bool = False,
+        prompt_price_per_1m: Optional[float] = None,
+        completion_price_per_1m: Optional[float] = None,
     ):
         self.model_name = model_name
         self.api_key = api_key
@@ -605,8 +435,15 @@ class DevBenchRunner:
         self.metrics_path = metrics_path or (EVAL_DIR / "metrics" / "devbench_metrics.json")
         self.plots_path = plots_path or (EVAL_DIR / "plots" / "devbench_curves.csv")
 
-        self.prompt_price_per_1m = 0.03
-        self.completion_price_per_1m = 0.13
+        # System prompt and tool schemas from unified eval.config
+        self.system_prompt = get_aivc_system_prompt(benchmark_type="devbench")
+        self.tools_schema = get_benchmark_tools_schema(include_workspace=True, benchmark_type="devbench")
+
+        # Resolve pricing per 1M tokens from registry if not explicitly provided
+        models_reg = load_models_registry()
+        model_spec = models_reg.get(model_name)
+        self.prompt_price_per_1m = prompt_price_per_1m if prompt_price_per_1m is not None else (model_spec.prompt_price_per_1m if model_spec else 0.03)
+        self.completion_price_per_1m = completion_price_per_1m if completion_price_per_1m is not None else (model_spec.completion_price_per_1m if model_spec else 0.13)
 
         self.checkpoint_manager = DevBenchCheckpointManager(self.checkpoint_path)
         self.aivc_env = DevBenchAIVCEnvironment()
@@ -632,7 +469,7 @@ class DevBenchRunner:
         payload = {
             "model": self.model_name,
             "messages": messages,
-            "tools": DEVBENCH_MCP_TOOLS_SCHEMA,
+            "tools": self.tools_schema,
             "max_tokens": self.max_tokens,
             "temperature": 0.2,
         }
@@ -680,7 +517,7 @@ class DevBenchRunner:
         print(f"Goal: {prompt}")
 
         messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": AIVC_DEVBENCH_SYSTEM_PROMPT},
+            {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
                 "content": (
@@ -1019,38 +856,56 @@ def main() -> None:
             pass
 
     parser = argparse.ArgumentParser(description="AIVC DevBench SDLC Benchmark Runner")
-    parser.add_argument("--model", type=str, default="qwen/qwen3.7-flash", help="OpenRouter model name")
     parser.add_argument("--checkpoint-path", type=str, default="", help="Custom JSONL checkpoint path")
     parser.add_argument("--metrics-path", type=str, default="", help="Custom metrics JSON export path")
     parser.add_argument("--plots-path", type=str, default="", help="Custom plots CSV export path")
-    parser.add_argument("--limit", type=int, default=15, help="Limit number of SDLC phases to evaluate (default: 15)")
-    parser.add_argument("--max-turns", type=int, default=50, help="Max turns per phase (default: 50)")
-    parser.add_argument("--max-tokens", type=int, default=4096, help="Max tokens per response (default: 4096)")
-    parser.add_argument("--max-cost", type=float, default=0.10, help="Max cost cutoff in USD per phase (default: 0.10)")
-    parser.add_argument("--dry-run", action="store_true", help="Run benchmark in dry-run mode")
-    parser.add_argument("--reset-checkpoint", action="store_true", help="Reset checkpoint and re-run all tasks")
 
-    args = parser.parse_args()
+    # Add unified evaluation configuration flags
+    add_eval_args(parser)
+
+    # Parse and resolve hierarchical config
+    parsed_args = parser.parse_args()
+    cfg = load_benchmark_config(args=parsed_args)
+    paths = cfg.get_paths()
+
+    checkpoint_path = Path(parsed_args.checkpoint_path) if parsed_args.checkpoint_path else (paths.checkpoints_dir / "devbench_checkpoint.jsonl")
+    metrics_path = Path(parsed_args.metrics_path) if parsed_args.metrics_path else (paths.metrics_dir / "devbench_metrics.json")
+    plots_path = Path(parsed_args.plots_path) if parsed_args.plots_path else (paths.plots_dir / "devbench_curves.csv")
+
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    plots_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 70)
+    print(f"[AIVC BENCHMARK RUNNER] DevBench 4-Phase SDLC Pipeline [{cfg.profile.upper()}]")
+    print("=" * 70)
+    print(f"Sample Limit   : {cfg.limit}")
+    print(f"Active Model   : {cfg.model}")
+    print(f"Max Turns      : {cfg.max_turns}")
+    print(f"Max Tokens     : {cfg.max_tokens}")
+    print(f"Max Cost/Phase : ${cfg.max_cost_per_instance_usd:.2f} USD")
+    print(f"Checkpoint File: {checkpoint_path}")
+    print(f"Metrics Output : {metrics_path}")
+    print(f"Curves Output  : {plots_path}")
+    print("=" * 70)
 
     api_key = os.getenv("OPENROUTER_API_KEY", "")
 
-    checkpoint_path = Path(args.checkpoint_path) if args.checkpoint_path else None
-    metrics_path = Path(args.metrics_path) if args.metrics_path else None
-    plots_path = Path(args.plots_path) if args.plots_path else None
-
     runner = DevBenchRunner(
-        model_name=args.model,
+        model_name=cfg.model,
         checkpoint_path=checkpoint_path,
         metrics_path=metrics_path,
         plots_path=plots_path,
         api_key=api_key,
-        max_turns=args.max_turns,
-        max_tokens=args.max_tokens,
-        max_cost_per_phase_usd=args.max_cost,
-        dry_run=args.dry_run,
+        max_turns=cfg.max_turns,
+        max_tokens=cfg.max_tokens,
+        max_cost_per_phase_usd=cfg.max_cost_per_instance_usd,
+        dry_run=cfg.dry_run,
+        prompt_price_per_1m=cfg.model_spec.prompt_price_per_1m if cfg.model_spec else None,
+        completion_price_per_1m=cfg.model_spec.completion_price_per_1m if cfg.model_spec else None,
     )
 
-    runner.run_benchmark(phase_limit=args.limit, reset_checkpoint=args.reset_checkpoint)
+    runner.run_benchmark(phase_limit=cfg.limit, reset_checkpoint=cfg.reset_checkpoint)
 
 
 if __name__ == "__main__":

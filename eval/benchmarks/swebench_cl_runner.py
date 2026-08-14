@@ -65,186 +65,14 @@ except ImportError:
     HAS_YAML = False
 
 
-# ---------------------------------------------------------------------------
-# AIVC MCP Tool Definitions & System Instructions
-# ---------------------------------------------------------------------------
-
-AIVC_SYSTEM_PROMPT = """
-# AIVC — AI Version Control (Long-Term Memory)
-
-You are an expert autonomous software engineer equipped with AIVC, a persistent long-term memory system.
-You have access to tool actions for inspecting code, versioning progress, and retrieving past knowledge.
-
-## Core AIVC Memory Tools:
-1. `remember(title: str, note: str, read_files: list, edited_files: list)`: Save memory note and file snapshots.
-2. `recall(query: str, limit: int = 5)`: Semantic search over past memory notes across this and previous tasks.
-3. `get_recent_memories(limit: int = 10, offset: int = 0)`: Get recent memory logs chronologically.
-4. `consult_memory(memory_id: str)`: Read a specific memory note in full.
-5. `get_file_history_metadata(filepath: str)`: Get version history metadata for a file.
-6. `read_past_file_content(filepath: str, memory_id: str)`: Read past file snapshot.
-
-## Additional Workspace Tools:
-7. `view_file(filepath: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file.
-8. `grep_search(query: str, search_path: str = ".")`: Search pattern across codebase.
-9. `list_dir(directory: str = ".")`: List contents of a directory.
-10. `submit_patch(patch: str, explanation: str)`: Submit the final git patch and complete the task.
-
-## Protocol Rules:
-- Call `recall` first when starting a task to check if similar issues or codebase patterns were solved before.
-- Call `remember` whenever you identify the root cause or implement a solution.
-- Conclude by calling `submit_patch` with the unified diff patch when your fix is ready.
-"""
-
-AIVC_BENCHMARK_TOOLS_SCHEMA: List[Dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "remember",
-            "description": "Save a detailed memory checkpoint with optional read and edited file tracking.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Short memory title"},
-                    "note": {"type": "string", "description": "Detailed markdown note explaining decisions and solution"},
-                    "read_files": {"type": "array", "items": {"type": "string"}, "description": "List of consulted files"},
-                    "edited_files": {"type": "array", "items": {"type": "string"}, "description": "List of modified or created files"},
-                },
-                "required": ["title", "note"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "recall",
-            "description": "Perform semantic search over past memory notes.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Semantic search query"},
-                    "limit": {"type": "integer", "default": 5, "description": "Max memory candidates"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_recent_memories",
-            "description": "Retrieve recent memories in reverse chronological order.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {"type": "integer", "default": 10},
-                    "offset": {"type": "integer", "default": 0},
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "consult_memory",
-            "description": "Retrieve full markdown content of a memory by its ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "memory_id": {"type": "string", "description": "Target memory ID"},
-                },
-                "required": ["memory_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_file_history_metadata",
-            "description": "Get AIVC version history metadata for a tracked file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filepath": {"type": "string", "description": "Relative file path"},
-                },
-                "required": ["filepath"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_past_file_content",
-            "description": "Read past version content of a file at a specific memory snapshot.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filepath": {"type": "string", "description": "Relative file path"},
-                    "memory_id": {"type": "string", "description": "Memory snapshot ID"},
-                },
-                "required": ["filepath", "memory_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "view_file",
-            "description": "View contents of a file within a line range.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filepath": {"type": "string", "description": "Target file path"},
-                    "start_line": {"type": "integer", "default": 1, "description": "1-indexed starting line"},
-                    "end_line": {"type": "integer", "default": 100, "description": "1-indexed ending line"},
-                },
-                "required": ["filepath"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "grep_search",
-            "description": "Search for text or regex pattern in the repository.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Text pattern to find"},
-                    "search_path": {"type": "string", "default": ".", "description": "Directory or file to search"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_dir",
-            "description": "List files and directories in a given folder.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "directory": {"type": "string", "default": ".", "description": "Directory path to list"},
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "submit_patch",
-            "description": "Submit final unified diff patch to resolve the issue.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "patch": {"type": "string", "description": "Unified git diff format patch"},
-                    "explanation": {"type": "string", "description": "Summary of root cause and fix implemented"},
-                },
-                "required": ["patch"],
-            },
-        },
-    },
-]
+# Import unified configuration, prompt template, and tool schemas from eval.config
+from config import (
+    add_eval_args,
+    get_aivc_system_prompt,
+    get_benchmark_tools_schema,
+    load_benchmark_config,
+    load_models_registry,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1012,113 +840,90 @@ def main() -> None:
         help="Dataset split (default: test)",
     )
     parser.add_argument(
-        "--limit",
-        type=int,
-        default=15,
-        help="Limit number of instances to evaluate (default: 15)",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="qwen/qwen3.7-flash",
-        help="OpenRouter model identifier (default: qwen/qwen3.7-flash)",
-    )
-    parser.add_argument(
-        "--max-turns",
-        type=int,
-        default=50,
-        help="Max turns per instance (default: 50)",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=4096,
-        help="Max tokens per response (default: 4096)",
-    )
-    parser.add_argument(
-        "--max-cost",
-        type=float,
-        default=0.10,
-        help="Max cost cutoff in USD per instance (default: 0.10)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Run evaluation in dry-run mode",
-    )
-    parser.add_argument(
         "--force",
         action="store_true",
         help="Force re-execution of instances already present in checkpoint",
     )
     parser.add_argument(
-        "--reset-checkpoint",
-        action="store_true",
-        help="Purge/reset checkpoint file before starting evaluation",
-    )
-    parser.add_argument(
         "--checkpoint-file",
         type=Path,
-        default=EVAL_DIR / "checkpoints" / "swebench_cl_checkpoint.jsonl",
+        default=None,
         help="Path to JSONL checkpoint file",
     )
     parser.add_argument(
         "--metrics-file",
         type=Path,
-        default=EVAL_DIR / "metrics" / "swebench_cl_metrics.json",
+        default=None,
         help="Path to output metrics JSON file",
     )
     parser.add_argument(
         "--curves-file",
         type=Path,
-        default=EVAL_DIR / "plots" / "swebench_cl_curves.csv",
+        default=None,
         help="Path to output plot curves CSV file",
     )
 
-    args = parser.parse_args()
+    # Attach unified evaluation configuration flags
+    add_eval_args(parser)
+
+    # Parse and resolve hierarchical config
+    parsed_args = parser.parse_args()
+    cfg = load_benchmark_config(args=parsed_args)
+    paths = cfg.get_paths()
+
+    checkpoint_file = parsed_args.checkpoint_file or (paths.checkpoints_dir / "swebench_cl_checkpoint.jsonl")
+    metrics_file = parsed_args.metrics_file or (paths.metrics_dir / "swebench_cl_metrics.json")
+    curves_file = parsed_args.curves_file or (paths.plots_dir / "swebench_cl_curves.csv")
+
+    # Ensure output directories exist
+    checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+    metrics_file.parent.mkdir(parents=True, exist_ok=True)
+    curves_file.parent.mkdir(parents=True, exist_ok=True)
 
     # If reset-checkpoint requested or force, purge checkpoint
-    if args.reset_checkpoint and args.checkpoint_file.exists():
-        print(f"[RESET] Purging existing checkpoint file '{args.checkpoint_file}'...")
-        args.checkpoint_file.unlink()
+    if cfg.reset_checkpoint and checkpoint_file.exists():
+        print(f"[RESET] Purging existing checkpoint file '{checkpoint_file}'...")
+        checkpoint_file.unlink()
 
     print("=" * 70)
-    print("[AIVC BENCHMARK RUNNER] SWE-bench-CL Evaluation Pipeline")
+    print(f"[AIVC BENCHMARK RUNNER] SWE-bench-CL Evaluation Pipeline [{cfg.profile.upper()}]")
     print("=" * 70)
-    print(f"Target Dataset : {args.dataset}")
-    print(f"Dataset Split  : {args.split}")
-    print(f"Sample Limit   : {args.limit}")
-    print(f"Active Model   : {args.model}")
-    print(f"Max Turns      : {args.max_turns}")
-    print(f"Max Tokens     : {args.max_tokens}")
-    print(f"Max Cost/Inst  : ${args.max_cost:.2f} USD")
-    print(f"Checkpoint File: {args.checkpoint_file}")
-    print(f"Metrics Output : {args.metrics_file}")
-    print(f"Curves Output  : {args.curves_file}")
+    print(f"Target Dataset : {parsed_args.dataset}")
+    print(f"Dataset Split  : {parsed_args.split}")
+    print(f"Sample Limit   : {cfg.limit}")
+    print(f"Active Model   : {cfg.model}")
+    print(f"Max Turns      : {cfg.max_turns}")
+    print(f"Max Tokens     : {cfg.max_tokens}")
+    print(f"Max Cost/Inst  : ${cfg.max_cost_per_instance_usd:.2f} USD")
+    print(f"Checkpoint File: {checkpoint_file}")
+    print(f"Metrics Output : {metrics_file}")
+    print(f"Curves Output  : {curves_file}")
     print("=" * 70)
 
     # Load API key
     api_key = os.getenv("OPENROUTER_API_KEY", "")
 
     # Initialize CheckpointManager
-    ckpt_mgr = CheckpointManager(args.checkpoint_file)
+    ckpt_mgr = CheckpointManager(checkpoint_file)
     print(f"[CHECKPOINT] Loaded {len(ckpt_mgr.processed_ids)} existing processed instances from checkpoint.")
 
     # Load Dataset (real instances)
     instances, used_dataset_name = load_swebench_cl_dataset(
-        dataset_name=args.dataset,
-        split=args.split,
-        limit=args.limit,
+        dataset_name=parsed_args.dataset,
+        split=parsed_args.split,
+        limit=cfg.limit,
     )
 
     # Instantiate Runner
     runner = SWEBenchCLRunner(
-        model_name=args.model,
+        model_name=cfg.model,
         api_key=api_key,
-        max_turns=args.max_turns,
-        max_tokens=args.max_tokens,
-        max_cost_per_instance_usd=args.max_cost,
-        dry_run=args.dry_run,
+        max_turns=cfg.max_turns,
+        max_tokens=cfg.max_tokens,
+        max_cost_per_instance_usd=cfg.max_cost_per_instance_usd,
+        dry_run=cfg.dry_run,
+        prompt_price_per_1m=cfg.model_spec.prompt_price_per_1m if cfg.model_spec else None,
+        completion_price_per_1m=cfg.model_spec.completion_price_per_1m if cfg.model_spec else None,
     )
 
     skipped_count = 0
@@ -1126,7 +931,7 @@ def main() -> None:
 
     for idx, inst in enumerate(instances, 1):
         inst_id = inst["instance_id"]
-        if ckpt_mgr.is_processed(inst_id) and not args.force and not args.reset_checkpoint:
+        if ckpt_mgr.is_processed(inst_id) and not parsed_args.force and not cfg.reset_checkpoint:
             print(f"[SKIP] Instance '{inst_id}' already processed in checkpoint.")
             skipped_count += 1
             continue
@@ -1141,13 +946,13 @@ def main() -> None:
     if all_records:
         export_metrics(
             records=all_records,
-            metrics_path=args.metrics_file,
-            model_name=args.model,
+            metrics_path=metrics_file,
+            model_name=cfg.model,
             dataset_name=used_dataset_name,
         )
         export_plots_curves(
             records=all_records,
-            curves_path=args.curves_file,
+            curves_path=curves_file,
         )
 
     print("\n" + "=" * 70)

@@ -1,24 +1,24 @@
 {
-  "aggregated_at": "2026-08-14T12:14:12.190131+00:00",
+  "aggregated_at": "2026-08-14T13:17:16.557914+00:00",
   "total_benchmarks": 3,
   "overall_summary": {
-    "total_tasks": 35,
-    "total_successful_tasks": 30,
-    "overall_pass_rate": 0.8571,
+    "total_tasks": 25,
+    "total_successful_tasks": 9,
+    "overall_pass_rate": 0.36,
     "token_counts": {
-      "total_prompt_tokens": 28815,
-      "total_completion_tokens": 8365,
-      "total_tokens": 37180
+      "total_prompt_tokens": 5737884,
+      "total_completion_tokens": 155155,
+      "total_tokens": 5893039
     },
     "openrouter_execution_costs_usd": {
-      "total_prompt_cost_usd": 0.000864,
-      "total_completion_cost_usd": 0.001087,
-      "total_execution_cost_usd": 0.004395
+      "total_prompt_cost_usd": 0.172137,
+      "total_completion_cost_usd": 0.02017,
+      "total_execution_cost_usd": 0.192309
     },
     "mean_evaluation_ratios": {
-      "mean_exploration_overhead_ratio_eor": 0.75,
-      "mean_memory_utility_index_mui": 0.1875,
-      "mean_cumulative_cost_savings_ratio_ccsr": 0.9873
+      "mean_exploration_overhead_ratio_eor": 0.8476,
+      "mean_memory_utility_index_mui": 0.0847,
+      "mean_cumulative_cost_savings_ratio_ccsr": 0.5623
     }
   },
   "benchmarks": {
@@ -48,23 +48,23 @@
     "SWE-bench-CL Continual Learning": {
       "benchmark_name": "SWE-bench-CL Continual Learning",
       "model_name": "qwen/qwen3.7-flash",
-      "total_tasks": 25,
-      "successful_tasks": 20,
-      "pass_rate": 0.8,
+      "total_tasks": 15,
+      "successful_tasks": 1,
+      "pass_rate": 0.0667,
       "token_counts": {
-        "prompt_tokens": 18125,
-        "completion_tokens": 4875,
-        "total_tokens": 23000
+        "prompt_tokens": 3865746,
+        "completion_tokens": 54466,
+        "total_tokens": 3920212
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.000544,
-        "completion_cost_usd": 0.000634,
-        "total_cost_usd": 0.003621
+        "prompt_cost_usd": 0.115972,
+        "completion_cost_usd": 0.007081,
+        "total_cost_usd": 0.123054
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.25,
-        "memory_utility_index_mui": 0.5625,
-        "cumulative_cost_savings_ratio_ccsr": 0.9788
+        "exploration_overhead_ratio_eor": 0.9331,
+        "memory_utility_index_mui": 0.0,
+        "cumulative_cost_savings_ratio_ccsr": 0.9412
       },
       "is_sample_data": false
     },
@@ -72,22 +72,22 @@
       "benchmark_name": "DevBench",
       "model_name": "qwen/qwen3.7-flash",
       "total_tasks": 5,
-      "successful_tasks": 5,
-      "pass_rate": 1.0,
+      "successful_tasks": 3,
+      "pass_rate": 0.6,
       "token_counts": {
-        "prompt_tokens": 10690,
-        "completion_tokens": 3490,
-        "total_tokens": 14180
+        "prompt_tokens": 1872138,
+        "completion_tokens": 100689,
+        "total_tokens": 1972827
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.000321,
-        "completion_cost_usd": 0.000454,
-        "total_cost_usd": 0.000774
+        "prompt_cost_usd": 0.056164,
+        "completion_cost_usd": 0.01309,
+        "total_cost_usd": 0.069255
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 1.0,
-        "memory_utility_index_mui": 0.0,
-        "cumulative_cost_savings_ratio_ccsr": 0.9897
+        "exploration_overhead_ratio_eor": 0.6096,
+        "memory_utility_index_mui": 0.2541,
+        "cumulative_cost_savings_ratio_ccsr": -0.2478
       },
       "is_sample_data": false
     }

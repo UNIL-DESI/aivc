@@ -1,6 +1,0 @@
-task_index,task_id,step,reward,cumulative_reward,success,eor,mui,ccsr,total_cost_usd
-0,IC-BASH-001,1,1.0,1.0,1,1.0,0.0,0.9956,2.2e-05
-1,IC-BASH-002,1,1.0,2.0,1,1.0,0.0,0.9954,4.4e-05
-2,IC-BASH-003,1,1.0,3.0,1,1.0,0.0,0.9957,6.6e-05
-3,IC-BASH-004,1,1.0,4.0,1,1.0,0.0,0.9958,8.8e-05
-4,IC-BASH-005,1,1.0,5.0,1,1.0,0.0,0.9956,0.00011

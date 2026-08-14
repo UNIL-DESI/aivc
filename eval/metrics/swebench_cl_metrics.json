@@ -2,21 +2,21 @@
   "benchmark": "SWE-bench-CL Continual Learning",
   "dataset_name": "thomasjoshi/swe-bench-cl",
   "model_name": "qwen/qwen3.7-flash",
-  "timestamp": "2026-08-14T12:14:09.794202+00:00",
+  "timestamp": "2026-08-14T13:17:14.197360+00:00",
   "summary": {
-    "total_instances": 25,
-    "resolved_instances": 20,
-    "unresolved_instances": 5,
-    "resolve_rate_pass_at_1": 0.8,
-    "average_exploration_overhead_ratio_eor": 0.25,
-    "average_memory_utility_index_mui": 0.5625,
-    "average_cumulative_cost_savings_ratio_ccsr": 0.9788
+    "total_instances": 15,
+    "resolved_instances": 1,
+    "unresolved_instances": 14,
+    "resolve_rate_pass_at_1": 0.0667,
+    "average_exploration_overhead_ratio_eor": 0.9331,
+    "average_memory_utility_index_mui": 0.0,
+    "average_cumulative_cost_savings_ratio_ccsr": 0.9412
   },
   "resource_consumption": {
-    "prompt_tokens": 18125,
-    "completion_tokens": 4875,
-    "total_tokens": 23000,
-    "aivc_total_cost_usd": 0.003621,
-    "baseline_estimated_cost_usd": 0.165
+    "prompt_tokens": 3865746,
+    "completion_tokens": 54466,
+    "total_tokens": 3920212,
+    "aivc_total_cost_usd": 0.123054,
+    "baseline_estimated_cost_usd": 19.63106
   }
 }
