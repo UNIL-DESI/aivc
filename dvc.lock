@@ -84,27 +84,27 @@ stages:
   eval:
     cmd: python eval/scripts/aggregate_metrics.py
     deps:
+    - path: .dvc-viewer/hashes/eval.hash
+      hash: md5
+      md5: 3c953d6b6fe2237f3504c43f8cb5fcd2
+      size: 64
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: 15f363a92edc3620d09f42c484762eac
-      size: 15543
-    - path: eval/metrics/intercode_metrics.json
-      hash: md5
-      md5: 449621bfad9891e04c08ca027a72f804
-      size: 605
+      md5: 205f86d930f7eead81a5301a278cb08e
+      size: 15003
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 781066d6346f67064a0010d72534f78d
-      size: 725
+      md5: 52c00a1b754c860a54a13ab1a77820c5
+      size: 704
     - path: eval/scripts/aggregate_metrics.py
       hash: md5
-      md5: ff53bbcb48a6a321a1df05b4d6e4ae68
-      size: 471
+      md5: a378bee9fe04b3a187d4dd604fc096dc
+      size: 452
     outs:
     - path: eval/metrics/summary_metrics.json
       hash: md5
-      md5: bafd5e9b691f69173a600ee79804fbc5
-      size: 3510
+      md5: 09d0fcfbe388cd7e99aac80de7d7c858
+      size: 3393
     - path: eval/plots/comparative_summary.csv
       hash: md5
       md5: 09e714f679ed9b2a0063dcb51bf86ef0
