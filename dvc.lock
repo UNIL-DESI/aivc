@@ -19,18 +19,22 @@ stages:
   eval_swebench_cl:
     cmd: python eval/benchmarks/swebench_cl_runner.py --limit 10
     deps:
+    - path: .dvc-viewer/hashes/eval_swebench_cl.hash
+      hash: md5
+      md5: e9db9d5f4848ef2e006d8e249c54bbe3
+      size: 64
     - path: eval/benchmarks/swebench_cl_runner.py
       hash: md5
-      md5: d4f8f8122224895573773615398d5d2a
-      size: 34196
+      md5: 5b168d65927147b169d10e1bd2a30287
+      size: 33337
     params:
       params.yaml:
         eval.limit: 10
     outs:
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 9e62484c9809228ee341520e91e054c5
-      size: 705
+      md5: c63f8d1a5d227473a93edcd7bfacaaa4
+      size: 684
     - path: eval/plots/swebench_cl_curves.csv
       hash: md5
       md5: b5944c964cbf4668b78b4b081c4a2ab5
@@ -38,18 +42,22 @@ stages:
   eval_devbench:
     cmd: python eval/benchmarks/devbench_runner.py --limit 10
     deps:
+    - path: .dvc-viewer/hashes/eval_devbench.hash
+      hash: md5
+      md5: f77b4e4beb2238fe87e801d9a78ab1ad
+      size: 64
     - path: eval/benchmarks/devbench_runner.py
       hash: md5
-      md5: 09b8d5fecec5103d00b91eef6154038c
-      size: 30277
+      md5: 767a52be02020e0df008468a7c4dcff5
+      size: 29536
     params:
       params.yaml:
         eval.limit: 10
     outs:
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: 4091ab4a456858fe4eedced3900a054e
-      size: 15543
+      md5: 205f86d930f7eead81a5301a278cb08e
+      size: 15003
     - path: eval/plots/devbench_curves.csv
       hash: md5
       md5: 2de36b56dbbea5aebfea33420578a6d8
@@ -76,23 +84,27 @@ stages:
   eval:
     cmd: python eval/scripts/aggregate_metrics.py
     deps:
+    - path: .dvc-viewer/hashes/eval.hash
+      hash: md5
+      md5: 3c953d6b6fe2237f3504c43f8cb5fcd2
+      size: 64
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: 4091ab4a456858fe4eedced3900a054e
-      size: 15543
+      md5: 205f86d930f7eead81a5301a278cb08e
+      size: 15003
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 9e62484c9809228ee341520e91e054c5
-      size: 705
+      md5: c63f8d1a5d227473a93edcd7bfacaaa4
+      size: 684
     - path: eval/scripts/aggregate_metrics.py
       hash: md5
-      md5: ff53bbcb48a6a321a1df05b4d6e4ae68
-      size: 471
+      md5: a378bee9fe04b3a187d4dd604fc096dc
+      size: 452
     outs:
     - path: eval/metrics/summary_metrics.json
       hash: md5
-      md5: 9d290767ea847fd847bffda75d26706d
-      size: 2859
+      md5: cdc165c708eab927a43b73097a322af6
+      size: 2765
     - path: eval/plots/comparative_summary.csv
       hash: md5
       md5: 75adf750f91095ddb25af5859ba2fbaf
@@ -102,6 +114,6 @@ stages:
     outs:
     - path: .dvc-viewer/hashes
       hash: md5
-      md5: 59eb4d574d8a105d4f5b81e27487aebf.dir
+      md5: 041ca0343350a0e38b26569e14959e1d.dir
       size: 1418
       nfiles: 8
