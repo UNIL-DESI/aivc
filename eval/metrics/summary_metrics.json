@@ -1,5 +1,5 @@
 {
-  "aggregated_at": "2026-08-10T16:47:40.657025+00:00",
+  "aggregated_at": "2026-08-14T11:39:56.196498+00:00",
   "total_benchmarks": 4,
   "overall_summary": {
     "total_tasks": 10,
@@ -18,7 +18,7 @@
     "mean_evaluation_ratios": {
       "mean_exploration_overhead_ratio_eor": 0.25,
       "mean_memory_utility_index_mui": 0.0,
-      "mean_cumulative_cost_savings_ratio_ccsr": 0.249
+      "mean_cumulative_cost_savings_ratio_ccsr": 0.2484
     }
   },
   "benchmarks": {
@@ -41,7 +41,7 @@
       "evaluation_ratios": {
         "exploration_overhead_ratio_eor": 1.0,
         "memory_utility_index_mui": 0.0,
-        "cumulative_cost_savings_ratio_ccsr": 0.9959
+        "cumulative_cost_savings_ratio_ccsr": 0.9935
       },
       "is_sample_data": false
     },

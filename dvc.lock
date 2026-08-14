@@ -1,0 +1,103 @@
+schema: '2.0'
+stages:
+  dry_run:
+    cmd: python eval/scripts/run_dry_run.py
+    deps:
+    - path: eval/scripts/run_dry_run.py
+      hash: md5
+      md5: efcf4692273c860bde7220743d6ccfe9
+      size: 12722
+    outs:
+    - path: eval/metrics/dry_run_metrics.json
+      hash: md5
+      md5: e9dd8539111ac3c5f407dead532ad2de
+      size: 709
+    - path: eval/plots/dry_run_curves.csv
+      hash: md5
+      md5: e17fbe7d5db507217147cb766ac3f322
+      size: 638
+  eval_swebench_cl:
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit 10
+    deps:
+    - path: eval/benchmarks/swebench_cl_runner.py
+      hash: md5
+      md5: 9e7d00477770d08dc9f50d4284772c69
+      size: 29127
+    params:
+      params.yaml:
+        eval.limit: 10
+    outs:
+    - path: eval/metrics/swebench_cl_metrics.json
+      hash: md5
+      md5: 781066d6346f67064a0010d72534f78d
+      size: 725
+    - path: eval/plots/swebench_cl_curves.csv
+      hash: md5
+      md5: c76f105c2232d761c3d464af83876403
+      size: 1827
+  eval_devbench:
+    cmd: python eval/benchmarks/devbench_runner.py --limit 10
+    deps:
+    - path: eval/benchmarks/devbench_runner.py
+      hash: md5
+      md5: 09b8d5fecec5103d00b91eef6154038c
+      size: 30277
+    params:
+      params.yaml:
+        eval.limit: 10
+    outs:
+    - path: eval/metrics/devbench_metrics.json
+      hash: md5
+      md5: 15f363a92edc3620d09f42c484762eac
+      size: 15543
+    - path: eval/plots/devbench_curves.csv
+      hash: md5
+      md5: 2de36b56dbbea5aebfea33420578a6d8
+      size: 2197
+  eval_intercode:
+    cmd: python eval/benchmarks/intercode_runner.py --limit 10
+    deps:
+    - path: eval/benchmarks/intercode_runner.py
+      hash: md5
+      md5: 099e614e55feb625626059c137a7c46d
+      size: 39060
+    params:
+      params.yaml:
+        eval.limit: 10
+    outs:
+    - path: eval/metrics/intercode_metrics.json
+      hash: md5
+      md5: 449621bfad9891e04c08ca027a72f804
+      size: 605
+    - path: eval/plots/intercode_curves.csv
+      hash: md5
+      md5: bcce71665776bccbb7927171755a4564
+      size: 336
+  eval:
+    cmd: python eval/scripts/aggregate_metrics.py
+    deps:
+    - path: eval/metrics/devbench_metrics.json
+      hash: md5
+      md5: 15f363a92edc3620d09f42c484762eac
+      size: 15543
+    - path: eval/metrics/intercode_metrics.json
+      hash: md5
+      md5: 449621bfad9891e04c08ca027a72f804
+      size: 605
+    - path: eval/metrics/swebench_cl_metrics.json
+      hash: md5
+      md5: 781066d6346f67064a0010d72534f78d
+      size: 725
+    - path: eval/scripts/aggregate_metrics.py
+      hash: md5
+      md5: ff53bbcb48a6a321a1df05b4d6e4ae68
+      size: 471
+    outs:
+    - path: eval/metrics/summary_metrics.json
+      hash: md5
+      md5: bafd5e9b691f69173a600ee79804fbc5
+      size: 3510
+    - path: eval/plots/comparative_summary.csv
+      hash: md5
+      md5: 09e714f679ed9b2a0063dcb51bf86ef0
+      size: 542

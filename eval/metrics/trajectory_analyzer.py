@@ -161,6 +161,7 @@ class TrajectoryMetrics:
     eor: float = 0.0
     mui: float = 0.0
     ccsr: float = 0.0
+    tool_counts: Dict[str, int] = field(default_factory=dict)
     token_cost: Optional[TokenCostTracker] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -173,6 +174,7 @@ class TrajectoryMetrics:
             "exploration_overhead_ratio_eor": self.eor,
             "memory_utility_index_mui": self.mui,
             "cumulative_cost_savings_ratio_ccsr": self.ccsr,
+            "tool_counts": self.tool_counts,
         }
         if self.token_cost:
             res["token_cost"] = self.token_cost.to_dict()
@@ -206,6 +208,7 @@ class TrajectoryAnalyzer:
         total_steps = len(trajectory)
         total_tool_calls = 0
         exploration_tool_calls = 0
+        tool_counts: Dict[str, int] = {}
 
         step_recalled = recalled_memories_count
         step_used = used_memories_count
@@ -232,6 +235,8 @@ class TrajectoryAnalyzer:
                     tool_name = tc.get("name", "")
                 else:
                     tool_name = ""
+                if tool_name:
+                    tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
                 if tool_name in EXPLORATION_TOOLS:
                     exploration_tool_calls += 1
 
@@ -248,5 +253,6 @@ class TrajectoryAnalyzer:
             eor=eor,
             mui=mui,
             ccsr=ccsr,
+            tool_counts=tool_counts,
             token_cost=self.tracker,
         )

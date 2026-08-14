@@ -2,21 +2,21 @@
   "benchmark": "SWE-bench-CL Continual Learning",
   "dataset_name": "thomasjoshi/swe-bench-cl (Synthetic Fallback)",
   "model_name": "qwen/qwen3.7-flash",
-  "timestamp": "2026-08-10T16:47:46.760748+00:00",
+  "timestamp": "2026-08-14T11:39:55.306213+00:00",
   "summary": {
-    "total_instances": 10,
-    "resolved_instances": 8,
-    "unresolved_instances": 2,
+    "total_instances": 15,
+    "resolved_instances": 12,
+    "unresolved_instances": 3,
     "resolve_rate_pass_at_1": 0.8,
     "average_exploration_overhead_ratio_eor": 0.25,
-    "average_memory_utility_index_mui": 0.6375,
-    "average_cumulative_cost_savings_ratio_ccsr": 0.9811
+    "average_memory_utility_index_mui": 0.575,
+    "average_cumulative_cost_savings_ratio_ccsr": 0.9801
   },
   "resource_consumption": {
-    "prompt_tokens": 6750,
-    "completion_tokens": 1650,
-    "total_tokens": 8400,
-    "aivc_total_cost_usd": 0.001197,
-    "baseline_estimated_cost_usd": 0.062
+    "prompt_tokens": 10750,
+    "completion_tokens": 2850,
+    "total_tokens": 13600,
+    "aivc_total_cost_usd": 0.001998,
+    "baseline_estimated_cost_usd": 0.098
   }
 }

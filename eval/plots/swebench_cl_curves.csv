@@ -9,3 +9,8 @@ episode_index,instance_id,repo,timestamp,resolved,cumulative_resolved,resolve_ra
 8,swebench-cl-task-003,scikit-learn/scikit-learn,2026-08-10T16:47:46.747251+00:00,1,7,0.875,0.000827,0.25,0.6094,0.9835
 9,swebench-cl-task-004,astropy/astropy,2026-08-10T16:47:46.748263+00:00,0,7,0.7778,0.000989,0.25,0.625,0.9825
 10,swebench-cl-task-005,sympy/sympy,2026-08-10T16:47:46.749262+00:00,1,8,0.8,0.001197,0.25,0.6375,0.9811
+11,swebench-cl-task-006,pytest-dev/pytest,2026-08-14T11:39:55.294689+00:00,1,9,0.8182,0.001247,0.25,0.6023,0.9821
+12,swebench-cl-task-007,sphinx-doc/sphinx,2026-08-14T11:39:55.296188+00:00,1,10,0.8333,0.001349,0.25,0.5833,0.9824
+13,swebench-cl-task-008,requests/requests,2026-08-14T11:39:55.297190+00:00,0,10,0.7692,0.001507,0.25,0.5962,0.9821
+14,swebench-cl-task-009,matplotlib/matplotlib,2026-08-14T11:39:55.298189+00:00,1,11,0.7857,0.001722,0.25,0.5804,0.9813
+15,swebench-cl-task-010,python/cpython,2026-08-14T11:39:55.299188+00:00,1,12,0.8,0.001998,0.25,0.575,0.9801

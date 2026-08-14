@@ -12,15 +12,15 @@
     "used_memories": 13,
     "exploration_overhead_ratio_eor": 1.0,
     "memory_utility_index_mui": 0.0,
-    "cumulative_cost_savings_ratio_ccsr": 0.9959,
+    "cumulative_cost_savings_ratio_ccsr": 0.9935,
     "token_cost": {
       "model_name": "qwen/qwen3.7-flash",
-      "prompt_tokens": 106,
-      "completion_tokens": 760,
-      "total_tokens": 866,
-      "prompt_cost_usd": 3e-06,
-      "completion_cost_usd": 9.9e-05,
-      "total_cost_usd": 0.000102
+      "prompt_tokens": 2700,
+      "completion_tokens": 625,
+      "total_tokens": 3325,
+      "prompt_cost_usd": 8.1e-05,
+      "completion_cost_usd": 8.1e-05,
+      "total_cost_usd": 0.000162
     }
   }
 }

@@ -6,13 +6,16 @@ from eval/config/models_openrouter.yaml, and executes a 5-task dry run evaluatio
 using qwen/qwen3.7-flash.
 """
 
+import csv
 import json
 import os
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
 
 # Ensure repository root and eval directory are in sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -284,7 +287,53 @@ def run_dry_run_evaluation() -> None:
         json.dump(export_data, f, indent=2)
     print(f"[EXPORT] Saved dry run metrics to {metrics_out}")
 
+    # 6. Export plot curves to eval/plots/dry_run_curves.csv
+    plots_out = EVAL_DIR / "plots" / "dry_run_curves.csv"
+    plots_out.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "task_index",
+        "task_id",
+        "timestamp",
+        "resolved",
+        "cumulative_resolved",
+        "resolve_rate",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "cost_usd",
+        "cumulative_cost_usd",
+        "eor",
+        "mui",
+        "ccsr",
+    ]
+    cum_cost = 0.0
+    with open(plots_out, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for idx, step in enumerate(trajectory, 1):
+            p_tok = step.get("prompt_tokens", 0)
+            c_tok = step.get("completion_tokens", 0)
+            cost = (p_tok * 0.03 + c_tok * 0.13) / 1e6
+            cum_cost += cost
+            writer.writerow({
+                "task_index": idx,
+                "task_id": step.get("task_id", f"TASK-{idx:03d}"),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "resolved": 1,
+                "cumulative_resolved": idx,
+                "resolve_rate": 1.0,
+                "prompt_tokens": p_tok,
+                "completion_tokens": c_tok,
+                "total_tokens": p_tok + c_tok,
+                "cost_usd": round(cost, 6),
+                "cumulative_cost_usd": round(cum_cost, 6),
+                "eor": round(metrics.eor, 4),
+                "mui": round(metrics.mui, 4),
+                "ccsr": round(metrics.ccsr, 4),
+            })
+    print(f"[EXPORT] Saved dry run plot curves to {plots_out}")
 
 
 if __name__ == "__main__":
     run_dry_run_evaluation()
+

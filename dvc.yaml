@@ -1,51 +1,51 @@
 stages:
   dry_run:
     cmd: python eval/scripts/run_dry_run.py
+    deps:
+      - eval/scripts/run_dry_run.py
     metrics:
-      - metrics/dry_run_metrics.json:
+      - eval/metrics/dry_run_metrics.json:
           cache: false
     plots:
-      - plots/dry_run_curves.csv:
+      - eval/plots/dry_run_curves.csv:
           cache: false
 
   eval_swebench_cl:
     cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit}
     params:
       - eval.limit
+    deps:
+      - eval/benchmarks/swebench_cl_runner.py
     metrics:
-      - metrics/swebench_cl_metrics.json:
+      - eval/metrics/swebench_cl_metrics.json:
           cache: false
     plots:
-      - plots/swebench_cl_curves.csv:
+      - eval/plots/swebench_cl_curves.csv:
           cache: false
 
   eval_devbench:
     cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit}
     params:
       - eval.limit
+    deps:
+      - eval/benchmarks/devbench_runner.py
     metrics:
-      - metrics/devbench_metrics.json:
+      - eval/metrics/devbench_metrics.json:
           cache: false
     plots:
-      - plots/devbench_curves.csv:
+      - eval/plots/devbench_curves.csv:
           cache: false
 
-  eval_intercode:
-    cmd: python eval/benchmarks/intercode_runner.py --limit ${eval.limit}
-    params:
-      - eval.limit
-    metrics:
-      - metrics/intercode_metrics.json:
-          cache: false
-    plots:
-      - plots/intercode_curves.csv:
-          cache: false
-
-  aggregate_metrics:
+  eval:
     cmd: python eval/scripts/aggregate_metrics.py
+    deps:
+      - eval/scripts/aggregate_metrics.py
+      - eval/metrics/swebench_cl_metrics.json
+      - eval/metrics/devbench_metrics.json
     metrics:
-      - metrics/summary_metrics.json:
+      - eval/metrics/summary_metrics.json:
           cache: false
     plots:
-      - plots/comparative_summary.csv:
+      - eval/plots/comparative_summary.csv:
           cache: false
+

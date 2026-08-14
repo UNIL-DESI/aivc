@@ -72,3 +72,5 @@ def test_trajectory_analyzer():
     assert metrics.recalled_memories == 3
     assert metrics.used_memories == 3
     assert metrics.token_cost.total_tokens == 450
+    assert metrics.tool_counts == {"grep_search": 1, "write_to_file": 1, "view_file": 1}
+    assert metrics.to_dict()["tool_counts"] == {"grep_search": 1, "write_to_file": 1, "view_file": 1}
