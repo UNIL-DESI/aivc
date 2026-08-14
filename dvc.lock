@@ -19,18 +19,22 @@ stages:
   eval_swebench_cl:
     cmd: python eval/benchmarks/swebench_cl_runner.py --limit 10
     deps:
+    - path: .dvc-viewer/hashes/eval_swebench_cl.hash
+      hash: md5
+      md5: b548b4f90ee30a297823ca11e678d2de
+      size: 64
     - path: eval/benchmarks/swebench_cl_runner.py
       hash: md5
-      md5: 9e7d00477770d08dc9f50d4284772c69
-      size: 29127
+      md5: 33dbc38ec344236438a1ae699be59909
+      size: 28368
     params:
       params.yaml:
         eval.limit: 10
     outs:
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 781066d6346f67064a0010d72534f78d
-      size: 725
+      md5: 52c00a1b754c860a54a13ab1a77820c5
+      size: 704
     - path: eval/plots/swebench_cl_curves.csv
       hash: md5
       md5: c76f105c2232d761c3d464af83876403
