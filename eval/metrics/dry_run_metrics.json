@@ -13,6 +13,12 @@
     "exploration_overhead_ratio_eor": 1.0,
     "memory_utility_index_mui": 0.0,
     "cumulative_cost_savings_ratio_ccsr": 0.9935,
+    "tool_counts": {
+      "grep_search": 3,
+      "view_file": 2,
+      "read_past_file_content": 1,
+      "list_dir": 1
+    },
     "token_cost": {
       "model_name": "qwen/qwen3.7-flash",
       "prompt_tokens": 2700,
