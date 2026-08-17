@@ -1,5 +1,5 @@
 benchmark,model_name,total_tasks,successful_tasks,pass_rate,prompt_tokens,completion_tokens,total_tokens,prompt_cost_usd,completion_cost_usd,total_cost_usd,eor,mui,ccsr,ndcg_at_1,ndcg_at_3,ndcg_at_5,precision_at_3,recall_at_3,mrr,total_tool_interactions,is_sample_data
 dry_run,qwen/qwen3.7-flash,5,5,1.0,0,0,0,0.0,0.0,0.0,1.0,0.0,0.9935,0.0,0.0,0.0,0.0,0.0,0.0,0,False
-SWE-bench-CL Continual Learning,openai/gpt-oss-20b,1,0,0.0,1638,4096,5734,4.9e-05,0.000532,0.002785,0.0,0.0,0.981,0.0,0.0,0.0,0.0,0.0,0.0,0,False
-DevBench,openai/gpt-oss-20b,5,0,1.0,1447,3701,5148,4.3e-05,0.000481,0.00251,0.0,0.0,0.1633,0.0,0.0,0.0,0.0,0.0,0.0,0,False
-Agentic RAG Continual Learning,openai/gpt-oss-20b,0,0,0.0,2845,7171,10016,8.5e-05,0.000932,0.001018,0.8404,0.1061,0.9473,0.0,0.0,0.0,0.3333,0.3333,1.0,0,False
+SWE-bench-CL Continual Learning,qwen/qwen3.7-flash,30,2,0.0667,9536260,187627,9723887,0.286088,0.024392,0.310477,0.896,0.0131,0.9029,0.2333,0.6,0.9234,0.4667,0.8333,0.4972,1441,False
+DevBench,qwen/qwen3.7-flash,5,4,0.8,3441122,203570,3644692,0.103234,0.026464,0.129699,0.6022,0.2911,-0.7293,0.35,0.4561,0.5834,0.35,0.5167,0.5067,516,False
+Agentic RAG Continual Learning,qwen/qwen3.7-flash,0,0,0.0,2419957,68471,2488428,0.072599,0.008901,0.0815,0.6959,0.2145,-2.2568,0.0,0.0,0.0,0.7333,0.7333,0.8461,481,False

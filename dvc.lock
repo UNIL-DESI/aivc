@@ -172,30 +172,34 @@ stages:
     deps:
     - path: .dvc-viewer/hashes/aggregate_metrics.hash
       hash: md5
-      md5: 093fea798dcb051e9af2825dd0af8431
+      md5: 6b69f1cd08707dfd493132ce31d14089
       size: 64
     - path: eval/metrics/agentic_rag_metrics.json
       hash: md5
-      md5: af499aacd8e717d972593b0c5e047c35
-      size: 1002
+      md5: 3405957d53fd4e592ef5820cb37eff14
+      size: 1528
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: e539f65bb8a64d37a396385695653dbf
-      size: 21596
+      md5: a5be8492c26053d6e25ff74f83d52145
+      size: 790142
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 470a5acec5fc8f876558e396114ab483
-      size: 690
+      md5: 567e4ef39da93483558a7a6bedf6f01d
+      size: 1363
     - path: eval/scripts/aggregate_metrics.py
       hash: md5
-      md5: 36ccdf53e5daf9d1ea049bc7d3f7c990
-      size: 925
+      md5: 24b6d2d418512077dca0865785d46d2e
+      size: 2129
     outs:
     - path: eval/metrics/summary_metrics.json
       hash: md5
-      md5: 6080d5ad24db65f99f07cd16c593ab72
-      size: 3513
+      md5: 9d20926275c39eb99531cea727e5e491
+      size: 5826
+    - path: eval/metrics/tool_interactions.jsonl
+      hash: md5
+      md5: b0e2dc43e52621eaac208d55065b5755
+      size: 1549151
     - path: eval/plots/comparative_summary.csv
       hash: md5
-      md5: bc44dfb55292d2eed45eda040e835836
-      size: 643
+      md5: b781649a365c8e080562d54dc68d7816
+      size: 883
