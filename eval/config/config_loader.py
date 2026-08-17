@@ -36,6 +36,30 @@ EVAL_DIR = CONFIG_DIR.parent
 REPO_ROOT = EVAL_DIR.parent
 
 
+def load_env_file(env_path: Optional[Path] = None) -> Dict[str, str]:
+    """Load environment variables from .env file into os.environ if not already set."""
+    target = env_path or (REPO_ROOT / ".env")
+    env_vars: Dict[str, str] = {}
+    if target.exists():
+        try:
+            for line in target.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    env_vars[key] = val
+                    if key not in os.environ:
+                        os.environ[key] = val
+        except Exception:
+            pass
+    return env_vars
+
+
+# Auto-load on import
+load_env_file()
+
+
 # ---------------------------------------------------------------------------
 # 1. Dataclasses
 # ---------------------------------------------------------------------------
