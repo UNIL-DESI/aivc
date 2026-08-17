@@ -680,7 +680,6 @@ def run_intercode_benchmark(
     metrics_path: Path = DEFAULT_METRICS_PATH,
     plots_path: Path = DEFAULT_PLOTS_PATH,
     config_path: Path = DEFAULT_CONFIG_PATH,
-    dry_run: bool = False,
     reset_checkpoints: bool = False,
     max_tasks: Optional[int] = None,
 ) -> Tuple[Dict[str, Any], Path, Path]:
@@ -700,8 +699,8 @@ def run_intercode_benchmark(
     env_vars = load_env(REPO_ROOT / ".env")
     api_key = os.getenv("OPENROUTER_API_KEY") or env_vars.get("OPENROUTER_API_KEY", "")
 
-    if not api_key or dry_run:
-        print("[Runner Info] Running in Dry-Run / Simulated Policy mode.")
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY is not set or empty. Real execution requires a valid API key.")
 
     # 3. Load tasks
     tasks = get_intercode_default_tasks()
@@ -746,11 +745,11 @@ def run_intercode_benchmark(
             step += 1
             cmd_to_run = task.get("simulated_cmd", "ls")
 
-            # Try live LLM policy if API key available and not dry_run
+            # Call real LLM inference client
             p_tok = 400 + (step * 25)
             c_tok = 60 + (step * 10)
 
-            if api_key and not dry_run:
+            if api_key:
                 messages = [
                     {
                         "role": "system",
@@ -980,7 +979,6 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=str, default=str(DEFAULT_CHECKPOINT_PATH), help="Checkpoint JSONL path")
     parser.add_argument("--metrics", type=str, default=str(DEFAULT_METRICS_PATH), help="Metrics output JSON path")
     parser.add_argument("--plots", type=str, default=str(DEFAULT_PLOTS_PATH), help="Plots output CSV path")
-    parser.add_argument("--dry-run", action="store_true", help="Force dry-run simulation mode")
     parser.add_argument("--reset", action="store_true", help="Reset/delete existing checkpoints before running")
     parser.add_argument("--max-tasks", type=int, default=None, help="Maximum number of tasks to evaluate")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of tasks to evaluate")
@@ -994,7 +992,6 @@ def main() -> None:
         checkpoint_path=Path(args.checkpoint),
         metrics_path=Path(args.metrics),
         plots_path=Path(args.plots),
-        dry_run=args.dry_run,
         reset_checkpoints=args.reset,
         max_tasks=max_tasks,
     )

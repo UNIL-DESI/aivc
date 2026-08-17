@@ -1,0 +1,35 @@
+{
+  "benchmark": "Agentic RAG Continual Learning",
+  "arm": "aivc",
+  "model_name": "qwen/qwen3.7-flash",
+  "dataset_name": "aivc/swe-explore-continual-rag",
+  "timestamp": "2026-08-17T14:02:33.116208+00:00",
+  "summary": {
+    "total_queries": 2,
+    "resolved_queries": 1,
+    "unresolved_queries": 1,
+    "pass_rate": 0.5,
+    "average_exploration_overhead_ratio_eor": 0.7445,
+    "average_memory_utility_index_mui": 0.2555,
+    "average_cumulative_cost_savings_ratio_ccsr": -0.1148,
+    "tool_call_decay": {
+      "initial_query_tool_calls": 55,
+      "final_query_tool_calls": 49,
+      "decay_factor": 0.8909
+    }
+  },
+  "retrieval_metrics": {
+    "mean_reciprocal_rank_mrr": 0.5,
+    "precision_at_1": 0.5,
+    "precision_at_3": 0.5,
+    "recall_at_1": 0.1666,
+    "recall_at_3": 0.5
+  },
+  "resource_consumption": {
+    "prompt_tokens": 668004,
+    "completion_tokens": 13291,
+    "total_tokens": 681295,
+    "total_cost_usd": 0.021768,
+    "baseline_estimated_cost_usd": 0.029
+  }
+}

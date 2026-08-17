@@ -1,0 +1,2 @@
+episode_index,instance_id,repo,timestamp,resolved,cumulative_resolved,resolve_rate,cumulative_cost_usd,cumulative_eor,cumulative_mui,cumulative_ccsr
+1,django__django-9296,django/django,2026-08-17T13:53:17.864661+00:00,0,0,0.0,0.005529,0.9722,0.0,0.9937

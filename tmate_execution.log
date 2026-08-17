@@ -5,71 +5,522 @@
 ==================================================
 🚀 Executing stage: dvc-code-analysis
 ==================================================
-WARNING: Process '/home/user/.local/bin/dvc repro eval_agentic_rag -s' with (Pid 1029), in RWLock-file '.dvc-viewer/hashes/eval_agentic_rag.hash' had been killed. Auto removed it from the lock file.
 Running stage 'dvc-code-analysis':
 > bash .dvc-viewer/bootstrap.sh && dvc-viewer hash
 🔍 Scanning dependencies and computing hashes...
    ✅ dvc.yaml is up to date
+Updating lock file 'dvc.lock'
+
+To track the changes with git, run:
+
+	git add dvc.lock
+
+To enable auto staging, run:
+
+	dvc config core.autostage true
 Use `dvc push` to send your updates to remote storage.
 ==================================================
 ✅ Stage dvc-code-analysis completed successfully.
 ==================================================
 🔄 Syncing metrics and plots for completed stage 'dvc-code-analysis'...
 🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
-ℹ️  [DVC-Git-Helper] No new metrics changes to commit. Skipping push.
+[cluster-draft/hjamet 78ca5eb] chore(ci): auto-sync dvc.lock [skip ci]
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
+ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync dvc.lock [skip ci]
+ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin...
+✅ [DVC-Git-Helper] All changes pushed successfully.
 
 ==================================================
 🚀 Executing stage: eval_agentic_rag
 ==================================================
-WARNING: Process '/home/user/.local/bin/dvc repro eval_agentic_rag -s' with (Pid 1029), in RWLock-file 'eval/metrics/agentic_rag_metrics.json' had been killed. Auto removed it from the lock file.
-WARNING: Process '/home/user/.local/bin/dvc repro eval_agentic_rag -s' with (Pid 1029), in RWLock-file 'eval/metrics/agentic_rag_metrics.json' had been killed. Auto removed it from the lock file.
 Running stage 'eval_agentic_rag':
-> python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
+> python eval/benchmarks/agentic_rag_runner.py --limit 30 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
+[RESET] Purging checkpoint file '/workspace/eval/checkpoints/dry_run/agentic_rag_qwen_qwen3.7_flash_aivc_checkpoint.jsonl'...
 ============================================================================
       AIVC AGENTIC RAG CONTINUAL LEARNING BENCHMARK RUNNER
 ============================================================================
 Evaluation Arm : AIVC
 Target Model   : qwen/qwen3.7-flash
 Profile        : dry_run
-Query Limit    : 15
+Query Limit    : 30
 Max Turns      : 50
 Max Tokens     : 4096
 Cost Cutoff    : $0.10 USD / query
-Dry Run Mode   : False
 Checkpoint File: /workspace/eval/checkpoints/dry_run/agentic_rag_qwen_qwen3.7_flash_aivc_checkpoint.jsonl
 Metrics Output : /workspace/eval/metrics/dry_run/agentic_rag_qwen_qwen3.7_flash_aivc_metrics.json
 Curves Output  : /workspace/eval/plots/dry_run/agentic_rag_aivc_curves.csv
 ============================================================================
-[CHECKPOINT] Loaded 15 previously processed queries from checkpoint.
+[CHECKPOINT] Loaded 0 previously processed queries from checkpoint.
 [DATASET] Loaded 15 continual learning multi-hop queries from 'aivc/swe-explore-continual-rag'.
-[SKIP] Query 'RAG-CL-001' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-002' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-003' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-004' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-005' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-006' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-007' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-008' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-009' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-010' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-011' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-012' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-013' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-014' already completed in checkpoint.
-[SKIP] Query 'RAG-CL-015' already completed in checkpoint.
+
+============================================================================
+[EPISODE 01/15] Arm: AIVC | Query: RAG-CL-001 (django/django)
+Query: Trace the HTTP authentication middleware pipeline from request entry down to cryptographic session token hashi...
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (2): recall, get_recent_memories
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): view_file
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (2): find_symbol, grep_search
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (2): view_file, view_file
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (2): grep_search, list_dir
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): list_dir
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (2): grep_search, grep_search
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): view_file
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (2): view_file, view_file
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (2): grep_search, grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (2): find_symbol, grep_search
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (2): grep_search, grep_search
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0015)... Tool calls (1): grep_search
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (2): grep_search, grep_search
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0019)... Tool calls (2): grep_search, grep_search
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0021)... Tool calls (2): find_symbol, find_symbol
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0023)... Tool calls (2): grep_search, grep_search
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0025)... Tool calls (2): list_dir, list_dir
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0028)... Tool calls (1): view_file
+  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost: $0.0030)... Tool calls (2): view_file, view_file
+  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost: $0.0032)... Tool calls (2): grep_search, grep_search
+  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost: $0.0035)... Tool calls (2): grep_search, grep_search
+  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost: $0.0038)... Tool calls (1): remember
+  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost: $0.0041)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 25 | Tool Calls: 42 (Decay: 1.00) | Cost: $0.004424 | Latency: 61.012s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.81 | MUI=0.00
+
+============================================================================
+[EPISODE 02/15] Arm: AIVC | Query: RAG-CL-002 (django/django)
+Query: Trace how SessionMiddleware interacts with the cached session engine backend and cache invalidation signals du...
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): consult_memory
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): view_file
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (1): view_file
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): grep_search
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): find_symbol
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (1): list_dir
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): grep_search
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): grep_search
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (1): view_file
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0013)... Tool calls (1): view_file
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (1): grep_search
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0016)... Tool calls (1): find_symbol
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (1): view_file
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0019)... Tool calls (1): grep_search
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0020)... Tool calls (1): grep_search
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0022)... Tool calls (1): list_dir
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0024)... Tool calls (1): grep_search
+  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost: $0.0025)... Tool calls (1): view_file
+  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost: $0.0027)... Tool calls (1): grep_search
+  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost: $0.0029)... Tool calls (1): grep_search
+  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost: $0.0031)... Tool calls (1): view_file
+  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost: $0.0034)... Tool calls (1): grep_search
+  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost: $0.0036)... Tool calls (1): grep_search
+  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost: $0.0038)... Tool calls (1): find_symbol
+  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost: $0.0040)... Tool calls (1): recall
+  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost: $0.0042)... Tool calls (1): get_recent_memories
+  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost: $0.0045)... Tool calls (1): grep_search
+  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost: $0.0047)... Tool calls (1): view_file
+  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost: $0.0050)... Tool calls (1): grep_search
+  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost: $0.0053)... Tool calls (1): get_file_history_metadata
+  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost: $0.0055)... Tool calls (1): remember
+  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost: $0.0059)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 35 | Tool Calls: 35 (Decay: 0.83) | Cost: $0.006201 | Latency: 58.158s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.71 | MUI=0.19
+
+============================================================================
+[EPISODE 03/15] Arm: AIVC | Query: RAG-CL-003 (django/django)
+Query: Identify where database transaction rollback signals are dispatched during cached database session write failu...
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): consult_memory
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): get_recent_memories
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (2): view_file, grep_search
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): view_file
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): find_symbol
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (1): grep_search
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): grep_search
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): grep_search
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (1): grep_search
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0013)... Tool calls (1): grep_search
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (2): list_dir, list_dir
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0016)... Tool calls (1): view_file
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0018)... Tool calls (1): view_file
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0019)... Tool calls (1): view_file
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0021)... Tool calls (1): grep_search
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0023)... Tool calls (1): find_symbol
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0024)... Tool calls (1): get_file_history_metadata
+  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost: $0.0026)... Tool calls (1): read_past_file_content
+  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost: $0.0028)... Tool calls (1): view_file
+  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost: $0.0030)... Tool calls (1): grep_search
+  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost: $0.0032)... Tool calls (1): grep_search
+  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost: $0.0035)... Tool calls (1): view_file
+  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost: $0.0037)... Tool calls (1): list_dir
+  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost: $0.0039)... Tool calls (1): view_file
+  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost: $0.0042)... Tool calls (1): grep_search
+  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost: $0.0044)... Tool calls (1): grep_search
+  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost: $0.0047)... Tool calls (1): grep_search
+  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost: $0.0050)... Tool calls (1): list_dir
+  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost: $0.0053)... Tool calls (1): list_dir
+  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost: $0.0056)... Tool calls (1): remember
+  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost: $0.0059)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 34 | Tool Calls: 36 (Decay: 0.86) | Cost: $0.006248 | Latency: 96.621s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.78 | MUI=0.22
+
+============================================================================
+[EPISODE 04/15] Arm: AIVC | Query: RAG-CL-004 (django/django)
+Query: Locate user_logged_in and user_login_failed signal receivers connected to AuthenticationMiddleware....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (2): view_file, view_file
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): grep_search
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (2): grep_search, grep_search
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): view_file
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): grep_search
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): grep_search
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): find_symbol
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): find_symbol
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (1): view_file
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (1): get_recent_memories
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (1): consult_memory
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0015)... Tool calls (1): get_file_history_metadata
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (1): grep_search
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0019)... Tool calls (1): find_symbol
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0020)... Tool calls (1): grep_search
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0022)... Tool calls (1): view_file
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0025)... Tool calls (1): remember
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0027)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 19 | Tool Calls: 21 (Decay: 0.50) | Cost: $0.002957 | Latency: 56.859s
+--> IR Metrics: P@1=1.00 | R@3=0.67 | NDCG@5=0.00 | MRR=1.00 | EOR=0.57 | MUI=0.43
+
+============================================================================
+[EPISODE 05/15] Arm: AIVC | Query: RAG-CL-005 (django/django)
+Query: Trace password upgrade algorithm and PBKDF2 iteration verification during successful login credential checks....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): consult_memory
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): view_file
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (1): view_file
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): grep_search
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): grep_search
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): find_symbol
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): view_file
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): grep_search
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): grep_search
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (1): grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0013)... Tool calls (1): find_symbol
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0015)... Tool calls (1): grep_search
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (1): grep_search
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0018)... Tool calls (1): remember
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0021)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 16 | Tool Calls: 16 (Decay: 0.38) | Cost: $0.002365 | Latency: 34.6s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.62 | MUI=0.38
+
+============================================================================
+[EPISODE 06/15] Arm: AIVC | Query: RAG-CL-006 (django/django)
+Query: Trace URL resolver regex compiler and cache resolution in URLDispatcher....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): list_dir
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): view_file
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (1): grep_search
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): view_file
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): view_file
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): grep_search
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): find_symbol
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): grep_search
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (1): grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (1): remember
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0016)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 13 | Tool Calls: 13 (Decay: 0.31) | Cost: $0.001789 | Latency: 21.097s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.69 | MUI=0.00
+
+============================================================================
+[EPISODE 07/15] Arm: AIVC | Query: RAG-CL-007 (django/django)
+Query: Trace exception handling workflow when URLResolver fails to match a route down to custom 404 handler rendering...
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (3): recall, recall, get_recent_memories
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): consult_memory
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (2): grep_search, grep_search
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (2): view_file, view_file
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (2): view_file, grep_search
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (2): grep_search, grep_search
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (2): view_file, view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (2): grep_search, grep_search
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (2): grep_search, view_file
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0013)... Tool calls (2): find_symbol, find_symbol
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0015)... Tool calls (1): view_file
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (2): grep_search, grep_search
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0019)... Tool calls (2): get_file_history_metadata, get_file_history_metadata
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0021)... Tool calls (2): grep_search, grep_search
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0023)... Tool calls (2): list_dir, list_dir
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0025)... Tool calls (1): view_file
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0027)... Tool calls (1): view_file
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0030)... Tool calls (1): view_file
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0032)... Tool calls (1): view_file
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0034)... Tool calls (2): grep_search, grep_search
+  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost: $0.0037)... Tool calls (1): find_symbol
+  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost: $0.0039)... Tool calls (1): view_file
+  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost: $0.0042)... Tool calls (1): view_file
+  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost: $0.0045)... Tool calls (2): grep_search, grep_search
+  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost: $0.0047)... Tool calls (2): grep_search, grep_search
+  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost: $0.0050)... Tool calls (2): grep_search, grep_search
+  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost: $0.0053)... Tool calls (1): view_file
+  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost: $0.0056)... Tool calls (1): find_symbol
+  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost: $0.0059)... Tool calls (2): grep_search, grep_search
+  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost: $0.0063)... Tool calls (1): view_file
+  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost: $0.0066)... Tool calls (1): read_past_file_content
+  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost: $0.0070)... Tool calls (1): list_dir
+  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost: $0.0073)... Tool calls (1): view_file
+  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost: $0.0076)... Tool calls (1): view_file
+  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost: $0.0080)... Tool calls (1): view_file
+  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost: $0.0083)... Tool calls (2): grep_search, grep_search
+  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost: $0.0087)... Tool calls (1): find_symbol
+  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost: $0.0091)... Tool calls (2): grep_search, grep_search
+  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost: $0.0096)... Tool calls (1): remember
+  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost: $0.0101)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 40 | Tool Calls: 61 (Decay: 1.45) | Cost: $0.010589 | Latency: 121.702s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.79 | MUI=0.21
+
+============================================================================
+[EPISODE 08/15] Arm: AIVC | Query: RAG-CL-008 (django/django)
+Query: Trace CSRF token generation, rotation on login, and validation inside CsrfViewMiddleware....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): view_file
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (3): list_dir, grep_search, grep_search
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (1): view_file
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (2): grep_search, grep_search
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): view_file
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (1): grep_search
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): grep_search
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): view_file
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (2): grep_search, grep_search
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (1): grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (1): grep_search
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0016)... Tool calls (1): view_file
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (1): view_file
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0020)... Tool calls (1): view_file
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0022)... Tool calls (1): view_file
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0023)... Tool calls (1): recall
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0026)... Tool calls (1): remember
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0029)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 19 | Tool Calls: 23 (Decay: 0.55) | Cost: $0.003149 | Latency: 48.754s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.83 | MUI=0.00
+
+============================================================================
+[EPISODE 09/15] Arm: AIVC | Query: RAG-CL-009 (django/django)
+Query: Trace SQL query compiler AST expression tree generation in ORM compiler backend for filtered QuerySets....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): list_dir
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): view_file
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (1): grep_search
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): grep_search
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): grep_search
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (1): find_symbol
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): view_file
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): view_file
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (1): view_file
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0013)... Tool calls (1): view_file
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (1): grep_search
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0016)... Tool calls (1): find_symbol
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (1): grep_search
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0019)... Tool calls (1): find_symbol
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0020)... Tool calls (1): grep_search
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0022)... Tool calls (1): list_dir
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0024)... Tool calls (1): list_dir
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0026)... Tool calls (1): list_dir
+  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost: $0.0027)... Tool calls (1): grep_search
+  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost: $0.0030)... Tool calls (1): view_file
+  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost: $0.0032)... Tool calls (1): remember
+  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost: $0.0035)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 24 | Tool Calls: 24 (Decay: 0.57) | Cost: $0.003823 | Latency: 57.14s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.75 | MUI=0.00
+
+============================================================================
+[EPISODE 10/15] Arm: AIVC | Query: RAG-CL-010 (django/django)
+Query: Trace database connection wrapper retry decorator and reconnect handler upon transient connection loss....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (2): consult_memory, list_dir
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (2): list_dir, grep_search
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (3): grep_search, grep_search, grep_search
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): view_file
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (3): grep_search, grep_search, grep_search
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (1): grep_search
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): find_symbol
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): view_file
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (2): view_file, get_file_history_metadata
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0013)... Tool calls (2): grep_search, grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0015)... Tool calls (1): grep_search
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (1): find_symbol
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0018)... Tool calls (1): view_file
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0020)... Tool calls (1): grep_search
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0022)... Tool calls (1): find_symbol
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0024)... Tool calls (1): find_symbol
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0026)... Tool calls (1): find_symbol
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0029)... Tool calls (1): find_symbol
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0031)... Tool calls (1): remember
+  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost: $0.0035)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 21 | Tool Calls: 29 (Decay: 0.69) | Cost: $0.003801 | Latency: 69.396s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.62 | MUI=0.38
+
+============================================================================
+[EPISODE 11/15] Arm: AIVC | Query: RAG-CL-011 (django/django)
+Query: Audit signal receiver registration order, weakref garbage collection, and exception propagation in Signal.send...
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (2): get_recent_memories, view_file
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): view_file
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (2): grep_search, grep_search
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (2): grep_search, list_dir
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): find_symbol
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (1): view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): view_file
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (1): remember
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 10 | Tool Calls: 13 (Decay: 0.31) | Cost: $0.001699 | Latency: 65.31s
+--> IR Metrics: P@1=1.00 | R@3=0.67 | NDCG@5=0.00 | MRR=1.00 | EOR=0.62 | MUI=0.00
+
+============================================================================
+[EPISODE 12/15] Arm: AIVC | Query: RAG-CL-012 (django/django)
+Query: Trace WSGI and ASGI request handler connection close signal dispatch on request termination....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (2): view_file, view_file
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): grep_search
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): view_file
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): grep_search
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): view_file
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (1): grep_search
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): view_file
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): grep_search
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (1): grep_search
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0013)... Tool calls (2): find_symbol, find_symbol
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0015)... Tool calls (1): view_file
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0016)... Tool calls (1): grep_search
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0018)... Tool calls (1): list_dir
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0020)... Tool calls (1): list_dir
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0022)... Tool calls (1): list_dir
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0023)... Tool calls (1): view_file
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0026)... Tool calls (1): grep_search
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0028)... Tool calls (1): grep_search
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0030)... Tool calls (1): remember
+  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost: $0.0033)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 21 | Tool Calls: 23 (Decay: 0.55) | Cost: $0.003593 | Latency: 74.136s
+--> IR Metrics: P@1=1.00 | R@3=0.67 | NDCG@5=0.00 | MRR=1.00 | EOR=0.78 | MUI=0.00
+
+============================================================================
+[EPISODE 13/15] Arm: AIVC | Query: RAG-CL-013 (django/django)
+Query: Trace async ASGI middleware stack execution and contextvars isolation in AsyncRequest....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (2): view_file, view_file
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): read_past_file_content
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (2): view_file, view_file
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (2): find_symbol, grep_search
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (2): grep_search, grep_search
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (2): view_file, view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0009)... Tool calls (1): find_symbol
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): view_file
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (2): view_file, view_file
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0015)... Tool calls (1): list_dir
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0017)... Tool calls (1): list_dir
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0019)... Tool calls (1): grep_search
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0021)... Tool calls (1): view_file
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0024)... Tool calls (1): find_symbol
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0026)... Tool calls (1): view_file
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0029)... Tool calls (1): grep_search
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0031)... Tool calls (2): find_symbol, grep_search
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0034)... Tool calls (1): get_recent_memories
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0036)... Tool calls (1): grep_search
+  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost: $0.0039)... Tool calls (1): remember
+  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost: $0.0043)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 22 | Tool Calls: 29 (Decay: 0.69) | Cost: $0.004680 | Latency: 114.322s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.72 | MUI=0.14
+
+============================================================================
+[EPISODE 14/15] Arm: AIVC | Query: RAG-CL-014 (django/django)
+Query: Trace template tag token parsing, AST node compilation, and SafeString autoescaping in template engine....
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (1): view_file
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (1): view_file
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (1): list_dir
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0004)... Tool calls (1): view_file
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (1): find_symbol
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0006)... Tool calls (1): view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (1): grep_search
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (1): view_file
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): get_file_history_metadata
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0011)... Tool calls (2): grep_search, grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0013)... Tool calls (1): remember
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0016)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 13 | Tool Calls: 14 (Decay: 0.33) | Cost: $0.001795 | Latency: 29.323s
+--> IR Metrics: P@1=1.00 | R@3=1.00 | NDCG@5=0.00 | MRR=1.00 | EOR=0.64 | MUI=0.36
+
+============================================================================
+[EPISODE 15/15] Arm: AIVC | Query: RAG-CL-015 (django/django)
+Query: Audit SecurityMiddleware response headers (X-Frame-Options, X-Content-Type-Options, HSTS, CSP) injection and S...
+============================================================================
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost: $0.0000)... Tool calls (1): recall
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost: $0.0001)... Tool calls (2): view_file, get_recent_memories
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost: $0.0002)... Tool calls (3): grep_search, grep_search, grep_search
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost: $0.0003)... Tool calls (3): get_file_history_metadata, grep_search, grep_search
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost: $0.0005)... Tool calls (2): grep_search, grep_search
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost: $0.0007)... Tool calls (2): grep_search, grep_search
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost: $0.0008)... Tool calls (2): view_file, view_file
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost: $0.0010)... Tool calls (1): find_symbol
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost: $0.0012)... Tool calls (1): view_file
+  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost: $0.0014)... Tool calls (2): grep_search, list_dir
+  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost: $0.0016)... Tool calls (2): grep_search, grep_search
+  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost: $0.0019)... Tool calls (1): view_file
+  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost: $0.0022)... Tool calls (2): grep_search, grep_search
+  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost: $0.0026)... Tool calls (2): find_symbol, grep_search
+  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost: $0.0029)... Tool calls (1): view_file
+  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost: $0.0032)... Tool calls (1): view_file
+  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost: $0.0036)... Tool calls (1): view_file
+  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost: $0.0039)... Tool calls (2): grep_search, recall
+  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost: $0.0046)... Tool calls (1): remember
+  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost: $0.0051)... Tool calls (1): submit_answer
+
+--> Result: RESOLVED | Turns: 20 | Tool Calls: 33 (Decay: 0.79) | Cost: $0.005616 | Latency: 212.6s
+--> IR Metrics: P@1=1.00 | R@3=0.33 | NDCG@5=0.00 | MRR=1.00 | EOR=0.76 | MUI=0.08
 
 [EXPORT] Agentic RAG metrics exported to '/workspace/eval/metrics/dry_run/agentic_rag_qwen_qwen3.7_flash_aivc_metrics.json'
 [EXPORT] Agentic RAG curves exported to '/workspace/eval/plots/dry_run/agentic_rag_aivc_curves.csv'
 
 [EXPORT] Agentic RAG metrics exported to '/workspace/eval/metrics/agentic_rag_metrics.json'
+
+[EXPORT] Agentic RAG metrics exported to '/workspace/eval/metrics/agentic_rag_aivc_metrics.json'
 [EXPORT] Agentic RAG curves exported to '/workspace/eval/plots/agentic_rag_curves.csv'
+[EXPORT] Agentic RAG curves exported to '/workspace/eval/plots/agentic_rag_aivc_curves.csv'
 
 ============================================================================
                EVALUATION BENCHMARK COMPLETED
 ============================================================================
 Total Dataset Queries : 15
-Skipped from Previous : 15
-Processed This Run    : 0
+Skipped from Previous : 0
+Processed This Run    : 15
 Total Checkpoint Rows : 15
 ============================================================================
 Updating lock file 'dvc.lock'
@@ -87,8 +538,8 @@ Use `dvc push` to send your updates to remote storage.
 ==================================================
 🔄 Syncing metrics and plots for completed stage 'eval_agentic_rag'...
 🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
-[cluster-draft/hjamet f4a9a4d] chore(ci): auto-sync metrics and dvc.lock [skip ci]
- 3 files changed, 22 insertions(+), 23 deletions(-)
+[cluster-draft/hjamet 68416b4] chore(ci): auto-sync metrics and dvc.lock [skip ci]
+ 3 files changed, 59 insertions(+), 35 deletions(-)
 ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
 ℹ️  [DVC-Git-Helper] Staged eval/metrics/agentic_rag_metrics.json (0.00 MB)
 ℹ️  [DVC-Git-Helper] Staged eval/plots/agentic_rag_curves.csv (0.00 MB)
@@ -100,11 +551,11 @@ Use `dvc push` to send your updates to remote storage.
 🚀 Executing stage: eval_devbench
 ==================================================
 Running stage 'eval_devbench':
-> python eval/benchmarks/devbench_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
+> python eval/benchmarks/devbench_runner.py --limit 30 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
 ======================================================================
 [AIVC BENCHMARK RUNNER] DevBench 4-Phase SDLC Pipeline [DRY_RUN]
 ======================================================================
-Sample Limit   : 15
+Sample Limit   : 30
 Active Model   : qwen/qwen3.7-flash
 Max Turns      : 50
 Max Tokens     : 4096
@@ -113,11 +564,9 @@ Checkpoint File: /workspace/eval/checkpoints/dry_run/devbench_checkpoint.jsonl
 Metrics Output : /workspace/eval/metrics/dry_run/devbench_metrics.json
 Curves Output  : /workspace/eval/plots/dry_run/devbench_curves.csv
 ======================================================================
-[Checkpoint] Loaded 12 completed phase records from devbench_checkpoint.jsonl
-[Reset] Purging existing checkpoint file: /workspace/eval/checkpoints/dry_run/devbench_checkpoint.jsonl
 
 ======================================================================
-[DevBench Runner] Starting Multi-Turn SDLC Evaluation (15 phases)
+[DevBench Runner] Starting Multi-Turn SDLC Evaluation (20 phases)
 Model          : qwen/qwen3.7-flash
 Max Turns/Phase: 50
 Max Tokens/Resp: 4096
@@ -127,1364 +576,42 @@ Checkpoint Path: /workspace/eval/checkpoints/dry_run/devbench_checkpoint.jsonl
 
 [PHASE 1] Repository: devbench-python-calculator | Phase: software_design
 Goal: Design architecture, class hierarchy, AST parser specification, and state machine for Python Calculator.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (4): list_dir, list_dir, list_dir, view_file
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): list_dir, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): list_dir, grep_search
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): view_file
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): recall
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): remember
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): remember
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 9 | Cost: $0.002273 | Duration: 89.106s
---> Metrics: EOR=0.6667 | MUI=0.0000 | CCSR=0.2422
+  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, get_recent_memories
+  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): list_dir
+  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (4): list_dir, list_dir, list_dir, view_file
+  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): recall
+  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): remember
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): remember
+  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): submit_phase_deliverable
+--> Phase Result: PASSED | Turns: 7 | Cost: $0.001717 | Duration: 69.509s
+--> Metrics: EOR=0.4545 | MUI=0.0000 | CCSR=0.4276 | NDCG@3=1.0000
 
 [PHASE 2] Repository: devbench-python-calculator | Phase: environment_setup
 Goal: Configure virtualenv, pyproject.toml dependencies, build system, and setup script for Calculator repo.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (4): consult_memory, list_dir, list_dir, list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): view_file, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): list_dir, grep_search
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (3): view_file, list_dir, list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (2): grep_search, view_file
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): remember
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): remember
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 9 | Cost: $0.001905 | Duration: 31.807s
---> Metrics: EOR=0.7222 | MUI=0.2778 | CCSR=0.3651
-
-[PHASE 3] Repository: devbench-python-calculator | Phase: code_implementation
-Goal: Implement core calculation engine, expression evaluator, memory stack, and tokenizer module.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (4): list_dir, list_dir, list_dir, read_past_file_content
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): view_file, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): list_dir, list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): grep_search, get_recent_memories
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (2): consult_memory, consult_memory
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (2): consult_memory, grep_search
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): view_file
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): remember
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): remember
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): view_file
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): remember
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): remember
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): remember
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): remember
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): remember
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): remember
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): remember
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0055)... Tool calls (1): remember
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0064)... Tool calls (1): remember
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0070)... Tool calls (1): remember
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0077)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 24 | Cost: $0.008806 | Duration: 147.335s
---> Metrics: EOR=0.4545 | MUI=0.5455 | CCSR=-1.9353
-
-[PHASE 4] Repository: devbench-python-calculator | Phase: unit_testing
-Goal: Create test_calculator.py test suite covering edge cases, division by zero, float precision, and AST evaluation.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (3): list_dir, list_dir, list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): grep_search, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): grep_search, view_file
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): grep_search, view_file
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (2): grep_search, view_file
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): view_file
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): get_recent_memories
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (3): consult_memory, consult_memory, consult_memory
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (2): consult_memory, consult_memory
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): consult_memory
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): remember
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): view_file
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0024)... Tool calls (1): remember
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 15 | Cost: $0.003921 | Duration: 66.878s
---> Metrics: EOR=0.5600 | MUI=0.4400 | CCSR=-0.3070
-
-[PHASE 5] Repository: devbench-cpp-parser | Phase: software_design
-Goal: Design high-performance zero-copy JSON parser header architecture, memory pool arena, and CMake build graph.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, get_recent_memories
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): recall, list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (4): recall, list_dir, list_dir, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (3): list_dir, list_dir, read_past_file_content
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): view_file
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (2): list_dir, list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): recall
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): remember
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): list_dir
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): remember
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): list_dir
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): list_dir
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): list_dir
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): list_dir
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0024)... Tool calls (2): list_dir, list_dir
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (2): list_dir, list_dir
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0029)... Tool calls (1): list_dir
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): list_dir
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0034)... Tool calls (1): list_dir
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): list_dir
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): view_file
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0042)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 22 | Cost: $0.004937 | Duration: 95.455s
---> Metrics: EOR=0.7500 | MUI=0.0500 | CCSR=-0.0971
-
-[PHASE 6] Repository: devbench-cpp-parser | Phase: environment_setup
-Goal: Configure CMakeLists.txt, GoogleTest integration, compiler optimization flags, and clang-format rules.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (4): list_dir, list_dir, list_dir, view_file
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (3): grep_search, list_dir, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (3): list_dir, list_dir, list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): grep_search, grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): view_file
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): remember
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 8 | Cost: $0.001192 | Duration: 35.636s
---> Metrics: EOR=0.8235 | MUI=0.0000 | CCSR=0.7350
-
-[PHASE 7] Repository: devbench-cpp-parser | Phase: code_implementation
-Goal: Implement lexer, token stream buffer, and AST node allocator in modern C++17.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (4): list_dir, list_dir, list_dir, read_past_file_content
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (3): list_dir, list_dir, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): view_file, grep_search
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): grep_search, list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (2): view_file, grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): view_file
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): get_recent_memories
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (2): consult_memory, consult_memory
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (2): grep_search, list_dir
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (2): view_file, grep_search
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (2): view_file, view_file
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): remember
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): remember
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): view_file
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): view_file
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): view_file
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0036)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 20 | Cost: $0.004452 | Duration: 81.574s
---> Metrics: EOR=0.7879 | MUI=0.2121 | CCSR=0.0106
-
-[PHASE 8] Repository: devbench-cpp-parser | Phase: unit_testing
-Goal: Implement GoogleTest test fixtures for malformed JSON, UTF-8 unicode encoding, and throughput benchmarks.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, get_recent_memories
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (3): consult_memory, consult_memory, consult_memory
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (3): list_dir, list_dir, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (3): list_dir, list_dir, list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (2): grep_search, grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): view_file
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (2): grep_search, grep_search
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (2): view_file, list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (2): list_dir, grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): remember
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): list_dir
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0024)... Tool calls (1): view_file
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0026)... Tool calls (1): remember
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): remember
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): remember
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): remember
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): remember
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0045)... Tool calls (1): remember
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): remember
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0053)... Tool calls (1): view_file
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0057)... Tool calls (1): view_file
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): remember
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): remember
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0071)... Tool calls (1): remember
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0077)... Tool calls (1): remember
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0082)... Tool calls (1): view_file
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0087)... Tool calls (1): view_file
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0092)... Tool calls (1): remember
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0098)... Tool calls (1): remember
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0104)... Tool calls (1): remember
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0110)... Tool calls (1): remember
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0116)... Tool calls (1): view_file
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0121)... Tool calls (1): view_file
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0127)... Tool calls (1): remember
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0134)... Tool calls (1): remember
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0141)... Tool calls (1): remember
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0148)... Tool calls (1): remember
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0155)... Tool calls (1): remember
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0163)... Tool calls (1): list_dir
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0169)... Tool calls (3): list_dir, list_dir, list_dir
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0176)... Tool calls (2): grep_search, grep_search
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0183)... Tool calls (1): view_file
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0190)... Tool calls (1): view_file
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0198)... Tool calls (1): view_file
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0205)... Tool calls (1): view_file
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0212)... Tool calls (1): view_file
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0220)... Tool calls (1): view_file
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0227)... Tool calls (1): view_file
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0235)... Tool calls (1): view_file
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0242)... Tool calls (1): view_file
---> Phase Result: PASSED | Turns: 50 | Cost: $0.024994 | Duration: 180.016s
---> Metrics: EOR=0.5938 | MUI=0.4062 | CCSR=-4.5543
-
-[PHASE 9] Repository: devbench-java-rest-api | Phase: software_design
-Goal: Design controller-service-repository layered architecture, security filter chain, and OpenAPI 3.0 spec.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, get_recent_memories
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): recall, list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (3): list_dir, list_dir, read_past_file_content
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): list_dir, read_past_file_content
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (3): list_dir, list_dir, read_past_file_content
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (2): list_dir, read_past_file_content
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (2): view_file, list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): remember
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): remember
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): remember
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): remember
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 12 | Cost: $0.002812 | Duration: 77.542s
---> Metrics: EOR=0.6190 | MUI=0.3810 | CCSR=0.2501
-
-[PHASE 10] Repository: devbench-java-rest-api | Phase: environment_setup
-Goal: Configure pom.xml Maven dependencies, Spring Data JPA, H2 test database, and Dockerfile development image.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): get_recent_memories, list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): consult_memory, consult_memory
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): list_dir, grep_search
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (2): grep_search, list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): view_file
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): remember
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 11 | Cost: $0.002201 | Duration: 38.267s
---> Metrics: EOR=0.6250 | MUI=0.3750 | CCSR=0.4132
-
-[PHASE 11] Repository: devbench-java-rest-api | Phase: code_implementation
-Goal: Implement UserController, AuthService, JwtTokenProvider, and UserRepository with BCrypt password hashing.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): recall, list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): get_recent_memories, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (3): consult_memory, consult_memory, consult_memory
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): list_dir, view_file
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (2): list_dir, list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (2): grep_search, list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (2): view_file, list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (2): view_file, list_dir
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): view_file
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): remember
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): remember
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0024)... Tool calls (1): remember
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): remember
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): remember
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 16 | Cost: $0.004036 | Duration: 68.532s
---> Metrics: EOR=0.5385 | MUI=0.4615 | CCSR=-0.0763
-
-[PHASE 12] Repository: devbench-java-rest-api | Phase: unit_testing
-Goal: Write JUnit 5 and Mockito tests for authentication endpoints, token expiration, and security filters.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, get_recent_memories
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (3): consult_memory, consult_memory, consult_memory
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (3): view_file, view_file, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): list_dir, list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (2): grep_search, grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): view_file
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (2): list_dir, list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (2): view_file, grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (2): grep_search, grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0014)... Tool calls (2): get_file_history_metadata, get_file_history_metadata
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (2): read_past_file_content, read_past_file_content
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (2): read_past_file_content, recall
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): recall
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): recall
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): get_recent_memories
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (2): consult_memory, consult_memory
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): consult_memory
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): consult_memory
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): recall
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0036)... Tool calls (1): grep_search
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): view_file
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0042)... Tool calls (1): remember
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 24 | Cost: $0.005486 | Duration: 78.001s
---> Metrics: EOR=0.5263 | MUI=0.4737 | CCSR=-0.4629
-
-[PHASE 13] Repository: devbench-react-dashboard | Phase: software_design
-Goal: Design state management, component tree, metric telemetry feeds, and WebSocket subscription protocol.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, get_recent_memories
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): recall, list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): recall, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): get_recent_memories, list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (3): list_dir, list_dir, read_past_file_content
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (2): view_file, list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): remember
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): remember
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): remember
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 10 | Cost: $0.001752 | Duration: 43.441s
---> Metrics: EOR=0.4706 | MUI=0.1059 | CCSR=0.4993
-
-[PHASE 14] Repository: devbench-react-dashboard | Phase: environment_setup
-Goal: Configure package.json, Vite build settings, TypeScript strict config, Tailwind CSS, and ESLint.
   [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
   [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (4): recall, list_dir, list_dir, list_dir
   [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): get_recent_memories, view_file
   [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): consult_memory, consult_memory
   [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): list_dir, grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (2): list_dir, view_file
+  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (2): view_file, view_file
   [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (2): list_dir, list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): remember
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 9 | Cost: $0.001437 | Duration: 33.68s
---> Metrics: EOR=0.6111 | MUI=0.2593 | CCSR=0.5894
-
-[PHASE 15] Repository: devbench-react-dashboard | Phase: code_implementation
-Goal: Implement DashboardView, ChartCard, useWebSocket hook, metric formatters, and dark mode toggling.
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): list_dir, get_recent_memories
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (3): consult_memory, consult_memory, consult_memory
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (2): list_dir, view_file
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (3): list_dir, list_dir, list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): view_file
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (2): list_dir, list_dir
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0014)... Tool calls (1): view_file
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): grep_search
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): view_file
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): remember
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): remember
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0024)... Tool calls (1): remember
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0026)... Tool calls (1): remember
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0029)... Tool calls (1): remember
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): remember
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): remember
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0042)... Tool calls (1): remember
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): remember
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0055)... Tool calls (1): remember
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): remember
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0069)... Tool calls (1): grep_search
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0075)... Tool calls (2): get_file_history_metadata, get_file_history_metadata
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0081)... Tool calls (1): get_recent_memories
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0087)... Tool calls (1): submit_phase_deliverable
---> Phase Result: PASSED | Turns: 28 | Cost: $0.009449 | Duration: 141.089s
---> Metrics: EOR=0.4595 | MUI=0.5405 | CCSR=-1.6998
-
-[Export] Saved DevBench metrics to: /workspace/eval/metrics/dry_run/devbench_metrics.json
-[Export] Saved DevBench plot curves to: /workspace/eval/plots/dry_run/devbench_curves.csv
-Updating lock file 'dvc.lock'
-
-To track the changes with git, run:
-
-	git add dvc.lock
-
-To enable auto staging, run:
-
-	dvc config core.autostage true
-Use `dvc push` to send your updates to remote storage.
-==================================================
-✅ Stage eval_devbench completed successfully.
-==================================================
-🔄 Syncing metrics and plots for completed stage 'eval_devbench'...
-🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
-[cluster-draft/hjamet 51abe68] chore(ci): auto-sync metrics and dvc.lock [skip ci]
- 3 files changed, 395 insertions(+), 448 deletions(-)
-ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
-ℹ️  [DVC-Git-Helper] Staged eval/plots/devbench_curves.csv (0.00 MB)
-ℹ️  [DVC-Git-Helper] Staged eval/metrics/devbench_metrics.json (0.02 MB)
-ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync metrics and dvc.lock [skip ci]
-ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin...
-✅ [DVC-Git-Helper] All changes pushed successfully.
-
-==================================================
-🚀 Executing stage: eval_swebench_cl
-==================================================
-Running stage 'eval_swebench_cl':
-> python eval/benchmarks/swebench_cl_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-======================================================================
-[AIVC BENCHMARK RUNNER] SWE-bench-CL Evaluation Pipeline [DRY_RUN]
-======================================================================
-Target Dataset : thomasjoshi/swe-bench-cl
-Dataset Split  : test
-Sample Limit   : 15
-Active Model   : qwen/qwen3.7-flash
-Max Turns      : 50
-Max Tokens     : 4096
-Max Cost/Inst  : $0.10 USD
-Checkpoint File: /workspace/eval/checkpoints/dry_run/swebench_cl_checkpoint.jsonl
-Metrics Output : /workspace/eval/metrics/dry_run/swebench_cl_metrics.json
-Curves Output  : /workspace/eval/plots/dry_run/swebench_cl_curves.csv
-======================================================================
-[CHECKPOINT] Loaded 0 existing processed instances from checkpoint.
-[DATASET] Attempting to download 'thomasjoshi/swe-bench-cl' (SWE-Bench-CL.json) via huggingface_hub...
-[DATASET] Successfully loaded 15 real instances from 'thomasjoshi/swe-bench-cl'.
-
-======================================================================
-[EPISODE 1] Instance: django__django-9296 (django/django)
-Problem Preview: Paginator just implement the __iter__ function
-Description
-	 
-		(last modified by Alex Gaynor)
-	 
-Right now, when you wa...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (1): grep_search
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): grep_search
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): view_file
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): list_dir
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): get_file_history_metadata
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): view_file
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): view_file
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): grep_search
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): grep_search
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0024)... Tool calls (1): get_file_history_metadata
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): grep_search
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0029)... Tool calls (1): grep_search
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): grep_search
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): grep_search
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0034)... Tool calls (1): get_file_history_metadata
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0036)... Tool calls (1): grep_search
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): grep_search
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): grep_search
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): grep_search
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): grep_search
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0045)... Tool calls (1): grep_search
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0047)... Tool calls (1): grep_search
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): grep_search
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0051)... Tool calls (1): grep_search
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0053)... Tool calls (1): grep_search
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0055)... Tool calls (1): grep_search
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0057)... Tool calls (1): grep_search
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0060)... Tool calls (1): grep_search
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0062)... Tool calls (1): grep_search
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0064)... Tool calls (1): grep_search
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): list_dir
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0069)... Tool calls (1): get_file_history_metadata
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0071)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0073)... Tool calls (1): grep_search
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0076)... Tool calls (1): grep_search
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0078)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0081)... Tool calls (1): grep_search
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): grep_search
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.008583 | Duration: 66.262s
---> Metrics: EOR=0.9020 | MUI=0.0000 | CCSR=0.9938
-
-======================================================================
-[EPISODE 2] Instance: django__django-10097 (django/django)
-Problem Preview: Make URLValidator reject invalid characters in the username and password
-Description
-	 
-		(last modified by Tim Bell)
-	 ...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): recall, grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): grep_search, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): view_file
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (2): grep_search, grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): view_file
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): grep_search
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0014)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): grep_search
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): list_dir
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): view_file
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): view_file
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): view_file
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): grep_search
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0029)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0031)... Tool calls (1): grep_search
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): grep_search
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0034)... Tool calls (1): grep_search
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0036)... Tool calls (1): grep_search
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0038)... Tool calls (1): grep_search
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): grep_search
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): grep_search
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0045)... Tool calls (1): grep_search
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0047)... Tool calls (1): grep_search
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): list_dir
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0051)... Tool calls (1): list_dir
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0053)... Tool calls (1): grep_search
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0056)... Tool calls (1): grep_search
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0059)... Tool calls (1): grep_search
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): grep_search
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0064)... Tool calls (1): grep_search
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): grep_search
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0069)... Tool calls (1): list_dir
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0071)... Tool calls (1): grep_search
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0074)... Tool calls (1): grep_search
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0077)... Tool calls (1): grep_search
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0080)... Tool calls (1): grep_search
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0085)... Tool calls (1): grep_search
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0088)... Tool calls (1): grep_search
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0091)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0094)... Tool calls (1): grep_search
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0097)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.009915 | Duration: 74.958s
---> Metrics: EOR=0.9630 | MUI=0.0000 | CCSR=0.9883
-
-======================================================================
-[EPISODE 3] Instance: django__django-10880 (django/django)
-Problem Preview: Query syntax error with condition and distinct combination
-Description
-	
-A Count annotation containing both a Case condi...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, recall
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): list_dir, grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): grep_search, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (2): grep_search, grep_search
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (2): grep_search, grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (2): grep_search, list_dir
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): list_dir
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): list_dir
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): list_dir
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): list_dir
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): list_dir
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): list_dir
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): list_dir
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): list_dir
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): list_dir
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): list_dir
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): list_dir
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): list_dir
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): list_dir
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): list_dir
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): list_dir
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): list_dir
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): list_dir
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): list_dir
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): list_dir
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0045)... Tool calls (1): list_dir
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0047)... Tool calls (1): list_dir
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): list_dir
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0051)... Tool calls (1): list_dir
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): list_dir
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0056)... Tool calls (1): list_dir
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0058)... Tool calls (1): list_dir
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): list_dir
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0063)... Tool calls (1): list_dir
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0065)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0068)... Tool calls (1): list_dir
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0070)... Tool calls (1): list_dir
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0073)... Tool calls (1): list_dir
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0076)... Tool calls (1): list_dir
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0078)... Tool calls (1): list_dir
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0081)... Tool calls (1): list_dir
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0084)... Tool calls (1): list_dir
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0087)... Tool calls (1): list_dir
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0090)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.009253 | Duration: 66.88s
---> Metrics: EOR=0.9643 | MUI=0.0000 | CCSR=0.9812
-
-======================================================================
-[EPISODE 4] Instance: django__django-10914 (django/django)
-Problem Preview: Set default FILE_UPLOAD_PERMISSION to 0o644.
-Description
-	
-Hello,
-As far as I can see, the ​File Uploads documentation p...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): list_dir, grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): grep_search
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (2): list_dir, list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): view_file
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): list_dir
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): list_dir
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): view_file
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): list_dir
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): grep_search
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0036)... Tool calls (1): list_dir
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0038)... Tool calls (1): view_file
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0044)... Tool calls (1): list_dir
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0048)... Tool calls (1): list_dir
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0051)... Tool calls (1): list_dir
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): list_dir
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0058)... Tool calls (1): list_dir
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): list_dir
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0065)... Tool calls (1): list_dir
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0068)... Tool calls (1): list_dir
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0072)... Tool calls (1): list_dir
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0075)... Tool calls (1): list_dir
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0079)... Tool calls (1): list_dir
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): list_dir
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0087)... Tool calls (1): list_dir
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0091)... Tool calls (1): list_dir
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0094)... Tool calls (1): list_dir
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0098)... Tool calls (1): view_file
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0102)... Tool calls (1): grep_search
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0106)... Tool calls (1): list_dir
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0111)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0115)... Tool calls (1): list_dir
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0120)... Tool calls (1): list_dir
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0125)... Tool calls (1): grep_search
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0128)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0133)... Tool calls (1): grep_search
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0138)... Tool calls (1): grep_search
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0143)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0148)... Tool calls (1): grep_search
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0153)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.015678 | Duration: 89.913s
---> Metrics: EOR=0.9811 | MUI=0.0000 | CCSR=0.9828
-
-======================================================================
-[EPISODE 5] Instance: django__django-10999 (django/django)
-Problem Preview: Fix parse_duration() for some negative durations
-Description
-	
-The ​https://docs.djangoproject.com/en/2.1/_modules/djang...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (1): grep_search
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): grep_search
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): list_dir
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): view_file
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): grep_search
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): grep_search
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): grep_search
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): grep_search
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0024)... Tool calls (1): grep_search
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): grep_search
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0029)... Tool calls (1): grep_search
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): grep_search
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): list_dir
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0034)... Tool calls (1): grep_search
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0036)... Tool calls (1): grep_search
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0038)... Tool calls (1): grep_search
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): grep_search
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): grep_search
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): grep_search
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0045)... Tool calls (1): grep_search
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0047)... Tool calls (1): grep_search
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): grep_search
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0052)... Tool calls (1): grep_search
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0053)... Tool calls (1): list_dir
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0055)... Tool calls (1): grep_search
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0058)... Tool calls (1): grep_search
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0060)... Tool calls (1): grep_search
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0062)... Tool calls (1): grep_search
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0065)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0067)... Tool calls (1): grep_search
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0069)... Tool calls (1): grep_search
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0071)... Tool calls (1): grep_search
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0074)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0076)... Tool calls (1): list_dir
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0079)... Tool calls (1): view_file
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0081)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0084)... Tool calls (1): grep_search
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0087)... Tool calls (1): grep_search
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.008977 | Duration: 66.28s
---> Metrics: EOR=0.9804 | MUI=0.0000 | CCSR=0.9638
-
-======================================================================
-[EPISODE 6] Instance: django__django-11066 (django/django)
-Problem Preview: RenameContentType._rename() doesn't save the content type on the correct database
-Description
-	
-The commit in question:
-...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, view_file
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): view_file
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (1): view_file
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): grep_search, list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (2): grep_search, list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): grep_search
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): view_file
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): grep_search
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0026)... Tool calls (1): grep_search
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): view_file
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0038)... Tool calls (1): list_dir
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): grep_search
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): view_file
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): list_dir
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0052)... Tool calls (1): list_dir
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0055)... Tool calls (1): grep_search
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0058)... Tool calls (1): grep_search
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): view_file
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0065)... Tool calls (1): list_dir
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0068)... Tool calls (1): grep_search
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0072)... Tool calls (1): view_file
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0075)... Tool calls (1): list_dir
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0079)... Tool calls (1): grep_search
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): view_file
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0086)... Tool calls (1): list_dir
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0091)... Tool calls (1): grep_search
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0095)... Tool calls (1): view_file
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0099)... Tool calls (1): list_dir
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0103)... Tool calls (1): grep_search
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0108)... Tool calls (1): view_file
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0112)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0117)... Tool calls (1): grep_search
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0121)... Tool calls (1): view_file
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0126)... Tool calls (1): list_dir
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0131)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0136)... Tool calls (1): view_file
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0141)... Tool calls (1): list_dir
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0146)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0152)... Tool calls (1): view_file
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0157)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.016255 | Duration: 82.617s
---> Metrics: EOR=0.9811 | MUI=0.0000 | CCSR=0.9740
-
-======================================================================
-[EPISODE 7] Instance: django__django-11099 (django/django)
-Problem Preview: UsernameValidator allows trailing newline in usernames
-Description
-	
-ASCIIUsernameValidator and UnicodeUsernameValidator...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): recall, grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): grep_search, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (2): grep_search, list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): view_file
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): view_file
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): view_file
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): get_file_history_metadata
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0014)... Tool calls (1): list_dir
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): grep_search
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): grep_search
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): grep_search
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): grep_search
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): grep_search
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): grep_search
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): grep_search
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): grep_search
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): grep_search
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): list_dir
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): list_dir
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): list_dir
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): list_dir
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0045)... Tool calls (1): list_dir
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0047)... Tool calls (1): list_dir
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): list_dir
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0051)... Tool calls (1): list_dir
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): list_dir
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0056)... Tool calls (1): list_dir
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0058)... Tool calls (1): list_dir
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): list_dir
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0063)... Tool calls (1): list_dir
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0068)... Tool calls (1): list_dir
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0071)... Tool calls (1): list_dir
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0074)... Tool calls (1): list_dir
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0077)... Tool calls (1): list_dir
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0079)... Tool calls (1): list_dir
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0082)... Tool calls (1): list_dir
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0085)... Tool calls (1): list_dir
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0088)... Tool calls (1): list_dir
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0091)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.009450 | Duration: 76.717s
---> Metrics: EOR=0.9444 | MUI=0.0000 | CCSR=0.9480
-
-======================================================================
-[EPISODE 8] Instance: django__django-11119 (django/django)
-Problem Preview: Engine.render_to_string() should honor the autoescape attribute
-Description
-	
-In Engine.render_to_string, a Context is c...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, recall
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): grep_search, grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): grep_search, list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): grep_search
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): list_dir
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): list_dir
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): list_dir
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): grep_search
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): grep_search
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): view_file
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): grep_search
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): grep_search
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): grep_search
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0026)... Tool calls (1): grep_search
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): list_dir
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0029)... Tool calls (1): list_dir
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0031)... Tool calls (1): list_dir
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): list_dir
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): list_dir
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): list_dir
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0038)... Tool calls (1): list_dir
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0040)... Tool calls (1): list_dir
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0042)... Tool calls (1): list_dir
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0044)... Tool calls (1): list_dir
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): list_dir
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0048)... Tool calls (1): list_dir
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0050)... Tool calls (1): list_dir
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0052)... Tool calls (1): list_dir
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): list_dir
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0057)... Tool calls (1): list_dir
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0059)... Tool calls (1): list_dir
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0064)... Tool calls (1): list_dir
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): list_dir
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0068)... Tool calls (1): list_dir
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0071)... Tool calls (1): list_dir
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0073)... Tool calls (1): list_dir
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0076)... Tool calls (1): list_dir
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0078)... Tool calls (1): list_dir
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0081)... Tool calls (1): list_dir
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.008617 | Duration: 69.785s
---> Metrics: EOR=0.9623 | MUI=0.0000 | CCSR=0.9370
-
-======================================================================
-[EPISODE 9] Instance: django__django-11133 (django/django)
-Problem Preview: HttpResponse doesn't handle memoryview objects
-Description
-	
-I am trying to write a BinaryField retrieved from the datab...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, recall
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): grep_search, grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): grep_search, view_file
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): view_file
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): view_file
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): list_dir
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): list_dir
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0014)... Tool calls (1): view_file
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): list_dir
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): grep_search
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): grep_search
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0029)... Tool calls (1): grep_search
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0031)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): grep_search
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): grep_search
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): grep_search
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): grep_search
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): grep_search
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): grep_search
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0045)... Tool calls (1): grep_search
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0047)... Tool calls (1): grep_search
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0050)... Tool calls (1): grep_search
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0052)... Tool calls (1): grep_search
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): grep_search
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0057)... Tool calls (1): grep_search
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0059)... Tool calls (1): grep_search
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): grep_search
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0064)... Tool calls (1): grep_search
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): grep_search
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0069)... Tool calls (1): grep_search
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0072)... Tool calls (1): grep_search
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0074)... Tool calls (1): grep_search
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0077)... Tool calls (1): grep_search
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0080)... Tool calls (1): grep_search
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): grep_search
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0085)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0088)... Tool calls (1): grep_search
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0091)... Tool calls (1): grep_search
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0094)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0097)... Tool calls (1): grep_search
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0100)... Tool calls (1): grep_search
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.010347 | Duration: 84.492s
---> Metrics: EOR=0.9623 | MUI=0.0000 | CCSR=0.9415
-
-======================================================================
-[EPISODE 10] Instance: django__django-11163 (django/django)
-Problem Preview: model_to_dict() should return an empty dict for an empty list of fields.
-Description
-	
-Been called as model_to_dict(inst...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, grep_search
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (1): grep_search
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): grep_search
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): list_dir
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): list_dir
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): list_dir
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): list_dir
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0014)... Tool calls (1): list_dir
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): view_file
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): view_file
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): list_dir
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): list_dir
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): list_dir
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): list_dir
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): list_dir
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): list_dir
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): list_dir
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): list_dir
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): list_dir
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): list_dir
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): list_dir
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): list_dir
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0042)... Tool calls (1): list_dir
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0044)... Tool calls (1): list_dir
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): list_dir
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0048)... Tool calls (1): list_dir
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0051)... Tool calls (1): list_dir
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0053)... Tool calls (1): list_dir
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0055)... Tool calls (1): list_dir
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0057)... Tool calls (1): list_dir
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0059)... Tool calls (1): list_dir
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0064)... Tool calls (1): list_dir
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): list_dir
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0069)... Tool calls (1): list_dir
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0071)... Tool calls (1): list_dir
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0074)... Tool calls (1): list_dir
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0076)... Tool calls (1): list_dir
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0079)... Tool calls (1): list_dir
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0081)... Tool calls (1): list_dir
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0084)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.008671 | Duration: 73.488s
---> Metrics: EOR=0.9804 | MUI=0.0000 | CCSR=0.9234
-
-======================================================================
-[EPISODE 11] Instance: django__django-11179 (django/django)
-Problem Preview: delete() on instances of models without any dependencies doesn't clear PKs.
-Description
-	
-Deleting any model with no dep...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, get_file_history_metadata
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): view_file
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (1): grep_search
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): list_dir
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): list_dir
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): grep_search
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): list_dir
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): list_dir
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): list_dir
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): list_dir
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): list_dir
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): list_dir
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0026)... Tool calls (1): list_dir
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): list_dir
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): list_dir
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0031)... Tool calls (1): list_dir
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): list_dir
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): list_dir
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): list_dir
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0038)... Tool calls (1): list_dir
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0040)... Tool calls (1): list_dir
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0042)... Tool calls (1): list_dir
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0044)... Tool calls (1): list_dir
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): list_dir
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0048)... Tool calls (1): list_dir
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0050)... Tool calls (1): list_dir
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0052)... Tool calls (1): list_dir
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): list_dir
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0057)... Tool calls (1): list_dir
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0059)... Tool calls (1): list_dir
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): list_dir
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0063)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): list_dir
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0068)... Tool calls (1): list_dir
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0070)... Tool calls (1): list_dir
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0073)... Tool calls (1): list_dir
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0075)... Tool calls (1): list_dir
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0078)... Tool calls (1): list_dir
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0080)... Tool calls (1): list_dir
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): list_dir
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0085)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.008786 | Duration: 59.662s
---> Metrics: EOR=0.9608 | MUI=0.0000 | CCSR=0.9192
-
-======================================================================
-[EPISODE 12] Instance: django__django-11239 (django/django)
-Problem Preview: Add support for postgresql client certificates and key to dbshell.
-Description
-	
-This bug is very similar to the #28322
-...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, recall
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): recall
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (1): list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): grep_search
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): list_dir
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): view_file
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): list_dir
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): grep_search
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): view_file
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): view_file
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): view_file
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): grep_search
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): view_file
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): grep_search
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): view_file
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): view_file
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): view_file
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0032)... Tool calls (1): view_file
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0034)... Tool calls (1): view_file
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): view_file
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): view_file
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0041)... Tool calls (1): view_file
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0044)... Tool calls (1): view_file
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): view_file
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0049)... Tool calls (1): view_file
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0051)... Tool calls (1): view_file
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): grep_search
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0056)... Tool calls (1): grep_search
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0059)... Tool calls (1): grep_search
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0062)... Tool calls (1): grep_search
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0065)... Tool calls (1): grep_search
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0067)... Tool calls (1): grep_search
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0070)... Tool calls (1): list_dir
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0073)... Tool calls (1): grep_search
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0076)... Tool calls (1): grep_search
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0079)... Tool calls (1): grep_search
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0082)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0085)... Tool calls (1): list_dir
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0087)... Tool calls (1): view_file
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0091)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0094)... Tool calls (1): grep_search
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0098)... Tool calls (1): grep_search
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.010188 | Duration: 86.316s
---> Metrics: EOR=0.9412 | MUI=0.0000 | CCSR=0.9224
-
-======================================================================
-[EPISODE 13] Instance: django__django-11299 (django/django)
-Problem Preview: CheckConstraint with OR operator generates incorrect SQL on SQLite and Oracle.
-Description
-	 
-		(last modified by Michae...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, recall
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (2): list_dir, grep_search
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): grep_search
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): grep_search
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): list_dir
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): list_dir
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): grep_search
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): grep_search
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0014)... Tool calls (1): grep_search
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): grep_search
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): view_file
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): list_dir
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): grep_search
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): grep_search
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0026)... Tool calls (1): grep_search
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): list_dir
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): grep_search
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0031)... Tool calls (1): grep_search
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): grep_search
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): grep_search
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): grep_search
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): grep_search
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0040)... Tool calls (1): grep_search
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0042)... Tool calls (1): view_file
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0044)... Tool calls (1): grep_search
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): grep_search
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0048)... Tool calls (1): grep_search
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0051)... Tool calls (1): grep_search
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0053)... Tool calls (1): grep_search
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0055)... Tool calls (1): grep_search
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0058)... Tool calls (1): list_dir
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0060)... Tool calls (1): get_recent_memories
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0062)... Tool calls (1): view_file
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0065)... Tool calls (1): view_file
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0068)... Tool calls (1): view_file
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0070)... Tool calls (1): view_file
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0073)... Tool calls (1): view_file
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0076)... Tool calls (1): view_file
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0079)... Tool calls (1): view_file
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0082)... Tool calls (1): list_dir
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0085)... Tool calls (1): get_recent_memories
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0088)... Tool calls (1): list_dir
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0091)... Tool calls (1): list_dir
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0095)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.009823 | Duration: 75.798s
---> Metrics: EOR=0.9231 | MUI=0.0000 | CCSR=0.9142
-
-======================================================================
-[EPISODE 14] Instance: django__django-11433 (django/django)
-Problem Preview: Allow `cleaned_data` to overwrite fields' default values.
-Description
-	
-See comments here: ​https://github.com/django/dj...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, recall
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (1): list_dir
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (1): list_dir
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): grep_search
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): grep_search
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): list_dir
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): grep_search
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): view_file
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): view_file
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): list_dir
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): grep_search
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0017)... Tool calls (1): grep_search
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): grep_search
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0020)... Tool calls (1): list_dir
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0022)... Tool calls (1): grep_search
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): list_dir
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): list_dir
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0026)... Tool calls (1): list_dir
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0028)... Tool calls (1): list_dir
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0030)... Tool calls (1): list_dir
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0031)... Tool calls (1): grep_search
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): grep_search
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0035)... Tool calls (1): grep_search
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0037)... Tool calls (1): grep_search
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0038)... Tool calls (1): grep_search
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0040)... Tool calls (1): grep_search
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0042)... Tool calls (1): grep_search
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0044)... Tool calls (1): grep_search
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): grep_search
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0048)... Tool calls (1): list_dir
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0050)... Tool calls (1): list_dir
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0052)... Tool calls (1): list_dir
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): list_dir
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0057)... Tool calls (1): list_dir
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0059)... Tool calls (1): grep_search
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0061)... Tool calls (1): grep_search
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0063)... Tool calls (1): grep_search
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0066)... Tool calls (1): grep_search
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0068)... Tool calls (1): grep_search
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0070)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0073)... Tool calls (1): grep_search
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0075)... Tool calls (1): grep_search
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0078)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0080)... Tool calls (1): view_file
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): list_dir
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.008552 | Duration: 72.999s
---> Metrics: EOR=0.9608 | MUI=0.0000 | CCSR=0.8948
-
-======================================================================
-[EPISODE 15] Instance: django__django-11451 (django/django)
-Problem Preview: ModelBackend.authenticate() shouldn't make a database query when username is None
-Description
-	
-It's easier to explain m...
-======================================================================
-  [TURN 01/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0000)... Tool calls (2): recall, list_dir
-  [TURN 02/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0001)... Tool calls (2): recall, grep_search
-  [TURN 03/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0002)... Tool calls (1): grep_search
-  [TURN 04/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0003)... Tool calls (1): list_dir
-  [TURN 05/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0004)... Tool calls (1): list_dir
-  [TURN 06/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0005)... Tool calls (1): grep_search
-  [TURN 07/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0006)... Tool calls (1): grep_search
-  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0007)... Tool calls (1): list_dir
-  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0008)... Tool calls (1): view_file
-  [TURN 10/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0010)... Tool calls (1): view_file
-  [TURN 11/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0011)... Tool calls (1): grep_search
-  [TURN 12/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): list_dir
-  [TURN 13/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0013)... Tool calls (1): get_recent_memories
-  [TURN 14/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0015)... Tool calls (1): view_file
-  [TURN 15/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0016)... Tool calls (1): grep_search
-  [TURN 16/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0018)... Tool calls (1): recall
-  [TURN 17/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0019)... Tool calls (1): list_dir
-  [TURN 18/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0021)... Tool calls (1): view_file
-  [TURN 19/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0023)... Tool calls (1): view_file
-  [TURN 20/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0025)... Tool calls (1): view_file
-  [TURN 21/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0027)... Tool calls (1): recall
-  [TURN 22/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0029)... Tool calls (1): get_file_history_metadata
-  [TURN 23/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0031)... Tool calls (1): view_file
-  [TURN 24/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0033)... Tool calls (1): view_file
-  [TURN 25/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0036)... Tool calls (1): view_file
-  [TURN 26/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0039)... Tool calls (1): view_file
-  [TURN 27/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0043)... Tool calls (1): view_file
-  [TURN 28/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0046)... Tool calls (1): view_file
-  [TURN 29/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0050)... Tool calls (1): view_file
-  [TURN 30/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0054)... Tool calls (1): grep_search
-  [TURN 31/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0056)... Tool calls (1): grep_search
-  [TURN 32/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0060)... Tool calls (1): grep_search
-  [TURN 33/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0064)... Tool calls (1): grep_search
-  [TURN 34/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0067)... Tool calls (1): grep_search
-  [TURN 35/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0071)... Tool calls (1): grep_search
-  [TURN 36/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0075)... Tool calls (1): grep_search
-  [TURN 37/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0079)... Tool calls (1): grep_search
-  [TURN 38/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0083)... Tool calls (1): grep_search
-  [TURN 39/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0086)... Tool calls (1): grep_search
-  [TURN 40/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0090)... Tool calls (1): grep_search
-  [TURN 41/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0094)... Tool calls (1): grep_search
-  [TURN 42/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0098)... Tool calls (1): grep_search
-  [TURN 43/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0103)... Tool calls (1): grep_search
-  [TURN 44/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0107)... Tool calls (1): grep_search
-  [TURN 45/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0111)... Tool calls (1): grep_search
-  [TURN 46/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0115)... Tool calls (1): grep_search
-  [TURN 47/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0119)... Tool calls (1): grep_search
-  [TURN 48/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0124)... Tool calls (1): grep_search
-  [TURN 49/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0128)... Tool calls (1): grep_search
-  [TURN 50/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0132)... Tool calls (1): grep_search
-
---> Instance Result: UNRESOLVED | Turns: 50 | Cost: $0.013665 | Duration: 103.551s
---> Metrics: EOR=0.8846 | MUI=0.0000 | CCSR=0.9267
-
-[EXPORT] Benchmark metrics written to '/workspace/eval/metrics/dry_run/swebench_cl_metrics.json'
-[EXPORT] Benchmark plot curves written to '/workspace/eval/plots/dry_run/swebench_cl_curves.csv'
-
-[EXPORT] Benchmark metrics written to '/workspace/eval/metrics/swebench_cl_metrics.json'
-[EXPORT] Benchmark plot curves written to '/workspace/eval/plots/swebench_cl_curves.csv'
-
-======================================================================
-[SUMMARY] SWE-bench-CL Evaluation Execution Finished
-======================================================================
-Total Dataset Instances : 15
-Skipped (Checkpointed)  : 0
-Processed This Run      : 15
-Total Checkpoint Count  : 15
-======================================================================
-Updating lock file 'dvc.lock'
-
-To track the changes with git, run:
-
-	git add dvc.lock
-
-To enable auto staging, run:
-
-	dvc config core.autostage true
-Use `dvc push` to send your updates to remote storage.
-==================================================
-✅ Stage eval_swebench_cl completed successfully.
-==================================================
-🔄 Syncing metrics and plots for completed stage 'eval_swebench_cl'...
-🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
-[cluster-draft/hjamet c2c8848] chore(ci): auto-sync metrics and dvc.lock [skip ci]
- 3 files changed, 34 insertions(+), 35 deletions(-)
-ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
-ℹ️  [DVC-Git-Helper] Staged eval/metrics/swebench_cl_metrics.json (0.00 MB)
-ℹ️  [DVC-Git-Helper] Staged eval/plots/swebench_cl_curves.csv (0.00 MB)
-ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync metrics and dvc.lock [skip ci]
-ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin...
-✅ [DVC-Git-Helper] All changes pushed successfully.
-
-==================================================
-🚀 Executing stage: aggregate_metrics
-==================================================
-Running stage 'aggregate_metrics':
-> python eval/scripts/aggregate_metrics.py
+  [TURN 08/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0009)... Tool calls (1): remember
+  [TURN 09/50] Calling qwen/qwen3.7-flash (Cost so far: $0.0012)... Tool calls (1): submit_phase_deliverable
 Traceback (most recent call last):
-  File "/workspace/eval/scripts/aggregate_metrics.py", line 26, in <module>
-    export_dvc_metrics(eval_dir=eval_base, profile=args.profile)
-TypeError: export_dvc_metrics() got an unexpected keyword argument 'profile'
-ERROR: failed to reproduce 'aggregate_metrics': failed to run: python eval/scripts/aggregate_metrics.py, exited with 1
-❌ Stage aggregate_metrics failed with code 255
+  File "/workspace/eval/benchmarks/devbench_runner.py", line 1156, in <module>
+    main()
+  File "/workspace/eval/benchmarks/devbench_runner.py", line 1152, in main
+    runner.run_benchmark(phase_limit=cfg.limit, reset_checkpoint=cfg.reset_checkpoint)
+  File "/workspace/eval/benchmarks/devbench_runner.py", line 882, in run_benchmark
+    record = self.execute_phase(repo, phase, phase_index=idx)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/eval/benchmarks/devbench_runner.py", line 803, in execute_phase
+    ir_metrics = compute_retrieval_metrics(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/eval/metrics/trajectory_analyzer.py", line 231, in compute_retrieval_metrics
+    norm_retrieved = [_norm(f) for f in retrieved_files if f.strip()]
+                                                           ^^^^^^^
+AttributeError: 'list' object has no attribute 'strip'
+ERROR: failed to reproduce 'eval_devbench': failed to run: python eval/benchmarks/devbench_runner.py --limit 30 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash, exited with 1
+❌ Stage eval_devbench failed with code 255
 💾 Committing and pushing failure state to GitHub...

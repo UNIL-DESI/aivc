@@ -1,5 +1,11 @@
-# OpenRouter Models Registry for AIVC Evaluation & Benchmarks
-# Centralized registry of supported LLMs, token pricing ($/1M tokens), context windows, and capabilities.
+# Multi-Provider Models Registry for AIVC Evaluation & Benchmarks
+# Centralized registry of supported LLMs across providers (OpenRouter, Together AI),
+# token pricing ($/1M tokens), batch discounts, context windows, and capabilities.
+#
+# Supported Providers:
+# - 'openrouter': Routes to OpenRouter API (https://openrouter.ai/api/v1/chat/completions) using OPENROUTER_API_KEY.
+# - 'together': Routes to Together AI API (https://api.together.ai/v1/chat/completions) using TOGETHER_API_KEY.
+#   Supports 50% discount on Batch Inference API for offline evaluations.
 
 default_model: "qwen/qwen3.7-flash"
 
@@ -57,3 +63,27 @@ models:
     context_window: 128000
     supports_tools: true
     description: "Candidate high-efficiency open-weights model."
+
+  "meta-models/Muse-Glimmer-30B":
+    name: "Muse Glimmer 30B"
+    provider: "together"
+    prompt_price_per_1m: 0.35
+    completion_price_per_1m: 1.50
+    batch_prompt_price_per_1m: 0.175
+    batch_completion_price_per_1m: 0.75
+    context_window: 131072
+    supports_tools: true
+    description: "Open-source 30B foundation model hosted on Together AI. Supports real-time API ($0.35/$1.50 per 1M) and asynchronous Batch API with 50% discount ($0.175/$0.75 per 1M)."
+
+  "openai/gpt-oss-20b":
+    name: "GPT-OSS 20B"
+    provider: "together"
+    prompt_price_per_1m: 0.20
+    completion_price_per_1m: 0.60
+    batch_prompt_price_per_1m: 0.10
+    batch_completion_price_per_1m: 0.30
+    context_window: 131072
+    supports_tools: true
+    role: "validation_together"
+    description: "Open-source 20B model hosted on Together AI for validation and benchmark testing ($0.20/$0.60 per 1M real-time, $0.10/$0.30 per 1M batch)."
+

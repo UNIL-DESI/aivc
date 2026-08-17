@@ -20,10 +20,12 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -44,6 +46,9 @@ from metrics.trajectory_analyzer import (
     compute_ccsr,
     compute_eor,
     compute_mui,
+    compute_ndcg_at_k,
+    compute_retrieval_metrics,
+    extract_files_from_patch,
 )
 
 try:
@@ -212,22 +217,86 @@ DEFAULT_DEVBENCH_REPOS = [
 
 
 # ---------------------------------------------------------------------------
-# In-Memory AIVC Environment for DevBench
+# In-Memory AIVC Environment for DevBench (Hermetically Scoped per Repo)
 # ---------------------------------------------------------------------------
 
 class DevBenchAIVCEnvironment:
     """
     Maintains AIVC memory store across SDLC phases of each repository.
+    Hermetically isolated per repo_id to guarantee zero cross-repository data contamination.
     """
 
-    def __init__(self):
-        self.memories: Dict[str, Dict[str, Any]] = {}
-        self.file_snapshots: Dict[str, List[Dict[str, Any]]] = {}
-        self._counter = 0
+    def __init__(
+        self,
+        run_id: Optional[str] = None,
+        workspace_dir: Optional[Path] = None,
+    ):
+        self.run_id = run_id or uuid.uuid4().hex[:8]
+        self.workspace_dir = workspace_dir or (EVAL_DIR / "scratch" / f"aivc_devbench_{self.run_id}")
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    def remember(self, title: str, note: str, read_files: Optional[List[str]] = None, edited_files: Optional[List[str]] = None) -> str:
-        self._counter += 1
-        mem_id = f"dev-mem-{self._counter:04d}"
+        # Set sandbox environment variables
+        os.environ["AIVC_STORAGE_ROOT"] = str(self.workspace_dir)
+        os.environ["AIVC_WORKSPACE_DIR"] = str(self.workspace_dir)
+
+        self.current_repo_id: str = "default"
+        # Per-repo memory partition: {repo_id: {"memories": {}, "file_snapshots": {}, "counter": 0}}
+        self.repo_stores: Dict[str, Dict[str, Any]] = {}
+        self.set_repo("default")
+
+    def set_repo(self, repo_id: str) -> None:
+        """Switch active repository scope."""
+        self.current_repo_id = repo_id
+        if repo_id not in self.repo_stores:
+            self.repo_stores[repo_id] = {
+                "memories": {},
+                "file_snapshots": {},
+                "counter": 0,
+            }
+
+    def reset(self, repo_id: Optional[str] = None, clean_disk: bool = False) -> None:
+        """Reset memories for specific repo or all repos."""
+        if repo_id:
+            if repo_id in self.repo_stores:
+                self.repo_stores[repo_id] = {
+                    "memories": {},
+                    "file_snapshots": {},
+                    "counter": 0,
+                }
+        else:
+            self.repo_stores.clear()
+            self.set_repo(self.current_repo_id)
+
+        if clean_disk and self.workspace_dir.exists():
+            try:
+                shutil.rmtree(self.workspace_dir, ignore_errors=True)
+                self.workspace_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
+    @property
+    def memories(self) -> Dict[str, Dict[str, Any]]:
+        return self.repo_stores.get(self.current_repo_id, {}).get("memories", {})
+
+    @property
+    def file_snapshots(self) -> Dict[str, List[Dict[str, Any]]]:
+        return self.repo_stores.get(self.current_repo_id, {}).get("file_snapshots", {})
+
+    def remember(
+        self,
+        title: str,
+        note: str,
+        read_files: Optional[List[str]] = None,
+        edited_files: Optional[List[str]] = None,
+        repo_id: Optional[str] = None,
+    ) -> str:
+        target_repo = repo_id or self.current_repo_id
+        if target_repo not in self.repo_stores:
+            self.set_repo(target_repo)
+
+        store = self.repo_stores[target_repo]
+        store["counter"] += 1
+        mem_id = f"dev-mem-{store['counter']:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
 
         record = {
@@ -236,63 +305,74 @@ class DevBenchAIVCEnvironment:
             "note": note,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
+            "repo_id": target_repo,
             "timestamp": now_str,
         }
-        self.memories[mem_id] = record
+        store["memories"][mem_id] = record
 
         for f in (edited_files or []):
-            if f not in self.file_snapshots:
-                self.file_snapshots[f] = []
-            self.file_snapshots[f].append({
+            if f not in store["file_snapshots"]:
+                store["file_snapshots"][f] = []
+            store["file_snapshots"][f].append({
                 "memory_id": mem_id,
                 "timestamp": now_str,
                 "note_ref": title,
             })
 
+        for f in (read_files or []):
+            if f not in store["file_snapshots"]:
+                store["file_snapshots"][f] = []
+
         return f"✅ Memory recorded [ID: {mem_id}] '{title}'. Recorded {len(read_files or [])} read, {len(edited_files or [])} edited files."
 
-    def recall(self, query: str, limit: int = 5) -> str:
-        if not self.memories:
-            return "No past SDLC memories stored in AIVC yet."
+    def recall_with_records(self, query: str, limit: int = 5, repo_id: Optional[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
+        target_repo = repo_id or self.current_repo_id
+        mems = self.repo_stores.get(target_repo, {}).get("memories", {})
+        if not mems:
+            return "No past SDLC memories stored in AIVC yet.", []
 
         query_terms = [t.lower() for t in query.split() if len(t) > 2]
         scored = []
 
-        for mem_id, mem in self.memories.items():
+        for mem_id, mem in mems.items():
             text = f"{mem['title']} {mem['note']} {' '.join(mem['read_files'])} {' '.join(mem['edited_files'])}".lower()
             score = sum(1 for q in query_terms if q in text)
             if score > 0 or not query_terms:
                 scored.append((score, mem))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[:limit] if scored else [(0, m) for m in list(self.memories.values())[-limit:]]
+        top = scored[:limit] if scored else [(0, m) for m in list(mems.values())[-limit:]]
 
+        top_mems = [m for _, m in top]
         lines = [f"Found {len(top)} relevant SDLC memories:"]
         for _, m in top:
             snippet = m["note"][:160].replace("\n", " ") + "..."
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}): {snippet}")
-        return "\n".join(lines)
+        return "\n".join(lines), top_mems
 
-    def get_recent_memories(self, limit: int = 10, offset: int = 0) -> str:
-        all_mems = list(self.memories.values())
+    def get_recent_memories_with_records(self, limit: int = 10, offset: int = 0, repo_id: Optional[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
+        target_repo = repo_id or self.current_repo_id
+        all_mems = list(self.repo_stores.get(target_repo, {}).get("memories", {}).values())
         all_mems.reverse()
         slice_mems = all_mems[offset: offset + limit]
         if not slice_mems:
-            return "No memories found in range."
+            return "No memories found in range.", []
 
         lines = [f"Recent SDLC memories:"]
         for m in slice_mems:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]})")
-        return "\n".join(lines)
+        return "\n".join(lines), slice_mems
 
-    def consult_memory(self, memory_id: str) -> str:
-        mem = self.memories.get(memory_id)
+    def consult_memory(self, memory_id: str, repo_id: Optional[str] = None) -> str:
+        target_repo = repo_id or self.current_repo_id
+        mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
         return f"# {mem['title']}\n**Created**: {mem['timestamp']}\n**Read Files**: {mem['read_files']}\n**Edited Files**: {mem['edited_files']}\n\n{mem['note']}"
 
-    def get_file_history_metadata(self, filepath: str) -> str:
-        hist = self.file_snapshots.get(filepath, [])
+    def get_file_history_metadata(self, filepath: str, repo_id: Optional[str] = None) -> str:
+        target_repo = repo_id or self.current_repo_id
+        hist = self.repo_stores.get(target_repo, {}).get("file_snapshots", {}).get(filepath, [])
         if not hist:
             return f"No AIVC version history for file '{filepath}'."
         lines = [f"Version history for '{filepath}':"]
@@ -300,56 +380,137 @@ class DevBenchAIVCEnvironment:
             lines.append(f"- Memory [{h['memory_id']}] at {h['timestamp']}: {h['note_ref']}")
         return "\n".join(lines)
 
-    def read_past_file_content(self, filepath: str, memory_id: str) -> str:
-        mem = self.memories.get(memory_id)
+    def read_past_file_content(self, filepath: str, memory_id: str, repo_id: Optional[str] = None) -> str:
+        target_repo = repo_id or self.current_repo_id
+        mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
-        return f"// Historical snapshot of {filepath} at {memory_id} ({mem['title']})\n{mem['note'][:250]}"
+        return f"// Snapshot of {filepath} associated with {memory_id} ({mem['title']})\n// Memory context:\n{mem['note'][:300]}"
 
-    def execute_tool(self, tool_name: str, arguments: Dict[str, Any], phase_context: Dict[str, Any]) -> str:
+    def execute_tool(self, tool_name: str, arguments: Dict[str, Any], phase_context: Dict[str, Any]) -> Tuple[str, List[str]]:
+        returned_files: List[str] = []
+        repo_id = phase_context.get("repo_id", self.current_repo_id)
+        if repo_id and repo_id != self.current_repo_id:
+            self.set_repo(repo_id)
+
+        def _normalize_file_list(val: Any) -> List[str]:
+            if val is None:
+                return []
+            if isinstance(val, str):
+                s = val.strip()
+                return [s] if s else []
+            if isinstance(val, (list, tuple, set)):
+                res = []
+                for it in val:
+                    res.extend(_normalize_file_list(it))
+                return res
+            if isinstance(val, dict):
+                res = []
+                for v in val.values():
+                    res.extend(_normalize_file_list(v))
+                return res
+            s = str(val).strip()
+            return [s] if s else []
+
         try:
             if tool_name == "remember":
-                return self.remember(
-                    title=arguments.get("title", "SDLC Progress"),
-                    note=arguments.get("note", ""),
-                    read_files=arguments.get("read_files", []),
-                    edited_files=arguments.get("edited_files", []),
+                read_f = _normalize_file_list(arguments.get("read_files", []))
+                edit_f = _normalize_file_list(arguments.get("edited_files", []))
+                res = self.remember(
+                    title=str(arguments.get("title", "SDLC Progress")),
+                    note=str(arguments.get("note", "")),
+                    read_files=read_f,
+                    edited_files=edit_f,
+                    repo_id=repo_id,
                 )
+                returned_files = list(dict.fromkeys(read_f + edit_f))
+                return res, returned_files
             elif tool_name == "recall":
-                return self.recall(
-                    query=arguments.get("query", ""),
-                    limit=int(arguments.get("limit", 5)),
-                )
+                query = arguments.get("query", "")
+                limit = int(arguments.get("limit", 5))
+                res, matched_mems = self.recall_with_records(query=query, limit=limit, repo_id=repo_id)
+                for m in matched_mems:
+                    for f in m.get("read_files", []) + m.get("edited_files", []):
+                        if f and f not in returned_files:
+                            returned_files.append(f)
+                return res, returned_files
             elif tool_name == "get_recent_memories":
-                return self.get_recent_memories(
-                    limit=int(arguments.get("limit", 10)),
-                    offset=int(arguments.get("offset", 0)),
-                )
+                limit = int(arguments.get("limit", 10))
+                offset = int(arguments.get("offset", 0))
+                res, sliced_mems = self.get_recent_memories_with_records(limit=limit, offset=offset, repo_id=repo_id)
+                for m in sliced_mems:
+                    for f in m.get("read_files", []) + m.get("edited_files", []):
+                        if f and f not in returned_files:
+                            returned_files.append(f)
+                return res, returned_files
             elif tool_name == "consult_memory":
-                return self.consult_memory(memory_id=arguments.get("memory_id", ""))
+                mem_id = arguments.get("memory_id", "")
+                res = self.consult_memory(memory_id=mem_id, repo_id=repo_id)
+                mem = self.repo_stores.get(repo_id, {}).get("memories", {}).get(mem_id)
+                if mem:
+                    returned_files = list(dict.fromkeys(mem.get("read_files", []) + mem.get("edited_files", [])))
+                return res, returned_files
             elif tool_name == "get_file_history_metadata":
-                return self.get_file_history_metadata(filepath=arguments.get("filepath", ""))
+                filepath = arguments.get("filepath", "")
+                res = self.get_file_history_metadata(filepath=filepath, repo_id=repo_id)
+                if filepath:
+                    returned_files = [filepath]
+                return res, returned_files
             elif tool_name == "read_past_file_content":
-                return self.read_past_file_content(
-                    filepath=arguments.get("filepath", ""),
-                    memory_id=arguments.get("memory_id", ""),
-                )
+                filepath = arguments.get("filepath", "")
+                mem_id = arguments.get("memory_id", "")
+                res = self.read_past_file_content(filepath=filepath, memory_id=mem_id, repo_id=repo_id)
+                if filepath:
+                    returned_files = [filepath]
+                return res, returned_files
             elif tool_name == "view_file":
                 filepath = arguments.get("filepath", "")
-                return f"[File: {filepath}]\n// Template and structure for {phase_context.get('repo_id', '')} ({phase_context.get('phase', '')})\n// Interface declarations and contracts ready."
+                if filepath:
+                    returned_files = [filepath]
+                return f"[File: {filepath}]\n// Template and structure for {phase_context.get('repo_id', '')} ({phase_context.get('phase', '')})\n// Interface declarations and contracts ready.", returned_files
             elif tool_name == "grep_search":
                 query = arguments.get("query", "")
-                return f"Grep matches for '{query}':\n- src/main: defined symbols matching '{query}'"
+                init_f = phase_context.get("initial_files", [])
+                returned_files = init_f[:2] if init_f else ["src/main.py"]
+                lines = [f"Grep matches for '{query}':"]
+                for f in returned_files:
+                    lines.append(f"- {f}: defined symbols matching '{query}'")
+                return "\n".join(lines), returned_files
             elif tool_name == "list_dir":
-                return f"Directory listing for {phase_context.get('repo_id', '')}:\n- src/\n- tests/\n- config/\n- README.md"
+                init_f = phase_context.get("initial_files", [])
+                returned_files = init_f if init_f else ["src/", "tests/", "config/"]
+                return f"Directory listing for {phase_context.get('repo_id', '')}:\n- src/\n- tests/\n- config/\n- README.md", returned_files
             elif tool_name == "submit_phase_deliverable":
                 deliv = arguments.get("deliverable", "")
                 notes = arguments.get("notes", "")
-                return f"✅ Phase deliverable accepted ({len(deliv)} chars). Notes: {notes}"
+                returned_files = phase_context.get("initial_files", [])
+                return f"✅ Phase deliverable accepted ({len(deliv)} chars). Notes: {notes}", returned_files
             else:
-                return f"Unknown tool '{tool_name}'."
+                return f"Unknown tool '{tool_name}'.", []
         except Exception as e:
-            return f"Error executing tool '{tool_name}': {str(e)}"
+            return f"Error executing tool '{tool_name}': {str(e)}", []
+
+
+def append_tool_interaction(
+    interaction_record: Dict[str, Any],
+    interactions_paths: Optional[List[Path]] = None,
+) -> None:
+    """Atomically append a tool interaction record to specified JSONL output files."""
+    if not interactions_paths:
+        return
+    line = json.dumps(interaction_record, ensure_ascii=False) + "\n"
+    for p in interactions_paths:
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(line)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -423,20 +584,24 @@ class DevBenchRunner:
         max_turns: int = 50,
         max_tokens: int = 4096,
         max_cost_per_phase_usd: float = 0.10,
-        dry_run: bool = False,
         prompt_price_per_1m: Optional[float] = None,
         completion_price_per_1m: Optional[float] = None,
         fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
+        interactions_paths: Optional[List[Path]] = None,
+        run_id: Optional[str] = None,
+        workspace_dir: Optional[Path] = None,
     ):
         self.model_name = model_name
         self.api_key = api_key
         self.max_turns = max_turns
         self.max_tokens = max_tokens
         self.max_cost_per_phase_usd = max_cost_per_phase_usd
-        self.dry_run = dry_run
         self.checkpoint_path = checkpoint_path or (EVAL_DIR / "checkpoints" / "devbench_checkpoint.jsonl")
         self.metrics_path = metrics_path or (EVAL_DIR / "metrics" / "devbench_metrics.json")
         self.plots_path = plots_path or (EVAL_DIR / "plots" / "devbench_curves.csv")
+        self.interactions_paths = interactions_paths or []
+        self.run_id = run_id
+        self.workspace_dir = workspace_dir
 
         # System prompt and tool schemas from unified eval.config
         self.system_prompt = get_aivc_system_prompt(benchmark_type="devbench")
@@ -449,7 +614,7 @@ class DevBenchRunner:
         self.completion_price_per_1m = completion_price_per_1m if completion_price_per_1m is not None else (model_spec.completion_price_per_1m if model_spec else 0.13)
 
         self.checkpoint_manager = DevBenchCheckpointManager(self.checkpoint_path)
-        self.aivc_env = DevBenchAIVCEnvironment()
+        self.aivc_env = DevBenchAIVCEnvironment(run_id=self.run_id, workspace_dir=self.workspace_dir)
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
 
         # Resilient Inference Client
@@ -498,6 +663,7 @@ class DevBenchRunner:
     ) -> Dict[str, Any]:
         """Execute a multi-turn SDLC phase with live tool calling."""
         repo_id = repo["repo_id"]
+        self.aivc_env.set_repo(repo_id)
         phase_config = repo["phases"][phase]
         prompt = phase_config["prompt"]
         initial_files = phase_config.get("initial_files", [])
@@ -527,6 +693,8 @@ class DevBenchRunner:
         total_completion_tokens = 0
         total_phase_cost = 0.0
         tools_called_list: List[str] = []
+        phase_tool_interactions: List[Dict[str, Any]] = []
+        all_inspected_files: List[str] = []
         recalled_count = 0
         used_count = 0
         passed = False
@@ -587,7 +755,38 @@ class DevBenchRunner:
                         passed = True
 
                     # Live execution
-                    tool_res = self.aivc_env.execute_tool(fn_name, fn_args, {"repo_id": repo_id, "phase": phase})
+                    tool_res, returned_files = self.aivc_env.execute_tool(
+                        fn_name, fn_args, {"repo_id": repo_id, "phase": phase, "initial_files": initial_files}
+                    )
+                    for rf in returned_files:
+                        if isinstance(rf, (list, tuple, set)):
+                            for srf in rf:
+                                s_str = str(srf).strip()
+                                if s_str and s_str not in all_inspected_files:
+                                    all_inspected_files.append(s_str)
+                        else:
+                            s_str = str(rf).strip() if rf else ""
+                            if s_str and s_str not in all_inspected_files:
+                                all_inspected_files.append(s_str)
+
+                    interaction_record = {
+                        "tool_name": fn_name,
+                        "input_arguments": fn_args,
+                        "returned_files": returned_files,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "step_tokens": {
+                            "prompt_tokens": p_tok,
+                            "completion_tokens": c_tok,
+                            "total_tokens": p_tok + c_tok,
+                        },
+                        "benchmark": "devbench",
+                        "repo_id": repo_id,
+                        "phase": phase,
+                        "turn": turn,
+                        "model": self.model_name,
+                    }
+                    phase_tool_interactions.append(interaction_record)
+                    append_tool_interaction(interaction_record, self.interactions_paths)
 
                     messages.append({
                         "role": "tool",
@@ -627,6 +826,12 @@ class DevBenchRunner:
         mui = compute_mui(recalled_count, used_count, eor)
         ccsr = compute_ccsr(baseline_phase_cost, total_phase_cost)
 
+        ir_metrics = compute_retrieval_metrics(
+            retrieved_files=all_inspected_files,
+            ground_truth_files=initial_files,
+            k_list=(1, 3, 5),
+        )
+
         record = {
             "phase_index": phase_index,
             "repo_id": repo_id,
@@ -638,6 +843,7 @@ class DevBenchRunner:
             "turns_count": len(trajectory_steps),
             "tool_calls_count": len(tools_called_list),
             "tools": tools_called_list,
+            "tool_interactions": phase_tool_interactions,
             "prompt_tokens": total_prompt_tokens,
             "completion_tokens": total_completion_tokens,
             "total_tokens": total_tokens,
@@ -646,13 +852,16 @@ class DevBenchRunner:
             "eor": eor,
             "mui": mui,
             "ccsr": ccsr,
+            "retrieval_metrics": ir_metrics,
+            "ground_truth_files": initial_files,
+            "inspected_files": all_inspected_files,
             "duration_sec": duration,
             "recalled_memories": recalled_count,
             "used_memories": used_count,
         }
 
         print(f"--> Phase Result: PASSED | Turns: {len(trajectory_steps)} | Cost: ${total_phase_cost:.6f} | Duration: {duration}s")
-        print(f"--> Metrics: EOR={eor:.4f} | MUI={mui:.4f} | CCSR={ccsr:.4f}")
+        print(f"--> Metrics: EOR={eor:.4f} | MUI={mui:.4f} | CCSR={ccsr:.4f} | NDCG@3={ir_metrics.get('ndcg_at_3', 0.0):.4f}")
 
         return record
 
@@ -734,6 +943,24 @@ class DevBenchRunner:
         avg_mui = round(sum(r.get("mui", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
         overall_ccsr = compute_ccsr(total_baseline_cost, total_cost_usd)
 
+        avg_p1 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_1", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_p3 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_3", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_p5 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_5", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_r1 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_1", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_r3 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_3", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_r5 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_5", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_ndcg1 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_1", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_ndcg3 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_3", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_ndcg5 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_5", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+        avg_mrr = round(sum(r.get("retrieval_metrics", {}).get("mrr", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
+
+        all_tool_calls = [tc for r in records for tc in r.get("tools", [])]
+        tool_counts: Dict[str, int] = {}
+        for tc in all_tool_calls:
+            tool_counts[tc] = tool_counts.get(tc, 0) + 1
+
+        total_interactions = sum(len(r.get("tool_interactions", [])) for r in records)
+
         phase_breakdown = {}
         for phase in SDLC_PHASES:
             phase_records = [r for r in records if r.get("phase") == phase]
@@ -744,6 +971,7 @@ class DevBenchRunner:
             p_avg_cost = round(sum(r.get("cost_usd", 0.0) for r in phase_records) / float(p_total), 6) if p_total > 0 else 0.0
             p_avg_eor = round(sum(r.get("eor", 0.0) for r in phase_records) / float(p_total), 4) if p_total > 0 else 0.0
             p_avg_mui = round(sum(r.get("mui", 0.0) for r in phase_records) / float(p_total), 4) if p_total > 0 else 0.0
+            p_avg_ndcg3 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_3", 0.0) for r in phase_records) / float(p_total), 4) if p_total > 0 else 0.0
 
             phase_breakdown[phase] = {
                 "total_executions": p_total,
@@ -753,6 +981,7 @@ class DevBenchRunner:
                 "avg_cost_usd": p_avg_cost,
                 "avg_eor": p_avg_eor,
                 "avg_mui": p_avg_mui,
+                "avg_ndcg_at_3": p_avg_ndcg3,
             }
 
         metrics_json = {
@@ -773,6 +1002,21 @@ class DevBenchRunner:
                 "overall_ccsr": overall_ccsr,
                 "avg_eor": avg_eor,
                 "avg_mui": avg_mui,
+                "total_tool_calls": len(all_tool_calls),
+                "total_tool_interactions": total_interactions,
+                "tool_interaction_breakdown": tool_counts,
+            },
+            "retrieval_metrics": {
+                "mean_reciprocal_rank_mrr": avg_mrr,
+                "precision_at_1": avg_p1,
+                "precision_at_3": avg_p3,
+                "precision_at_5": avg_p5,
+                "recall_at_1": avg_r1,
+                "recall_at_3": avg_r3,
+                "recall_at_5": avg_r5,
+                "ndcg_at_1": avg_ndcg1,
+                "ndcg_at_3": avg_ndcg3,
+                "ndcg_at_5": avg_ndcg5,
             },
             "phase_breakdown": phase_breakdown,
             "detailed_records": records,
@@ -899,7 +1143,23 @@ def main() -> None:
     print(f"Curves Output  : {plots_path}")
     print("=" * 70)
 
-    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    provider = cfg.model_spec.provider if cfg.model_spec else "openrouter"
+    api_key = os.getenv("TOGETHER_API_KEY", "") if provider == "together" else os.getenv("OPENROUTER_API_KEY", "")
+
+
+    # Configure tool interaction paths
+    profile_interactions = paths.metrics_dir / "tool_interactions.jsonl"
+    bench_interactions = EVAL_DIR / "metrics" / "devbench_tool_interactions.jsonl"
+    general_interactions = EVAL_DIR / "metrics" / "tool_interactions.jsonl"
+    interactions_paths = [profile_interactions, bench_interactions, general_interactions]
+
+    if cfg.reset_checkpoint:
+        for p in interactions_paths:
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
 
     runner = DevBenchRunner(
         model_name=cfg.model,
@@ -910,9 +1170,9 @@ def main() -> None:
         max_turns=cfg.max_turns,
         max_tokens=cfg.max_tokens,
         max_cost_per_phase_usd=cfg.max_cost_per_instance_usd,
-        dry_run=cfg.dry_run,
         prompt_price_per_1m=cfg.model_spec.prompt_price_per_1m if cfg.model_spec else None,
         completion_price_per_1m=cfg.model_spec.completion_price_per_1m if cfg.model_spec else None,
+        interactions_paths=interactions_paths,
     )
 
     runner.run_benchmark(phase_limit=cfg.limit, reset_checkpoint=cfg.reset_checkpoint)

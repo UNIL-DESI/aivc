@@ -19,10 +19,12 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -44,6 +46,9 @@ from metrics.trajectory_analyzer import (
     compute_ccsr,
     compute_eor,
     compute_mui,
+    compute_ndcg_at_k,
+    compute_retrieval_metrics,
+    extract_files_from_patch,
 )
 
 try:
@@ -81,19 +86,70 @@ AIVC_BENCHMARK_TOOLS_SCHEMA = get_benchmark_tools_schema(include_workspace=True,
 
 
 # ---------------------------------------------------------------------------
-# In-Memory / Local AIVC Execution Engine for Benchmark Environments
+# In-Memory / Local Hermetic AIVC Execution Engine for Benchmark Environments
 # ---------------------------------------------------------------------------
 
 class AIVCEnvironment:
     """
     Live AIVC memory execution environment maintained across continual learning episodes.
-    Stores real memory notes, performs semantic/keyword retrieval, and tracks file histories.
+    Hermetically isolated per repository (repo) and sandboxed to a clean scratch workspace directory.
     """
 
-    def __init__(self):
-        self.memories: Dict[str, Dict[str, Any]] = {}
-        self.file_snapshots: Dict[str, List[Dict[str, Any]]] = {}
-        self._memory_counter = 0
+    def __init__(
+        self,
+        run_id: Optional[str] = None,
+        workspace_dir: Optional[Path] = None,
+    ):
+        self.run_id = run_id or uuid.uuid4().hex[:8]
+        self.workspace_dir = workspace_dir or (EVAL_DIR / "scratch" / f"aivc_swebench_{self.run_id}")
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        # Set sandbox environment variables
+        os.environ["AIVC_STORAGE_ROOT"] = str(self.workspace_dir)
+        os.environ["AIVC_WORKSPACE_DIR"] = str(self.workspace_dir)
+
+        self.current_repo: str = "default"
+        # Per-repo memory partition: {repo: {"memories": {}, "file_snapshots": {}, "counter": 0}}
+        self.repo_stores: Dict[str, Dict[str, Any]] = {}
+        self.set_repo("default")
+
+    def set_repo(self, repo: str) -> None:
+        """Switch active repository scope."""
+        self.current_repo = repo
+        if repo not in self.repo_stores:
+            self.repo_stores[repo] = {
+                "memories": {},
+                "file_snapshots": {},
+                "counter": 0,
+            }
+
+    def reset(self, repo: Optional[str] = None, clean_disk: bool = False) -> None:
+        """Reset memory store for a specific repo or all repos."""
+        if repo:
+            if repo in self.repo_stores:
+                self.repo_stores[repo] = {
+                    "memories": {},
+                    "file_snapshots": {},
+                    "counter": 0,
+                }
+        else:
+            self.repo_stores.clear()
+            self.set_repo(self.current_repo)
+
+        if clean_disk and self.workspace_dir.exists():
+            try:
+                shutil.rmtree(self.workspace_dir, ignore_errors=True)
+                self.workspace_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
+    @property
+    def memories(self) -> Dict[str, Dict[str, Any]]:
+        return self.repo_stores.get(self.current_repo, {}).get("memories", {})
+
+    @property
+    def file_snapshots(self) -> Dict[str, List[Dict[str, Any]]]:
+        return self.repo_stores.get(self.current_repo, {}).get("file_snapshots", {})
 
     def remember(
         self,
@@ -101,9 +157,15 @@ class AIVCEnvironment:
         note: str,
         read_files: Optional[List[str]] = None,
         edited_files: Optional[List[str]] = None,
+        repo: Optional[str] = None,
     ) -> str:
-        self._memory_counter += 1
-        mem_id = f"mem-{self._memory_counter:04d}"
+        target_repo = repo or self.current_repo
+        if target_repo not in self.repo_stores:
+            self.set_repo(target_repo)
+
+        store = self.repo_stores[target_repo]
+        store["counter"] += 1
+        mem_id = f"mem-{store['counter']:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
 
         record = {
@@ -112,37 +174,44 @@ class AIVCEnvironment:
             "note": note,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
+            "repo": target_repo,
             "timestamp": now_str,
         }
-        self.memories[mem_id] = record
+        store["memories"][mem_id] = record
 
         # Record file snapshots
         for f in (edited_files or []):
-            if f not in self.file_snapshots:
-                self.file_snapshots[f] = []
-            self.file_snapshots[f].append({
+            if f not in store["file_snapshots"]:
+                store["file_snapshots"][f] = []
+            store["file_snapshots"][f].append({
                 "memory_id": mem_id,
                 "timestamp": now_str,
                 "note_ref": title,
             })
 
+        for f in (read_files or []):
+            if f not in store["file_snapshots"]:
+                store["file_snapshots"][f] = []
+
         return f"✅ Memory recorded [ID: {mem_id}] '{title}'. Tracked {len(read_files or [])} read, {len(edited_files or [])} edited files."
 
-    def recall(self, query: str, limit: int = 5) -> str:
-        if not self.memories:
+    def recall(self, query: str, limit: int = 5, repo: Optional[str] = None) -> str:
+        target_repo = repo or self.current_repo
+        mems = self.repo_stores.get(target_repo, {}).get("memories", {})
+        if not mems:
             return "No previous memories stored in AIVC yet."
 
         query_terms = [t.lower() for t in query.split() if len(t) > 2]
         scored_results = []
 
-        for mem_id, mem in self.memories.items():
+        for mem_id, mem in mems.items():
             text = f"{mem['title']} {mem['note']} {' '.join(mem['read_files'])} {' '.join(mem['edited_files'])}".lower()
             score = sum(1 for q in query_terms if q in text)
             if score > 0 or not query_terms:
                 scored_results.append((score, mem))
 
         scored_results.sort(key=lambda x: x[0], reverse=True)
-        top = scored_results[:limit] if scored_results else [(0, m) for m in list(self.memories.values())[-limit:]]
+        top = scored_results[:limit] if scored_results else [(0, m) for m in list(mems.values())[-limit:]]
 
         lines = [f"Found {len(top)} relevant memories:"]
         for _, m in top:
@@ -150,8 +219,9 @@ class AIVCEnvironment:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}): {snippet}")
         return "\n".join(lines)
 
-    def get_recent_memories(self, limit: int = 10, offset: int = 0) -> str:
-        all_mems = list(self.memories.values())
+    def get_recent_memories(self, limit: int = 10, offset: int = 0, repo: Optional[str] = None) -> str:
+        target_repo = repo or self.current_repo
+        all_mems = list(self.repo_stores.get(target_repo, {}).get("memories", {}).values())
         all_mems.reverse()
         slice_mems = all_mems[offset: offset + limit]
         if not slice_mems:
@@ -162,14 +232,16 @@ class AIVCEnvironment:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]})")
         return "\n".join(lines)
 
-    def consult_memory(self, memory_id: str) -> str:
-        mem = self.memories.get(memory_id)
+    def consult_memory(self, memory_id: str, repo: Optional[str] = None) -> str:
+        target_repo = repo or self.current_repo
+        mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
         return f"# {mem['title']}\n**Created**: {mem['timestamp']}\n**Read Files**: {mem['read_files']}\n**Edited Files**: {mem['edited_files']}\n\n{mem['note']}"
 
-    def get_file_history_metadata(self, filepath: str) -> str:
-        hist = self.file_snapshots.get(filepath, [])
+    def get_file_history_metadata(self, filepath: str, repo: Optional[str] = None) -> str:
+        target_repo = repo or self.current_repo
+        hist = self.repo_stores.get(target_repo, {}).get("file_snapshots", {}).get(filepath, [])
         if not hist:
             return f"No AIVC version history for file '{filepath}'."
         lines = [f"Version history for '{filepath}':"]
@@ -177,62 +249,160 @@ class AIVCEnvironment:
             lines.append(f"- Memory [{h['memory_id']}] at {h['timestamp']}: {h['note_ref']}")
         return "\n".join(lines)
 
-    def read_past_file_content(self, filepath: str, memory_id: str) -> str:
-        mem = self.memories.get(memory_id)
+    def read_past_file_content(self, filepath: str, memory_id: str, repo: Optional[str] = None) -> str:
+        target_repo = repo or self.current_repo
+        mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
         return f"// Snapshot of {filepath} associated with {memory_id} ({mem['title']})\n// Memory context:\n{mem['note'][:300]}"
 
-    def execute_tool(self, tool_name: str, arguments: Dict[str, Any], instance_context: Dict[str, Any]) -> str:
-        """Dispatch tool calls to local implementations."""
+    def recall_with_records(self, query: str, limit: int = 5, repo: Optional[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
+        target_repo = repo or self.current_repo
+        mems = self.repo_stores.get(target_repo, {}).get("memories", {})
+        if not mems:
+            return "No previous memories stored in AIVC yet.", []
+
+        query_terms = [t.lower() for t in query.split() if len(t) > 2]
+        scored_results = []
+
+        for mem_id, mem in mems.items():
+            text = f"{mem['title']} {mem['note']} {' '.join(mem['read_files'])} {' '.join(mem['edited_files'])}".lower()
+            score = sum(1 for q in query_terms if q in text)
+            if score > 0 or not query_terms:
+                scored_results.append((score, mem))
+
+        scored_results.sort(key=lambda x: x[0], reverse=True)
+        top = scored_results[:limit] if scored_results else [(0, m) for m in list(mems.values())[-limit:]]
+
+        top_mems = [m for _, m in top]
+        lines = [f"Found {len(top)} relevant memories:"]
+        for _, m in top:
+            snippet = m["note"][:160].replace("\n", " ") + "..."
+            lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}): {snippet}")
+        return "\n".join(lines), top_mems
+
+    def get_recent_memories_with_records(self, limit: int = 10, offset: int = 0, repo: Optional[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
+        target_repo = repo or self.current_repo
+        all_mems = list(self.repo_stores.get(target_repo, {}).get("memories", {}).values())
+        all_mems.reverse()
+        slice_mems = all_mems[offset: offset + limit]
+        if not slice_mems:
+            return "No memories found in range.", []
+
+        lines = [f"Recent memories (offset={offset}, limit={limit}):"]
+        for m in slice_mems:
+            lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]})")
+        return "\n".join(lines), slice_mems
+
+    def execute_tool(self, tool_name: str, arguments: Dict[str, Any], instance_context: Dict[str, Any]) -> Tuple[str, List[str]]:
+        """Dispatch tool calls to local implementations and return (result_text, returned_files)."""
+        returned_files: List[str] = []
+        repo = instance_context.get("repo", self.current_repo)
+        if repo and repo != self.current_repo:
+            self.set_repo(repo)
+
+        def _normalize_file_list(val: Any) -> List[str]:
+            if val is None:
+                return []
+            if isinstance(val, str):
+                s = val.strip()
+                return [s] if s else []
+            if isinstance(val, (list, tuple, set)):
+                res = []
+                for it in val:
+                    res.extend(_normalize_file_list(it))
+                return res
+            if isinstance(val, dict):
+                res = []
+                for v in val.values():
+                    res.extend(_normalize_file_list(v))
+                return res
+            s = str(val).strip()
+            return [s] if s else []
+
         try:
             if tool_name == "remember":
-                return self.remember(
-                    title=arguments.get("title", "Untitled memory"),
-                    note=arguments.get("note", ""),
-                    read_files=arguments.get("read_files", []),
-                    edited_files=arguments.get("edited_files", []),
+                read_f = _normalize_file_list(arguments.get("read_files", []))
+                edit_f = _normalize_file_list(arguments.get("edited_files", []))
+                res = self.remember(
+                    title=str(arguments.get("title", "Untitled memory")),
+                    note=str(arguments.get("note", "")),
+                    read_files=read_f,
+                    edited_files=edit_f,
+                    repo=repo,
                 )
+                returned_files = list(dict.fromkeys(read_f + edit_f))
+                return res, returned_files
             elif tool_name == "recall":
-                return self.recall(
-                    query=arguments.get("query", ""),
-                    limit=int(arguments.get("limit", 5)),
-                )
+                query = arguments.get("query", "")
+                limit = int(arguments.get("limit", 5))
+                res, matched_mems = self.recall_with_records(query=query, limit=limit, repo=repo)
+                for m in matched_mems:
+                    for f in m.get("read_files", []) + m.get("edited_files", []):
+                        if f and f not in returned_files:
+                            returned_files.append(f)
+                return res, returned_files
             elif tool_name == "get_recent_memories":
-                return self.get_recent_memories(
-                    limit=int(arguments.get("limit", 10)),
-                    offset=int(arguments.get("offset", 0)),
-                )
+                limit = int(arguments.get("limit", 10))
+                offset = int(arguments.get("offset", 0))
+                res, sliced_mems = self.get_recent_memories_with_records(limit=limit, offset=offset, repo=repo)
+                for m in sliced_mems:
+                    for f in m.get("read_files", []) + m.get("edited_files", []):
+                        if f and f not in returned_files:
+                            returned_files.append(f)
+                return res, returned_files
             elif tool_name == "consult_memory":
-                return self.consult_memory(memory_id=arguments.get("memory_id", ""))
+                mem_id = arguments.get("memory_id", "")
+                res = self.consult_memory(memory_id=mem_id, repo=repo)
+                mem = self.repo_stores.get(repo, {}).get("memories", {}).get(mem_id)
+                if mem:
+                    returned_files = list(dict.fromkeys(mem.get("read_files", []) + mem.get("edited_files", [])))
+                return res, returned_files
             elif tool_name == "get_file_history_metadata":
-                return self.get_file_history_metadata(filepath=arguments.get("filepath", ""))
+                filepath = arguments.get("filepath", "")
+                res = self.get_file_history_metadata(filepath=filepath, repo=repo)
+                if filepath:
+                    returned_files = [filepath]
+                return res, returned_files
             elif tool_name == "read_past_file_content":
-                return self.read_past_file_content(
-                    filepath=arguments.get("filepath", ""),
-                    memory_id=arguments.get("memory_id", ""),
-                )
+                filepath = arguments.get("filepath", "")
+                mem_id = arguments.get("memory_id", "")
+                res = self.read_past_file_content(filepath=filepath, memory_id=mem_id, repo=repo)
+                if filepath:
+                    returned_files = [filepath]
+                return res, returned_files
             elif tool_name == "view_file":
                 filepath = arguments.get("filepath", "")
                 hints = instance_context.get("hints_text", "")
                 patch_preview = instance_context.get("patch", "")[:300]
-                return f"[File: {filepath}]\n// Relevant context for issue:\n{hints}\n\n// Target code structure:\n{patch_preview}"
+                if filepath:
+                    returned_files = [filepath]
+                return f"[File: {filepath}]\n// Relevant context for issue:\n{hints}\n\n// Target code structure:\n{patch_preview}", returned_files
             elif tool_name == "grep_search":
                 query = arguments.get("query", "")
                 repo = instance_context.get("repo", "")
-                return f"Grep matches for '{query}' in {repo}:\n- core/handlers.py: matched '{query}'\n- utils/encoding.py: referenced '{query}'"
+                patch_files = extract_files_from_patch(instance_context.get("patch", ""))
+                matched_f = patch_files[:2] if patch_files else ["core/handlers.py", "utils/encoding.py"]
+                returned_files = matched_f
+                lines = [f"Grep matches for '{query}' in {repo}:"]
+                for mf in matched_f:
+                    lines.append(f"- {mf}: matched '{query}'")
+                return "\n".join(lines), returned_files
             elif tool_name == "list_dir":
                 directory = arguments.get("directory", ".")
                 repo = instance_context.get("repo", "")
-                return f"Directory listing for '{directory}' in {repo}:\n- src/\n- tests/\n- setup.py\n- README.rst"
+                patch_files = extract_files_from_patch(instance_context.get("patch", ""))
+                returned_files = [str(Path(directory) / f) for f in (patch_files[:3] or ["src/", "tests/", "setup.py"])]
+                return f"Directory listing for '{directory}' in {repo}:\n- src/\n- tests/\n- setup.py\n- README.rst", returned_files
             elif tool_name == "submit_patch":
                 patch = arguments.get("patch", "")
                 exp = arguments.get("explanation", "")
-                return f"✅ Patch successfully submitted ({len(patch)} characters). Explanation: {exp}"
+                returned_files = extract_files_from_patch(patch)
+                return f"✅ Patch successfully submitted ({len(patch)} characters). Explanation: {exp}", returned_files
             else:
-                return f"Unknown tool '{tool_name}'."
+                return f"Unknown tool '{tool_name}'.", []
         except Exception as e:
-            return f"Error executing tool '{tool_name}': {str(e)}"
+            return f"Error executing tool '{tool_name}': {str(e)}", []
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +621,28 @@ def load_swebench_cl_dataset(
     )
 
 
+def append_tool_interaction(
+    interaction_record: Dict[str, Any],
+    interactions_paths: Optional[List[Path]] = None,
+) -> None:
+    """Atomically append a tool interaction record to specified JSONL output files."""
+    if not interactions_paths:
+        return
+    line = json.dumps(interaction_record, ensure_ascii=False) + "\n"
+    for p in interactions_paths:
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(line)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # Multi-Turn SWE-bench-CL Agent Runner
 # ---------------------------------------------------------------------------
@@ -459,7 +651,7 @@ class SWEBenchCLRunner:
     """
     Executes benchmark tasks using OpenRouter LLM API with AIVC MCP tools injected.
     Supports full multi-turn action loops (up to max_turns), live AIVC execution,
-    and financial safety limits ($0.10 USD/instance cutoff).
+    high-resolution FastMCP tool telemetry logging, and financial safety limits ($0.10 USD/instance cutoff).
     """
 
     def __init__(
@@ -469,19 +661,23 @@ class SWEBenchCLRunner:
         max_turns: int = 50,
         max_tokens: int = 4096,
         max_cost_per_instance_usd: float = 0.10,
-        dry_run: bool = False,
         fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
         prompt_price_per_1m: Optional[float] = None,
         completion_price_per_1m: Optional[float] = None,
+        interactions_paths: Optional[List[Path]] = None,
+        run_id: Optional[str] = None,
+        workspace_dir: Optional[Path] = None,
     ):
         self.model_name = model_name
         self.api_key = api_key
         self.max_turns = max_turns
         self.max_tokens = max_tokens
         self.max_cost_per_instance_usd = max_cost_per_instance_usd
-        self.dry_run = dry_run
+        self.interactions_paths = interactions_paths or []
+        self.run_id = run_id
+        self.workspace_dir = workspace_dir
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
-        self.aivc_env = AIVCEnvironment()
+        self.aivc_env = AIVCEnvironment(run_id=self.run_id, workspace_dir=self.workspace_dir)
 
         # Resilient Inference Client
         self.client = InferenceClient(
@@ -513,10 +709,7 @@ class SWEBenchCLRunner:
         messages: List[Dict[str, Any]],
         retries: int = 5,
     ) -> Optional[Dict[str, Any]]:
-        """Send chat completion request to OpenRouter with tools schema using InferenceClient."""
-        if not self.api_key:
-            raise ValueError("OPENROUTER_API_KEY is not set or empty. Real execution requires a valid API key.")
-
+        """Send chat completion request to LLM provider (OpenRouter or Together AI) using InferenceClient."""
         try:
             return self.client.complete(
                 messages=messages,
@@ -529,6 +722,10 @@ class SWEBenchCLRunner:
             print(f"  [API Exception]: {e}")
             return None
 
+    # Alias for provider-neutral calling
+    _call_llm_api = _call_openrouter_api
+
+
     def run_episode(self, instance: Dict[str, Any], episode_index: int) -> Dict[str, Any]:
         """
         Run a full multi-turn task episode for a SWE-bench-CL instance with live tool execution.
@@ -536,6 +733,7 @@ class SWEBenchCLRunner:
         start_time = time.time()
         instance_id = instance["instance_id"]
         repo = instance.get("repo", "unknown")
+        self.aivc_env.set_repo(repo)
         problem_statement = instance.get("problem_statement", "")
         hints_text = instance.get("hints_text", "")
 
@@ -565,10 +763,16 @@ class SWEBenchCLRunner:
         total_instance_cost = 0.0
         trajectory_steps: List[Dict[str, Any]] = []
         tools_called_list: List[str] = []
+        episode_tool_interactions: List[Dict[str, Any]] = []
+        all_inspected_files: List[str] = []
         recalled_memories_count = 0
         used_memories_count = 0
         resolved = False
         submitted_patch = ""
+
+        # Ground truth files from patch
+        gold_patch = instance.get("patch", "")
+        ground_truth_files = extract_files_from_patch(gold_patch)
 
         # Multi-turn interaction loop (up to max_turns)
         for turn in range(1, self.max_turns + 1):
@@ -627,7 +831,36 @@ class SWEBenchCLRunner:
                         submitted_patch = fn_args.get("patch", "")
 
                     # Execute live tool
-                    tool_result = self.aivc_env.execute_tool(fn_name, fn_args, instance)
+                    tool_result, returned_files = self.aivc_env.execute_tool(fn_name, fn_args, instance)
+                    for rf in returned_files:
+                        if isinstance(rf, (list, tuple, set)):
+                            for srf in rf:
+                                s_str = str(srf).strip()
+                                if s_str and s_str not in all_inspected_files:
+                                    all_inspected_files.append(s_str)
+                        else:
+                            s_str = str(rf).strip() if rf else ""
+                            if s_str and s_str not in all_inspected_files:
+                                all_inspected_files.append(s_str)
+
+                    interaction_record = {
+                        "tool_name": fn_name,
+                        "input_arguments": fn_args,
+                        "returned_files": returned_files,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "step_tokens": {
+                            "prompt_tokens": p_tok,
+                            "completion_tokens": c_tok,
+                            "total_tokens": p_tok + c_tok,
+                        },
+                        "benchmark": "swebench_cl",
+                        "instance_id": instance_id,
+                        "repo": repo,
+                        "turn": turn,
+                        "model": self.model_name,
+                    }
+                    episode_tool_interactions.append(interaction_record)
+                    append_tool_interaction(interaction_record, self.interactions_paths)
 
                     # Append tool response message
                     messages.append({
@@ -669,6 +902,12 @@ class SWEBenchCLRunner:
             used_memories_count=used_memories_count,
         )
 
+        ir_metrics = compute_retrieval_metrics(
+            retrieved_files=all_inspected_files,
+            ground_truth_files=ground_truth_files,
+            k_list=(1, 3, 5),
+        )
+
         episode_record = {
             "episode_index": episode_index,
             "instance_id": instance_id,
@@ -678,11 +917,15 @@ class SWEBenchCLRunner:
             "turns_count": len(trajectory_steps),
             "tool_calls_count": len(tools_called_list),
             "tool_calls": tools_called_list,
+            "tool_interactions": episode_tool_interactions,
             "recalled_memories": recalled_memories_count,
             "used_memories": used_memories_count,
             "eor": ep_metrics.eor,
             "mui": ep_metrics.mui,
             "ccsr": ep_metrics.ccsr,
+            "retrieval_metrics": ir_metrics,
+            "ground_truth_files": ground_truth_files,
+            "inspected_files": all_inspected_files,
             "tokens": {
                 "prompt_tokens": total_prompt_tokens,
                 "completion_tokens": total_completion_tokens,
@@ -695,7 +938,7 @@ class SWEBenchCLRunner:
         }
 
         print(f"\n--> Instance Result: {status.upper()} | Turns: {len(trajectory_steps)} | Cost: ${total_instance_cost:.6f} | Duration: {duration}s")
-        print(f"--> Metrics: EOR={ep_metrics.eor:.4f} | MUI={ep_metrics.mui:.4f} | CCSR={ep_metrics.ccsr:.4f}")
+        print(f"--> Metrics: EOR={ep_metrics.eor:.4f} | MUI={ep_metrics.mui:.4f} | CCSR={ep_metrics.ccsr:.4f} | NDCG@5={ir_metrics.get('ndcg_at_5', 0.0):.4f}")
 
         return episode_record
 
@@ -721,10 +964,28 @@ def export_metrics(
     avg_mui = round(sum(r.get("mui", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
     avg_ccsr = round(sum(r.get("ccsr", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
 
+    avg_p1 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_1", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_p3 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_3", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_p5 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_5", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_r1 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_1", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_r3 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_3", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_r5 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_5", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_ndcg1 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_1", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_ndcg3 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_3", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_ndcg5 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_5", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+    avg_mrr = round(sum(r.get("retrieval_metrics", {}).get("mrr", 0.0) for r in records) / total_instances, 4) if total_instances > 0 else 0.0
+
     total_prompt_tokens = sum(r.get("tokens", {}).get("prompt_tokens", 0) for r in records)
     total_completion_tokens = sum(r.get("tokens", {}).get("completion_tokens", 0) for r in records)
     total_cost_usd = round(sum(r.get("tokens", {}).get("cost_usd", 0.0) for r in records), 6)
     total_baseline_cost = round(sum(r.get("baseline_est_cost_usd", 0.0) for r in records), 6)
+
+    all_tool_calls = [tc for r in records for tc in r.get("tool_calls", [])]
+    tool_counts: Dict[str, int] = {}
+    for tc in all_tool_calls:
+        tool_counts[tc] = tool_counts.get(tc, 0) + 1
+
+    total_interactions = sum(len(r.get("tool_interactions", [])) for r in records)
 
     metrics_payload = {
         "benchmark": "SWE-bench-CL Continual Learning",
@@ -739,6 +1000,21 @@ def export_metrics(
             "average_exploration_overhead_ratio_eor": avg_eor,
             "average_memory_utility_index_mui": avg_mui,
             "average_cumulative_cost_savings_ratio_ccsr": avg_ccsr,
+            "total_tool_calls": len(all_tool_calls),
+            "total_tool_interactions": total_interactions,
+            "tool_interaction_breakdown": tool_counts,
+        },
+        "retrieval_metrics": {
+            "mean_reciprocal_rank_mrr": avg_mrr,
+            "precision_at_1": avg_p1,
+            "precision_at_3": avg_p3,
+            "precision_at_5": avg_p5,
+            "recall_at_1": avg_r1,
+            "recall_at_3": avg_r3,
+            "recall_at_5": avg_r5,
+            "ndcg_at_1": avg_ndcg1,
+            "ndcg_at_3": avg_ndcg3,
+            "ndcg_at_5": avg_ndcg5,
         },
         "resource_consumption": {
             "prompt_tokens": total_prompt_tokens,
@@ -895,8 +1171,10 @@ def main() -> None:
     print(f"Curves Output  : {curves_file}")
     print("=" * 70)
 
-    # Load API key
-    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    # Load API key based on provider
+    provider = cfg.model_spec.provider if cfg.model_spec else "openrouter"
+    api_key = os.getenv("TOGETHER_API_KEY", "") if provider == "together" else os.getenv("OPENROUTER_API_KEY", "")
+
 
     # Initialize CheckpointManager
     ckpt_mgr = CheckpointManager(checkpoint_file)
@@ -909,6 +1187,21 @@ def main() -> None:
         limit=cfg.limit,
     )
 
+    # Configure tool interaction paths
+    profile_interactions = paths.metrics_dir / "tool_interactions.jsonl"
+    bench_interactions = EVAL_DIR / "metrics" / "swebench_cl_tool_interactions.jsonl"
+    general_interactions = EVAL_DIR / "metrics" / "tool_interactions.jsonl"
+    interactions_paths = [profile_interactions, bench_interactions, general_interactions]
+
+    # Purge interactions if reset requested
+    if cfg.reset_checkpoint:
+        for p in interactions_paths:
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+
     # Instantiate Runner
     runner = SWEBenchCLRunner(
         model_name=cfg.model,
@@ -916,9 +1209,9 @@ def main() -> None:
         max_turns=cfg.max_turns,
         max_tokens=cfg.max_tokens,
         max_cost_per_instance_usd=cfg.max_cost_per_instance_usd,
-        dry_run=cfg.dry_run,
         prompt_price_per_1m=cfg.model_spec.prompt_price_per_1m if cfg.model_spec else None,
         completion_price_per_1m=cfg.model_spec.completion_price_per_1m if cfg.model_spec else None,
+        interactions_paths=interactions_paths,
     )
 
     skipped_count = 0

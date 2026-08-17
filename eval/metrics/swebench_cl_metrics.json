@@ -1,22 +1,22 @@
 {
   "benchmark": "SWE-bench-CL Continual Learning",
   "dataset_name": "thomasjoshi/swe-bench-cl",
-  "model_name": "qwen/qwen3.7-flash",
-  "timestamp": "2026-08-17T09:50:52.801526+00:00",
+  "model_name": "openai/gpt-oss-20b",
+  "timestamp": "2026-08-17T13:53:53.842879+00:00",
   "summary": {
-    "total_instances": 15,
+    "total_instances": 1,
     "resolved_instances": 0,
-    "unresolved_instances": 15,
+    "unresolved_instances": 1,
     "resolve_rate_pass_at_1": 0.0,
-    "average_exploration_overhead_ratio_eor": 0.9528,
+    "average_exploration_overhead_ratio_eor": 0.0,
     "average_memory_utility_index_mui": 0.0,
-    "average_cumulative_cost_savings_ratio_ccsr": 0.9474
+    "average_cumulative_cost_savings_ratio_ccsr": 0.981
   },
   "resource_consumption": {
-    "prompt_tokens": 4940248,
-    "completion_tokens": 65796,
-    "total_tokens": 5006044,
-    "aivc_total_cost_usd": 0.15676,
-    "baseline_estimated_cost_usd": 25.06022
+    "prompt_tokens": 1638,
+    "completion_tokens": 4096,
+    "total_tokens": 5734,
+    "aivc_total_cost_usd": 0.002785,
+    "baseline_estimated_cost_usd": 0.03067
   }
 }

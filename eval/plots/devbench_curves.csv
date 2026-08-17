@@ -1,16 +1,2 @@
 repo_id,phase,step_index,status,pass_rate,prompt_tokens,completion_tokens,total_tokens,cost_usd,cumulative_cost_usd,eor,mui,ccsr,duration_sec
-devbench-python-calculator,software_design,1,PASSED,1.0,29183,10752,39935,0.002273,0.002273,0.6667,0.0,0.2422,89.106
-devbench-python-calculator,environment_setup,2,PASSED,1.0,48716,3409,52125,0.001905,0.004178,0.7222,0.2778,0.3651,31.807
-devbench-python-calculator,code_implementation,3,PASSED,1.0,221386,16649,238035,0.008806,0.012984,0.4545,0.5455,-1.9353,147.335
-devbench-python-calculator,unit_testing,4,PASSED,1.0,98133,7516,105649,0.003921,0.016905,0.56,0.44,-0.307,66.878
-devbench-cpp-parser,software_design,5,PASSED,1.0,125637,8985,134622,0.004937,0.021842,0.75,0.05,-0.0971,95.455
-devbench-cpp-parser,environment_setup,6,PASSED,1.0,24240,3579,27819,0.001192,0.023034,0.8235,0.0,0.735,35.636
-devbench-cpp-parser,code_implementation,7,PASSED,1.0,111648,8482,120130,0.004452,0.027486,0.7879,0.2121,0.0106,81.574
-devbench-cpp-parser,unit_testing,8,FAILED,0.875,761699,16486,778185,0.024994,0.05248,0.5938,0.4062,-4.5543,180.016
-devbench-java-rest-api,software_design,9,PASSED,0.8889,56100,8686,64786,0.002812,0.055292,0.619,0.381,0.2501,77.542
-devbench-java-rest-api,environment_setup,10,PASSED,0.9,59212,3263,62475,0.002201,0.057493,0.625,0.375,0.4132,38.267
-devbench-java-rest-api,code_implementation,11,PASSED,0.9091,107650,6205,113855,0.004036,0.061529,0.5385,0.4615,-0.0763,68.532
-devbench-java-rest-api,unit_testing,12,PASSED,0.9167,153236,6836,160072,0.005486,0.067015,0.5263,0.4737,-0.4629,78.001
-devbench-react-dashboard,software_design,13,PASSED,0.9231,40138,4218,44356,0.001752,0.068767,0.4706,0.1059,0.4993,43.441
-devbench-react-dashboard,environment_setup,14,PASSED,0.9286,33547,3312,36859,0.001437,0.070204,0.6111,0.2593,0.5894,33.68
-devbench-react-dashboard,code_implementation,15,PASSED,0.9333,246537,15794,262331,0.009449,0.079653,0.4595,0.5405,-1.6998,141.089
+devbench-python-calculator,software_design,1,PASSED,1.0,1447,3701,5148,0.00251,0.00251,0.0,0.0,0.1633,27.443

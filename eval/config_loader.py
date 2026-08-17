@@ -53,6 +53,23 @@ DEFAULT_MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "completion_price_per_1m": 0.40,
         "context_window": 128000,
     },
+    "meta-models/Muse-Glimmer-30B": {
+        "prompt_price_per_1m": 0.35,
+        "completion_price_per_1m": 1.50,
+        "batch_prompt_price_per_1m": 0.175,
+        "batch_completion_price_per_1m": 0.75,
+        "context_window": 131072,
+        "provider": "together",
+    },
+    "openai/gpt-oss-20b": {
+        "prompt_price_per_1m": 0.20,
+        "completion_price_per_1m": 0.60,
+        "batch_prompt_price_per_1m": 0.10,
+        "batch_completion_price_per_1m": 0.30,
+        "context_window": 131072,
+        "provider": "together",
+        "role": "validation_together",
+    },
 }
 
 
@@ -69,7 +86,11 @@ def load_env_file(env_path: Optional[Path] = None) -> Dict[str, str]:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
-                    env_vars[k.strip()] = v.strip().strip("'\"")
+                    clean_k = k.strip()
+                    clean_v = v.strip().strip("'\"")
+                    env_vars[clean_k] = clean_v
+                    if clean_k not in os.environ:
+                        os.environ[clean_k] = clean_v
     return env_vars
 
 
@@ -83,7 +104,7 @@ def load_params_yaml(params_path: Optional[Path] = None) -> Dict[str, Any]:
         return {
             "profile": "dry_run",
             "eval": {
-                "limit": 15,
+                "limit": 30,
                 "max_turns": 50,
                 "max_tokens": 4096,
                 "max_cost_per_instance_usd": 0.10,
@@ -122,10 +143,12 @@ def load_params_yaml(params_path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def load_models_config(models_path: Optional[Path] = None) -> Dict[str, Any]:
-    """Load eval/config/models_openrouter.yaml configuration."""
+    """Load eval/config/models.yaml or models_openrouter.yaml configuration."""
     if models_path is None:
         eval_dir = Path(__file__).resolve().parent
-        models_path = eval_dir / "config" / "models_openrouter.yaml"
+        primary_path = eval_dir / "config" / "models.yaml"
+        fallback_path = eval_dir / "config" / "models_openrouter.yaml"
+        models_path = primary_path if primary_path.exists() else fallback_path
 
     if not models_path.exists():
         return {
@@ -141,6 +164,7 @@ def load_models_config(models_path: Optional[Path] = None) -> Dict[str, Any]:
         "active_model": "qwen/qwen3.7-flash",
         "models": DEFAULT_MODEL_PRICING,
     }
+
 
 
 def get_model_pricing(model_name: str, models_config: Optional[Dict[str, Any]] = None) -> Tuple[float, float, int]:

@@ -66,6 +66,18 @@ class BenchmarkMetrics:
     eor: float = 0.0
     mui: float = 0.0
     ccsr: float = 0.0
+    ndcg_at_1: float = 0.0
+    ndcg_at_3: float = 0.0
+    ndcg_at_5: float = 0.0
+    precision_at_1: float = 0.0
+    precision_at_3: float = 0.0
+    precision_at_5: float = 0.0
+    recall_at_1: float = 0.0
+    recall_at_3: float = 0.0
+    recall_at_5: float = 0.0
+    mrr: float = 0.0
+    total_tool_calls: int = 0
+    total_tool_interactions: int = 0
     is_sample_data: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
@@ -90,6 +102,22 @@ class BenchmarkMetrics:
                 "memory_utility_index_mui": round(self.mui, 4),
                 "cumulative_cost_savings_ratio_ccsr": round(self.ccsr, 4),
             },
+            "retrieval_metrics": {
+                "mean_reciprocal_rank_mrr": round(self.mrr, 4),
+                "precision_at_1": round(self.precision_at_1, 4),
+                "precision_at_3": round(self.precision_at_3, 4),
+                "precision_at_5": round(self.precision_at_5, 4),
+                "recall_at_1": round(self.recall_at_1, 4),
+                "recall_at_3": round(self.recall_at_3, 4),
+                "recall_at_5": round(self.recall_at_5, 4),
+                "ndcg_at_1": round(self.ndcg_at_1, 4),
+                "ndcg_at_3": round(self.ndcg_at_3, 4),
+                "ndcg_at_5": round(self.ndcg_at_5, 4),
+            },
+            "tool_telemetry": {
+                "total_tool_calls": self.total_tool_calls,
+                "total_tool_interactions": self.total_tool_interactions,
+            },
             "is_sample_data": self.is_sample_data,
         }
 
@@ -111,6 +139,8 @@ SAMPLE_BENCHMARKS: Dict[str, Dict[str, Any]] = {
         "eor": 0.375,
         "mui": 0.625,
         "ccsr": 0.400,
+        "ndcg_at_5": 0.850,
+        "mrr": 0.880,
     },
     "swebench_cl": {
         "benchmark_name": "swebench_cl",
@@ -127,6 +157,8 @@ SAMPLE_BENCHMARKS: Dict[str, Dict[str, Any]] = {
         "eor": 0.215,
         "mui": 0.712,
         "ccsr": 0.385,
+        "ndcg_at_5": 0.785,
+        "mrr": 0.820,
     },
     "devbench": {
         "benchmark_name": "devbench",
@@ -331,6 +363,34 @@ class DVCExporter:
                 or 0.0
             )
 
+            # Retrieval / IR Metrics
+            ret_data = data.get("retrieval_metrics") or {}
+            ndcg1 = float(ret_data.get("ndcg_at_1") or data.get("ndcg_at_1") or 0.0)
+            ndcg3 = float(ret_data.get("ndcg_at_3") or data.get("ndcg_at_3") or 0.0)
+            ndcg5 = float(ret_data.get("ndcg_at_5") or data.get("ndcg_at_5") or 0.0)
+            p1 = float(ret_data.get("precision_at_1") or data.get("precision_at_1") or 0.0)
+            p3 = float(ret_data.get("precision_at_3") or data.get("precision_at_3") or 0.0)
+            p5 = float(ret_data.get("precision_at_5") or data.get("precision_at_5") or 0.0)
+            r1 = float(ret_data.get("recall_at_1") or data.get("recall_at_1") or 0.0)
+            r3 = float(ret_data.get("recall_at_3") or data.get("recall_at_3") or 0.0)
+            r5 = float(ret_data.get("recall_at_5") or data.get("recall_at_5") or 0.0)
+            mrr = float(ret_data.get("mean_reciprocal_rank_mrr") or data.get("mrr") or 0.0)
+
+            # Tool Telemetry
+            tool_telem = data.get("tool_telemetry") or {}
+            tot_tool_calls = int(
+                tool_telem.get("total_tool_calls")
+                or summary_block.get("total_tool_calls")
+                or data.get("total_tool_calls")
+                or 0
+            )
+            tot_tool_interactions = int(
+                tool_telem.get("total_tool_interactions")
+                or summary_block.get("total_tool_interactions")
+                or data.get("total_tool_interactions")
+                or 0
+            )
+
             return BenchmarkMetrics(
                 benchmark_name=b_name,
                 model_name=m_name,
@@ -346,6 +406,18 @@ class DVCExporter:
                 eor=eor,
                 mui=mui,
                 ccsr=ccsr,
+                ndcg_at_1=ndcg1,
+                ndcg_at_3=ndcg3,
+                ndcg_at_5=ndcg5,
+                precision_at_1=p1,
+                precision_at_3=p3,
+                precision_at_5=p5,
+                recall_at_1=r1,
+                recall_at_3=r3,
+                recall_at_5=r5,
+                mrr=mrr,
+                total_tool_calls=tot_tool_calls,
+                total_tool_interactions=tot_tool_interactions,
                 is_sample_data=False,
             )
 
@@ -376,6 +448,18 @@ class DVCExporter:
         eor_sum = 0.0
         mui_sum = 0.0
         ccsr_sum = 0.0
+        ndcg1_sum = 0.0
+        ndcg3_sum = 0.0
+        ndcg5_sum = 0.0
+        p1_sum = 0.0
+        p3_sum = 0.0
+        p5_sum = 0.0
+        r1_sum = 0.0
+        r3_sum = 0.0
+        r5_sum = 0.0
+        mrr_sum = 0.0
+        tot_tool_calls_all = 0
+        tot_tool_interactions_all = 0
 
         for bfile in BENCHMARK_FILES:
             bm = self.parse_metrics_json(bfile)
@@ -394,12 +478,34 @@ class DVCExporter:
             eor_sum += bm.eor
             mui_sum += bm.mui
             ccsr_sum += bm.ccsr
+            ndcg1_sum += bm.ndcg_at_1
+            ndcg3_sum += bm.ndcg_at_3
+            ndcg5_sum += bm.ndcg_at_5
+            p1_sum += bm.precision_at_1
+            p3_sum += bm.precision_at_3
+            p5_sum += bm.precision_at_5
+            r1_sum += bm.recall_at_1
+            r3_sum += bm.recall_at_3
+            r5_sum += bm.recall_at_5
+            mrr_sum += bm.mrr
+            tot_tool_calls_all += bm.total_tool_calls
+            tot_tool_interactions_all += bm.total_tool_interactions
 
         num_bmarks = max(1, len(benchmark_metrics_list))
         overall_pass_rate = (successful_tasks_all / float(total_tasks_all)) if total_tasks_all > 0 else 0.0
         mean_eor = eor_sum / float(num_bmarks)
         mean_mui = mui_sum / float(num_bmarks)
         mean_ccsr = ccsr_sum / float(num_bmarks)
+        mean_ndcg1 = ndcg1_sum / float(num_bmarks)
+        mean_ndcg3 = ndcg3_sum / float(num_bmarks)
+        mean_ndcg5 = ndcg5_sum / float(num_bmarks)
+        mean_p1 = p1_sum / float(num_bmarks)
+        mean_p3 = p3_sum / float(num_bmarks)
+        mean_p5 = p5_sum / float(num_bmarks)
+        mean_r1 = r1_sum / float(num_bmarks)
+        mean_r3 = r3_sum / float(num_bmarks)
+        mean_r5 = r5_sum / float(num_bmarks)
+        mean_mrr = mrr_sum / float(num_bmarks)
 
         now_utc = datetime.now(timezone.utc).isoformat()
 
@@ -424,6 +530,22 @@ class DVCExporter:
                     "mean_exploration_overhead_ratio_eor": round(mean_eor, 4),
                     "mean_memory_utility_index_mui": round(mean_mui, 4),
                     "mean_cumulative_cost_savings_ratio_ccsr": round(mean_ccsr, 4),
+                },
+                "mean_retrieval_metrics": {
+                    "mean_reciprocal_rank_mrr": round(mean_mrr, 4),
+                    "mean_precision_at_1": round(mean_p1, 4),
+                    "mean_precision_at_3": round(mean_p3, 4),
+                    "mean_precision_at_5": round(mean_p5, 4),
+                    "mean_recall_at_1": round(mean_r1, 4),
+                    "mean_recall_at_3": round(mean_r3, 4),
+                    "mean_recall_at_5": round(mean_r5, 4),
+                    "mean_ndcg_at_1": round(mean_ndcg1, 4),
+                    "mean_ndcg_at_3": round(mean_ndcg3, 4),
+                    "mean_ndcg_at_5": round(mean_ndcg5, 4),
+                },
+                "tool_telemetry": {
+                    "total_tool_calls": tot_tool_calls_all,
+                    "total_tool_interactions": tot_tool_interactions_all,
                 },
             },
             "benchmarks": benchmarks_dict,
@@ -457,6 +579,13 @@ class DVCExporter:
             "eor",
             "mui",
             "ccsr",
+            "ndcg_at_1",
+            "ndcg_at_3",
+            "ndcg_at_5",
+            "precision_at_3",
+            "recall_at_3",
+            "mrr",
+            "total_tool_interactions",
             "is_sample_data",
         ]
 
@@ -481,6 +610,13 @@ class DVCExporter:
                         "eor": round(bm.eor, 4),
                         "mui": round(bm.mui, 4),
                         "ccsr": round(bm.ccsr, 4),
+                        "ndcg_at_1": round(bm.ndcg_at_1, 4),
+                        "ndcg_at_3": round(bm.ndcg_at_3, 4),
+                        "ndcg_at_5": round(bm.ndcg_at_5, 4),
+                        "precision_at_3": round(bm.precision_at_3, 4),
+                        "recall_at_3": round(bm.recall_at_3, 4),
+                        "mrr": round(bm.mrr, 4),
+                        "total_tool_interactions": bm.total_tool_interactions,
                         "is_sample_data": bm.is_sample_data,
                     }
                 )

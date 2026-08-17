@@ -11,6 +11,8 @@ stages:
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
       eval.model]
     deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl.hash]
+    outs:
+    - eval/metrics/swebench_cl_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/swebench_cl_metrics.json: {cache: false}
     plots:
@@ -22,6 +24,8 @@ stages:
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
       eval.model]
     deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench.hash]
+    outs:
+    - eval/metrics/devbench_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/devbench_metrics.json: {cache: false}
     plots:
@@ -33,6 +37,8 @@ stages:
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
       eval.model]
     deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag.hash]
+    outs:
+    - eval/metrics/agentic_rag_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/agentic_rag_metrics.json: {cache: false}
     plots:
@@ -41,6 +47,8 @@ stages:
     cmd: python eval/scripts/aggregate_metrics.py
     deps: [eval/scripts/aggregate_metrics.py, eval/metrics/swebench_cl_metrics.json,
       eval/metrics/devbench_metrics.json, eval/metrics/agentic_rag_metrics.json, .dvc-viewer/hashes/aggregate_metrics.hash]
+    outs:
+    - eval/metrics/tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/summary_metrics.json: {cache: false}
     plots:

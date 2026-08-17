@@ -2,15 +2,18 @@
 # Optimized for quick validation, smoke tests, and CI/CD runs.
 
 profile: "dry_run"
-dry_run: true
 
-# Models configuration
-model: "qwen/qwen3.7-flash"
+# Target models evaluated in dry run
 models:
   - "qwen/qwen3.7-flash"
+  - "openai/gpt-oss-20b"
 
-# Execution limits & budgets
-limit: 15
+# Execution limits per benchmark (N=30)
+limits:
+  agentic_rag: 30
+  swebench_cl: 30
+  devbench: 30
+
 reset_checkpoint: true
 max_turns: 50
 max_tokens: 4096

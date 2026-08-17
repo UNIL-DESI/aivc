@@ -1,24 +1,40 @@
 {
-  "aggregated_at": "2026-08-17T09:52:07.869243+00:00",
+  "aggregated_at": "2026-08-17T15:17:16.550459+00:00",
   "total_benchmarks": 4,
   "overall_summary": {
-    "total_tasks": 25,
-    "total_successful_tasks": 7,
-    "overall_pass_rate": 0.28,
+    "total_tasks": 11,
+    "total_successful_tasks": 5,
+    "overall_pass_rate": 0.4545,
     "token_counts": {
-      "total_prompt_tokens": 9955758,
-      "total_completion_tokens": 261409,
-      "total_tokens": 10217167
+      "total_prompt_tokens": 5930,
+      "total_completion_tokens": 14968,
+      "total_tokens": 20898
     },
     "openrouter_execution_costs_usd": {
-      "total_prompt_cost_usd": 0.298673,
-      "total_completion_cost_usd": 0.033983,
-      "total_execution_cost_usd": 0.332654
+      "total_prompt_cost_usd": 0.000178,
+      "total_completion_cost_usd": 0.001946,
+      "total_execution_cost_usd": 0.006313
     },
     "mean_evaluation_ratios": {
-      "mean_exploration_overhead_ratio_eor": 0.8366,
-      "mean_memory_utility_index_mui": 0.107,
-      "mean_cumulative_cost_savings_ratio_ccsr": -0.407
+      "mean_exploration_overhead_ratio_eor": 0.4601,
+      "mean_memory_utility_index_mui": 0.0265,
+      "mean_cumulative_cost_savings_ratio_ccsr": 0.7713
+    },
+    "mean_retrieval_metrics": {
+      "mean_reciprocal_rank_mrr": 0.25,
+      "mean_precision_at_1": 0.25,
+      "mean_precision_at_3": 0.0833,
+      "mean_precision_at_5": 0.0,
+      "mean_recall_at_1": 0.0833,
+      "mean_recall_at_3": 0.0833,
+      "mean_recall_at_5": 0.0,
+      "mean_ndcg_at_1": 0.0,
+      "mean_ndcg_at_3": 0.0,
+      "mean_ndcg_at_5": 0.0
+    },
+    "tool_telemetry": {
+      "total_tool_calls": 0,
+      "total_tool_interactions": 0
     }
   },
   "benchmarks": {
@@ -43,74 +59,138 @@
         "memory_utility_index_mui": 0.0,
         "cumulative_cost_savings_ratio_ccsr": 0.9935
       },
+      "retrieval_metrics": {
+        "mean_reciprocal_rank_mrr": 0.0,
+        "precision_at_1": 0.0,
+        "precision_at_3": 0.0,
+        "precision_at_5": 0.0,
+        "recall_at_1": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "ndcg_at_1": 0.0,
+        "ndcg_at_3": 0.0,
+        "ndcg_at_5": 0.0
+      },
+      "tool_telemetry": {
+        "total_tool_calls": 0,
+        "total_tool_interactions": 0
+      },
       "is_sample_data": false
     },
     "SWE-bench-CL Continual Learning": {
       "benchmark_name": "SWE-bench-CL Continual Learning",
-      "model_name": "qwen/qwen3.7-flash",
-      "total_tasks": 15,
+      "model_name": "openai/gpt-oss-20b",
+      "total_tasks": 1,
       "successful_tasks": 0,
       "pass_rate": 0.0,
       "token_counts": {
-        "prompt_tokens": 4940248,
-        "completion_tokens": 65796,
-        "total_tokens": 5006044
+        "prompt_tokens": 1638,
+        "completion_tokens": 4096,
+        "total_tokens": 5734
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.148207,
-        "completion_cost_usd": 0.008553,
-        "total_cost_usd": 0.15676
+        "prompt_cost_usd": 4.9e-05,
+        "completion_cost_usd": 0.000532,
+        "total_cost_usd": 0.002785
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.9528,
+        "exploration_overhead_ratio_eor": 0.0,
         "memory_utility_index_mui": 0.0,
-        "cumulative_cost_savings_ratio_ccsr": 0.9474
+        "cumulative_cost_savings_ratio_ccsr": 0.981
+      },
+      "retrieval_metrics": {
+        "mean_reciprocal_rank_mrr": 0.0,
+        "precision_at_1": 0.0,
+        "precision_at_3": 0.0,
+        "precision_at_5": 0.0,
+        "recall_at_1": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "ndcg_at_1": 0.0,
+        "ndcg_at_3": 0.0,
+        "ndcg_at_5": 0.0
+      },
+      "tool_telemetry": {
+        "total_tool_calls": 0,
+        "total_tool_interactions": 0
       },
       "is_sample_data": false
     },
     "DevBench": {
       "benchmark_name": "DevBench",
-      "model_name": "qwen/qwen3.7-flash",
+      "model_name": "openai/gpt-oss-20b",
       "total_tasks": 5,
-      "successful_tasks": 2,
-      "pass_rate": 0.4,
+      "successful_tasks": 0,
+      "pass_rate": 1.0,
       "token_counts": {
-        "prompt_tokens": 2117062,
-        "completion_tokens": 124172,
-        "total_tokens": 2241234
+        "prompt_tokens": 1447,
+        "completion_tokens": 3701,
+        "total_tokens": 5148
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.063512,
-        "completion_cost_usd": 0.016142,
-        "total_cost_usd": 0.079653
+        "prompt_cost_usd": 4.3e-05,
+        "completion_cost_usd": 0.000481,
+        "total_cost_usd": 0.00251
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.6139,
-        "memory_utility_index_mui": 0.3019,
-        "cumulative_cost_savings_ratio_ccsr": -0.4352
+        "exploration_overhead_ratio_eor": 0.0,
+        "memory_utility_index_mui": 0.0,
+        "cumulative_cost_savings_ratio_ccsr": 0.1633
+      },
+      "retrieval_metrics": {
+        "mean_reciprocal_rank_mrr": 0.0,
+        "precision_at_1": 0.0,
+        "precision_at_3": 0.0,
+        "precision_at_5": 0.0,
+        "recall_at_1": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "ndcg_at_1": 0.0,
+        "ndcg_at_3": 0.0,
+        "ndcg_at_5": 0.0
+      },
+      "tool_telemetry": {
+        "total_tool_calls": 0,
+        "total_tool_interactions": 0
       },
       "is_sample_data": false
     },
     "Agentic RAG Continual Learning": {
       "benchmark_name": "Agentic RAG Continual Learning",
-      "model_name": "qwen/qwen3.7-flash",
+      "model_name": "openai/gpt-oss-20b",
       "total_tasks": 0,
       "successful_tasks": 0,
       "pass_rate": 0.0,
       "token_counts": {
-        "prompt_tokens": 2898448,
-        "completion_tokens": 71441,
-        "total_tokens": 2969889
+        "prompt_tokens": 2845,
+        "completion_tokens": 7171,
+        "total_tokens": 10016
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.086953,
-        "completion_cost_usd": 0.009287,
-        "total_cost_usd": 0.096241
+        "prompt_cost_usd": 8.5e-05,
+        "completion_cost_usd": 0.000932,
+        "total_cost_usd": 0.001018
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.7798,
-        "memory_utility_index_mui": 0.126,
-        "cumulative_cost_savings_ratio_ccsr": -3.1337
+        "exploration_overhead_ratio_eor": 0.8404,
+        "memory_utility_index_mui": 0.1061,
+        "cumulative_cost_savings_ratio_ccsr": 0.9473
+      },
+      "retrieval_metrics": {
+        "mean_reciprocal_rank_mrr": 1.0,
+        "precision_at_1": 1.0,
+        "precision_at_3": 0.3333,
+        "precision_at_5": 0.0,
+        "recall_at_1": 0.3333,
+        "recall_at_3": 0.3333,
+        "recall_at_5": 0.0,
+        "ndcg_at_1": 0.0,
+        "ndcg_at_3": 0.0,
+        "ndcg_at_5": 0.0
+      },
+      "tool_telemetry": {
+        "total_tool_calls": 0,
+        "total_tool_interactions": 0
       },
       "is_sample_data": false
     }

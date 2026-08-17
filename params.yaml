@@ -1,7 +1,7 @@
 profile: "dry_run"
 
 eval:
-  limit: 15
+  limit: 30
   max_turns: 50
   max_tokens: 4096
   max_cost_per_instance_usd: 0.10

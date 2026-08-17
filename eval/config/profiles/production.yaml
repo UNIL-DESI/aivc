@@ -1,8 +1,7 @@
 # AIVC Evaluation Profile: Full Paper Production Benchmark
-# Full continual learning evaluation across 3 target frontier models.
+# Full continual learning evaluation across target frontier models.
 
 profile: "production"
-dry_run: false
 
 # Target models evaluated in the scientific paper
 model: "deepseek/deepseek-v4-flash-0731"
@@ -10,6 +9,13 @@ models:
   - "deepseek/deepseek-v4-flash-0731"
   - "google/gemini-3.7-flash"
   - "openai/gpt-5.6-luna-pro"
+  - "meta-models/Muse-Glimmer-30B"
+
+# Execution limits per benchmark (full paper evaluation sequence)
+limits:
+  agentic_rag: 273
+  swebench_cl: 273
+  devbench: 273
 
 # Full dataset budget & crash-recovery policy
 limit: 273  # Full benchmark sequence (273 episodes)

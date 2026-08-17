@@ -1,13 +1,14 @@
 """
-AIVC Resilient Inference Client for OpenRouter & OpenAI Compatible APIs.
+AIVC Resilient Multi-Provider Inference Client for OpenRouter & Together AI.
 
 Provides a robust, production-grade LLM inference client featuring:
+- Multi-provider auto-routing: OpenRouter, Together AI, and OpenAI-compatible endpoints
+- Seamless Together AI real-time & Batch API (-50% discount) integration
 - Exponential backoff with full jitter
 - HTTP Retry-After header parsing for 429 and 503 status codes
-- Multi-model fallback configuration (models: [primary, fallback], allow_fallbacks: True)
+- Multi-model fallback configuration for OpenRouter (models: [primary, fallback], allow_fallbacks: True)
 - Centralized tool call and message payload sanitization to prevent HTTP 400 errors
 - Explicit exception hierarchy (zero silent failures)
-- OpenRouter and OpenAI API compatibility
 """
 
 from __future__ import annotations
@@ -24,10 +25,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Configure dedicated module logger
 logger = logging.getLogger("aivc.inference_client")
+
+# Standard Provider Endpoints
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+TOGETHER_BASE_URL = "https://api.together.ai/v1/chat/completions"
+TOGETHER_BATCH_ENDPOINT = "https://api.together.ai/v1/batches"
+TOGETHER_FILES_ENDPOINT = "https://api.together.ai/v1/files"
 
 
 # ---------------------------------------------------------------------------
@@ -160,56 +167,132 @@ def sanitize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Resilient Inference Client
+# Resilient Multi-Provider Inference Client
 # ---------------------------------------------------------------------------
 
 class InferenceClient:
     """
-    Production-grade LLM inference client for OpenRouter and OpenAI compatible endpoints.
+    Production-grade LLM inference client supporting OpenRouter, Together AI, and OpenAI compatible APIs.
 
     Features:
-    - Full jitter exponential backoff
-    - Automatic Retry-After header parsing for HTTP 429 and 503
-    - Transparent multi-model fallback payload routing
-    - Immediate exception raising for client errors (400, 401, 403, 404)
-    - Zero silent failures: detailed logging and explicit exception typing
+    - Multi-provider dynamic routing (OpenRouter, Together AI, OpenAI)
+    - Full jitter exponential backoff with Retry-After header parsing
+    - Automatic JSON payload sanitization
+    - Together AI Batch API integration support (-50% discount)
+    - Zero silent failures with explicit exception typing
     """
 
     def __init__(
         self,
         api_key: Optional[str] = None,
+        provider: Optional[str] = None,
         default_model: str = "qwen/qwen3.7-flash",
         fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
         max_retries: int = 5,
         base_delay: float = 1.5,
         max_delay: float = 30.0,
         timeout: float = 60.0,
-        base_url: str = "https://openrouter.ai/api/v1/chat/completions",
+        base_url: Optional[str] = None,
         app_referer: str = "https://github.com/aivc/aivc",
         app_title: str = "AIVC Benchmark Suite",
         headers: Optional[Dict[str, str]] = None,
     ):
-        # Resolve API key from arguments or environment
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
         self.default_model = default_model
         self.fallback_model = fallback_model
         self.max_retries = max(1, max_retries)
         self.base_delay = max(0.1, base_delay)
         self.max_delay = max(self.base_delay, max_delay)
         self.timeout = max(1.0, timeout)
-        self.base_url = base_url
         self.app_referer = app_referer
         self.app_title = app_title
         self.custom_headers = headers or {}
 
-    def _build_headers(self) -> Dict[str, str]:
-        """Construct standard HTTP request headers."""
+        # Resolve provider
+        self.provider = self._infer_provider(provider, base_url, default_model)
+
+        # Resolve base URL
+        if base_url:
+            self.base_url = base_url
+        elif self.provider == "together":
+            self.base_url = TOGETHER_BASE_URL
+        else:
+            self.base_url = OPENROUTER_BASE_URL
+
+        # Resolve API Key
+        self.api_key = self._resolve_api_key(api_key, self.provider)
+
+    @staticmethod
+    def _infer_provider(
+        explicit_provider: Optional[str],
+        base_url: Optional[str],
+        model: Optional[str],
+    ) -> str:
+        """Infer provider ('together', 'openrouter', 'openai') based on parameters."""
+        if explicit_provider:
+            return explicit_provider.lower().strip()
+        if base_url:
+            if "together.ai" in base_url:
+                return "together"
+            if "openrouter.ai" in base_url:
+                return "openrouter"
+            if "openai.com" in base_url:
+                return "openai"
+        if model:
+            if model.startswith("meta-models/") or model.startswith("together/") or "glimmer" in model.lower() or "gpt-oss" in model.lower():
+                return "together"
+        return "openrouter"
+
+    @staticmethod
+    def _resolve_api_key(explicit_key: Optional[str], provider: str) -> str:
+        """Resolve the appropriate API key from explicit argument or environment variables."""
+        clean_key = explicit_key.strip() if explicit_key else ""
+
+        if provider == "together":
+            # If explicit key was passed but is clearly an OpenRouter key, prefer TOGETHER_API_KEY from env
+            if clean_key and not clean_key.startswith("sk-or-"):
+                return clean_key
+            return (
+                os.getenv("TOGETHER_API_KEY")
+                or (clean_key if not clean_key.startswith("sk-or-") else "")
+                or os.getenv("OPENROUTER_API_KEY")
+                or os.getenv("OPENAI_API_KEY")
+                or ""
+            )
+        elif provider == "openrouter":
+            if clean_key and not clean_key.startswith("tgp_"):
+                return clean_key
+            return (
+                os.getenv("OPENROUTER_API_KEY")
+                or (clean_key if not clean_key.startswith("tgp_") else "")
+                or os.getenv("OPENAI_API_KEY")
+                or os.getenv("TOGETHER_API_KEY")
+                or ""
+            )
+        else:
+            if clean_key:
+                return clean_key
+            return (
+                os.getenv("OPENAI_API_KEY")
+                or os.getenv("OPENROUTER_API_KEY")
+                or os.getenv("TOGETHER_API_KEY")
+                or ""
+            )
+
+
+    def _build_headers(self, provider: Optional[str] = None) -> Dict[str, str]:
+        """Construct standard HTTP request headers based on the active provider."""
+        active_provider = provider or self.provider
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": self.app_referer,
-            "X-Title": self.app_title,
+            "User-Agent": "AIVC-Benchmark/1.0 (Mozilla/5.0; Windows NT 10.0; Win64; x64)",
         }
+
+        # OpenRouter-specific telemetry headers
+        if active_provider == "openrouter":
+            headers["HTTP-Referer"] = self.app_referer
+            headers["X-Title"] = self.app_title
+
         headers.update(self.custom_headers)
         return headers
 
@@ -229,7 +312,6 @@ class InferenceClient:
             except (ValueError, TypeError):
                 logger.debug(f"Could not parse Retry-After header '{retry_after}', using exponential backoff.")
 
-        # Full jitter exponential backoff
         exp_factor = 2 ** (attempt - 1)
         raw_backoff = (exp_factor * self.base_delay) + random.uniform(0.0, 1.0)
         return min(self.max_delay, raw_backoff)
@@ -243,6 +325,7 @@ class InferenceClient:
         extra_body: Optional[Dict[str, Any]] = None,
         model: Optional[str] = None,
         fallback_model: Optional[str] = None,
+        provider: Optional[str] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """
@@ -256,26 +339,34 @@ class InferenceClient:
             extra_body: Additional raw payload attributes.
             model: Primary model override (defaults to self.default_model).
             fallback_model: Fallback model override (defaults to self.fallback_model).
+            provider: Provider override ('openrouter', 'together', etc.).
             **kwargs: Extra parameters passed to the request payload.
 
         Returns:
             Decoded JSON dictionary from the completion API.
-
-        Raises:
-            InferenceAuthError: When API key is missing, invalid, or forbidden (401/403).
-            InferenceBadRequestError: When request format or payload is invalid (400/404).
-            InferenceRateLimitError: When rate limit (429) persists after max_retries.
-            InferenceAPIError: When server errors (500/502/503/504/529) persist.
-            InferenceTimeoutError: When network connection drops or times out persistently.
         """
-        if not self.api_key:
+        primary_model = model or self.default_model
+        req_provider = provider or self._infer_provider(self.provider, self.base_url, primary_model)
+
+        # Dynamic key & URL resolution if provider differs
+        target_api_key = self.api_key
+        if not target_api_key:
+            target_api_key = self._resolve_api_key(None, req_provider)
+
+        if not target_api_key:
+            key_name = "TOGETHER_API_KEY" if req_provider == "together" else "OPENROUTER_API_KEY"
             raise InferenceAuthError(
                 status_code=401,
-                response_body="Missing API key",
-                message="OPENROUTER_API_KEY / OPENAI_API_KEY is not set or empty. A valid API key is required.",
+                response_body=f"Missing {key_name}",
+                message=f"{key_name} is not set or empty. A valid API key is required for provider '{req_provider}'.",
             )
 
-        primary_model = model or self.default_model
+        target_url = self.base_url
+        if req_provider == "together" and "openrouter.ai" in target_url:
+            target_url = TOGETHER_BASE_URL
+        elif req_provider == "openrouter" and "together.ai" in target_url:
+            target_url = OPENROUTER_BASE_URL
+
         resolved_fallback = fallback_model if fallback_model is not None else self.fallback_model
 
         # Sanitize messages
@@ -289,8 +380,8 @@ class InferenceClient:
             "temperature": temperature,
         }
 
-        # Multi-model fallback configuration for OpenRouter
-        if resolved_fallback and resolved_fallback != primary_model:
+        # Multi-model fallback configuration (OpenRouter only)
+        if req_provider == "openrouter" and resolved_fallback and resolved_fallback != primary_model:
             payload["models"] = [primary_model, resolved_fallback]
             payload["provider"] = {"allow_fallbacks": True}
 
@@ -305,13 +396,14 @@ class InferenceClient:
                 payload[k] = v
 
         encoded_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers = self._build_headers()
+        headers = self._build_headers(provider=req_provider)
+        headers["Authorization"] = f"Bearer {target_api_key}"
 
         last_exception: Optional[Exception] = None
 
         for attempt in range(1, self.max_retries + 1):
             req = urllib.request.Request(
-                self.base_url,
+                target_url,
                 data=encoded_data,
                 headers=headers,
                 method="POST",
@@ -334,7 +426,6 @@ class InferenceClient:
                                 message=f"Failed to parse API JSON response: {jde}",
                             )
 
-                    # Unexpected non-200 return inside urlopen block
                     raise InferenceAPIError(
                         status_code=status_code,
                         response_body=body_text,
@@ -354,7 +445,7 @@ class InferenceClient:
 
                 # 1. Immediate failure codes (no retries)
                 if status_code in (401, 403):
-                    msg = f"Authentication/Authorization failure (HTTP {status_code}): {err_body}"
+                    msg = f"Authentication/Authorization failure on {req_provider} (HTTP {status_code}): {err_body}"
                     logger.error(f"[InferenceClient] {msg}")
                     raise InferenceAuthError(status_code=status_code, response_body=err_body, message=msg)
 
@@ -370,7 +461,7 @@ class InferenceClient:
                         time.sleep(1.0)
                         continue
 
-                    msg = f"Invalid client request (HTTP {status_code}): {err_body}"
+                    msg = f"Invalid client request to {req_provider} (HTTP {status_code}): {err_body}"
                     logger.error(f"[InferenceClient] {msg}")
                     raise InferenceBadRequestError(status_code=status_code, response_body=err_body, message=msg)
 
@@ -378,17 +469,17 @@ class InferenceClient:
                 last_exception = http_err
                 if attempt == self.max_retries:
                     if status_code == 429:
-                        msg = f"HTTP 429 Rate Limit exceeded after {self.max_retries} attempts: {err_body}"
+                        msg = f"HTTP 429 Rate Limit on {req_provider} exceeded after {self.max_retries} attempts: {err_body}"
                         logger.error(f"[InferenceClient] {msg}")
                         raise InferenceRateLimitError(status_code=429, response_body=err_body, message=msg)
                     else:
-                        msg = f"HTTP {status_code} server error after {self.max_retries} attempts: {err_body}"
+                        msg = f"HTTP {status_code} server error on {req_provider} after {self.max_retries} attempts: {err_body}"
                         logger.error(f"[InferenceClient] {msg}")
                         raise InferenceAPIError(status_code=status_code, response_body=err_body, message=msg)
 
                 wait_sec = self._calculate_backoff(attempt, retry_after=retry_after)
                 logger.warning(
-                    f"[InferenceClient] HTTP {status_code} (Attempt {attempt}/{self.max_retries}). "
+                    f"[InferenceClient] HTTP {status_code} on {req_provider} (Attempt {attempt}/{self.max_retries}). "
                     f"Retrying in {wait_sec:.2f}s... Error: {err_body[:200]}"
                 )
                 time.sleep(wait_sec)
@@ -403,37 +494,179 @@ class InferenceClient:
             ) as net_err:
                 last_exception = net_err
                 if attempt == self.max_retries:
-                    msg = f"Network connection failed after {self.max_retries} attempts: {net_err}"
+                    msg = f"Network connection to {req_provider} failed after {self.max_retries} attempts: {net_err}"
                     logger.error(f"[InferenceClient] {msg}")
                     raise InferenceTimeoutError(msg) from net_err
 
                 wait_sec = self._calculate_backoff(attempt)
                 logger.warning(
-                    f"[InferenceClient] Network/Timeout error (Attempt {attempt}/{self.max_retries}): {net_err}. "
+                    f"[InferenceClient] Network/Timeout error on {req_provider} (Attempt {attempt}/{self.max_retries}): {net_err}. "
                     f"Retrying in {wait_sec:.2f}s..."
                 )
                 time.sleep(wait_sec)
 
             except InferenceError:
-                # Re-raise internal inference errors directly
                 raise
 
             except Exception as unk_err:
                 last_exception = unk_err
                 if attempt == self.max_retries:
-                    msg = f"Unexpected error during inference after {self.max_retries} attempts: {unk_err}"
+                    msg = f"Unexpected error during inference on {req_provider} after {self.max_retries} attempts: {unk_err}"
                     logger.error(f"[InferenceClient] {msg}")
                     raise InferenceError(msg) from unk_err
 
                 wait_sec = self._calculate_backoff(attempt)
                 logger.warning(
-                    f"[InferenceClient] Unexpected error (Attempt {attempt}/{self.max_retries}): {unk_err}. "
+                    f"[InferenceClient] Unexpected error on {req_provider} (Attempt {attempt}/{self.max_retries}): {unk_err}. "
                     f"Retrying in {wait_sec:.2f}s..."
                 )
                 time.sleep(wait_sec)
 
-        # Fallback if loop finishes unexpectedly
         raise InferenceError(f"Inference execution failed after {self.max_retries} retries: {last_exception}")
+
+    # -----------------------------------------------------------------------
+    # Together AI Batch Inference API Helpers (50% Cost Reduction)
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def create_batch_request_item(
+        custom_id: str,
+        messages: List[Dict[str, Any]],
+        model: str = "meta-models/Muse-Glimmer-30B",
+        tools: Optional[List[Dict[str, Any]]] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.2,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Create a single formatted request object for Together AI Batch API JSONL files.
+        """
+        body: Dict[str, Any] = {
+            "model": model,
+            "messages": sanitize_messages(messages),
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if tools:
+            body["tools"] = tools
+        body.update(kwargs)
+
+        return {
+            "custom_id": custom_id,
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": body,
+        }
+
+    @staticmethod
+    def prepare_batch_jsonl(requests: List[Dict[str, Any]]) -> str:
+        """
+        Convert a list of batch request dictionaries into a standard JSONL string.
+        """
+        lines = [json.dumps(req, ensure_ascii=False) for req in requests]
+        return "\n".join(lines) + "\n"
+
+    def upload_batch_file(
+        self,
+        file_content: Union[str, bytes],
+        filename: str = "batch_input.jsonl",
+    ) -> Dict[str, Any]:
+        """
+        Upload a JSONL input file to Together AI Files API for batch processing.
+        """
+        key = self._resolve_api_key(self.api_key, "together")
+        if not key:
+            raise InferenceAuthError(401, "Missing TOGETHER_API_KEY", "TOGETHER_API_KEY required for file upload.")
+
+        data_bytes = file_content.encode("utf-8") if isinstance(file_content, str) else file_content
+
+        boundary = f"----TogetherBoundary{int(time.time()*1000)}"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="purpose"\r\n\r\nbatch\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f"Content-Type: application/jsonl\r\n\r\n"
+        ).encode("utf-8") + data_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        }
+
+        req = urllib.request.Request(
+            TOGETHER_FILES_ENDPOINT,
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def create_batch_job(
+        self,
+        input_file_id: str,
+        endpoint: str = "/v1/chat/completions",
+        completion_window: str = "24h",
+    ) -> Dict[str, Any]:
+        """
+        Create and trigger an asynchronous Batch Inference Job on Together AI.
+        """
+        key = self._resolve_api_key(self.api_key, "together")
+        if not key:
+            raise InferenceAuthError(401, "Missing TOGETHER_API_KEY", "TOGETHER_API_KEY required for batch job.")
+
+        payload = {
+            "input_file_id": input_file_id,
+            "endpoint": endpoint,
+            "completion_window": completion_window,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+
+        req = urllib.request.Request(
+            TOGETHER_BATCH_ENDPOINT,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def get_batch_job(self, batch_id: str) -> Dict[str, Any]:
+        """
+        Retrieve current status and metadata of a Together AI Batch Job.
+        """
+        key = self._resolve_api_key(self.api_key, "together")
+        if not key:
+            raise InferenceAuthError(401, "Missing TOGETHER_API_KEY", "TOGETHER_API_KEY required.")
+
+        headers = {"Authorization": f"Bearer {key}"}
+        url = f"{TOGETHER_BATCH_ENDPOINT}/{batch_id}"
+
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def download_batch_results(self, output_file_id: str) -> str:
+        """
+        Download the JSONL output file from a completed Together AI Batch Job.
+        """
+        key = self._resolve_api_key(self.api_key, "together")
+        if not key:
+            raise InferenceAuthError(401, "Missing TOGETHER_API_KEY", "TOGETHER_API_KEY required.")
+
+        headers = {"Authorization": f"Bearer {key}"}
+        url = f"{TOGETHER_FILES_ENDPOINT}/{output_file_id}/content"
+
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            return resp.read().decode("utf-8", errors="replace")
 
 
 # ---------------------------------------------------------------------------
@@ -452,4 +685,9 @@ __all__ = [
     "InferenceRateLimitError",
     "InferenceTimeoutError",
     "sanitize_messages",
+    "OPENROUTER_BASE_URL",
+    "TOGETHER_BASE_URL",
+    "TOGETHER_BATCH_ENDPOINT",
+    "TOGETHER_FILES_ENDPOINT",
 ]
+
