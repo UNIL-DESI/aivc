@@ -17,20 +17,20 @@ stages:
       md5: 91a05669b9be0ec3372d256aa9dcb584
       size: 638
   eval_swebench_cl:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit 15 --max-turns 50 
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit 30 --max-turns 50 
       --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
     deps:
     - path: .dvc-viewer/hashes/eval_swebench_cl.hash
       hash: md5
-      md5: 20ef9b81f12ec0b1adcd04b530b62c07
+      md5: bf3f7b30c3878c5668fe45d29b493ddb
       size: 64
     - path: eval/benchmarks/swebench_cl_runner.py
       hash: md5
-      md5: 8f17096f67090a7bd2ec6715519220f9
-      size: 39930
+      md5: c2beacd74cb6e1a149120db2ce738f87
+      size: 54471
     params:
       params.yaml:
-        eval.limit: 15
+        eval.limit: 30
         eval.max_cost_per_instance_usd: 0.1
         eval.max_tokens: 4096
         eval.max_turns: 50
@@ -38,12 +38,16 @@ stages:
     outs:
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 470a5acec5fc8f876558e396114ab483
-      size: 690
+      md5: 567e4ef39da93483558a7a6bedf6f01d
+      size: 1363
+    - path: eval/metrics/swebench_cl_tool_interactions.jsonl
+      hash: md5
+      md5: 05a34439662c41e83176b6bade68bfa6
+      size: 640857
     - path: eval/plots/swebench_cl_curves.csv
       hash: md5
-      md5: d8c82c5be828ee405e781bc85aaf5923
-      size: 1736
+      md5: 18362773b3e39c00ceea00c5e6a98528
+      size: 3467
   eval_devbench:
     cmd: python eval/benchmarks/devbench_runner.py --limit 30 --max-turns 50 
       --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
