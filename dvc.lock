@@ -45,20 +45,20 @@ stages:
       md5: d8c82c5be828ee405e781bc85aaf5923
       size: 1736
   eval_devbench:
-    cmd: python eval/benchmarks/devbench_runner.py --limit 15 --max-turns 50 
+    cmd: python eval/benchmarks/devbench_runner.py --limit 30 --max-turns 50 
       --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
     deps:
     - path: .dvc-viewer/hashes/eval_devbench.hash
       hash: md5
-      md5: 7deacb21c1606777f0812ae4ee493fe0
+      md5: 7c3c01191714f199ce001e22d1941bc7
       size: 64
     - path: eval/benchmarks/devbench_runner.py
       hash: md5
-      md5: 19cda9aba1811f162fd41ce5623ffc6b
-      size: 39666
+      md5: 589d3c662111ee7f3b98a48c8cd087d1
+      size: 52810
     params:
       params.yaml:
-        eval.limit: 15
+        eval.limit: 30
         eval.max_cost_per_instance_usd: 0.1
         eval.max_tokens: 4096
         eval.max_turns: 50
@@ -66,12 +66,16 @@ stages:
     outs:
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: e539f65bb8a64d37a396385695653dbf
-      size: 21596
+      md5: a5be8492c26053d6e25ff74f83d52145
+      size: 790142
+    - path: eval/metrics/devbench_tool_interactions.jsonl
+      hash: md5
+      md5: ef2819472d8e23316c52360a078f0be6
+      size: 625885
     - path: eval/plots/devbench_curves.csv
       hash: md5
-      md5: e02b69a2e32eb2411acaf2069cadd990
-      size: 1941
+      md5: 906e4486134d6ab13ed4ba6d833630ed
+      size: 2549
   eval_intercode:
     cmd: python eval/benchmarks/intercode_runner.py --limit 10
     deps:
