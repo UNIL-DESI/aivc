@@ -1,4 +1,5 @@
 benchmark,model_name,total_tasks,successful_tasks,pass_rate,prompt_tokens,completion_tokens,total_tokens,prompt_cost_usd,completion_cost_usd,total_cost_usd,eor,mui,ccsr,is_sample_data
 dry_run,qwen/qwen3.7-flash,5,5,1.0,0,0,0,0.0,0.0,0.0,1.0,0.0,0.9935,False
-SWE-bench-CL Continual Learning,qwen/qwen3.7-flash,15,1,0.0667,3865746,54466,3920212,0.115972,0.007081,0.123054,0.9331,0.0,0.9412,False
-DevBench,qwen/qwen3.7-flash,5,3,0.6,1872138,100689,1972827,0.056164,0.01309,0.069255,0.6096,0.2541,-0.2478,False
+SWE-bench-CL Continual Learning,qwen/qwen3.7-flash,15,0,0.0,4940248,65796,5006044,0.148207,0.008553,0.15676,0.9528,0.0,0.9474,False
+DevBench,qwen/qwen3.7-flash,5,2,0.4,2117062,124172,2241234,0.063512,0.016142,0.079653,0.6139,0.3019,-0.4352,False
+Agentic RAG Continual Learning,qwen/qwen3.7-flash,0,0,0.0,2898448,71441,2969889,0.086953,0.009287,0.096241,0.7798,0.126,-3.1337,False

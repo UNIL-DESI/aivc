@@ -44,6 +44,7 @@ BENCHMARK_FILES = [
     "dry_run_metrics.json",
     "swebench_cl_metrics.json",
     "devbench_metrics.json",
+    "agentic_rag_metrics.json",
 ]
 
 
@@ -142,6 +143,22 @@ SAMPLE_BENCHMARKS: Dict[str, Dict[str, Any]] = {
         "eor": 0.180,
         "mui": 0.745,
         "ccsr": 0.420,
+    },
+    "agentic_rag": {
+        "benchmark_name": "agentic_rag",
+        "model_name": "qwen/qwen3.7-flash",
+        "total_tasks": 15,
+        "successful_tasks": 15,
+        "pass_rate": 1.0,
+        "prompt_tokens": 75000,
+        "completion_tokens": 15000,
+        "total_tokens": 90000,
+        "prompt_cost_usd": 0.00225,
+        "completion_cost_usd": 0.00195,
+        "total_cost_usd": 0.00420,
+        "eor": 0.120,
+        "mui": 0.880,
+        "ccsr": 0.450,
     },
     "intercode": {
         "benchmark_name": "intercode",
@@ -478,7 +495,11 @@ class DVCExporter:
         return json_path, csv_path
 
 
-def export_dvc_metrics(eval_dir: Optional[Path] = None) -> Tuple[Path, Path]:
+def export_dvc_metrics(
+    eval_dir: Optional[Path] = None,
+    profile: Optional[str] = None,
+    **kwargs: Any,
+) -> Tuple[Path, Path]:
     """Convenience function to run DVCExporter."""
     exporter = DVCExporter(eval_dir=eval_dir)
     return exporter.run()

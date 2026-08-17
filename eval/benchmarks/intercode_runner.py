@@ -48,6 +48,7 @@ from metrics.trajectory_analyzer import (
     compute_eor,
     compute_mui,
 )
+from inference_client import InferenceClient, sanitize_messages
 
 # Optional Gymnasium base class support
 try:
@@ -556,39 +557,33 @@ def load_env(env_path: Path) -> Dict[str, str]:
 def call_openrouter(
     api_key: str,
     model_name: str,
-    messages: List[Dict[str, str]],
-    timeout: int = 15,
+    messages: List[Dict[str, Any]],
+    timeout: int = 60,
+    fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
 ) -> Optional[Dict[str, Any]]:
-    """Inference call to OpenRouter API."""
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/aivc/aivc",
-        "X-Title": "AIVC InterCode Evaluation",
-    }
-    payload = {
-        "model": model_name,
-        "messages": messages,
-        "max_tokens": 300,
-        "temperature": 0.1,
-    }
-
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            if resp.status == 200:
-                body = resp.read().decode("utf-8")
-                return json.loads(body)
-    except Exception:
+    """Resilient inference call to OpenRouter API using InferenceClient."""
+    if not api_key:
         return None
-    return None
+    try:
+        client = InferenceClient(
+            api_key=api_key,
+            default_model=model_name,
+            fallback_model=fallback_model,
+            max_retries=5,
+            base_delay=1.5,
+            max_delay=30.0,
+            timeout=float(timeout),
+            app_title="AIVC InterCode Evaluation",
+        )
+        return client.complete(
+            messages=messages,
+            max_tokens=300,
+            temperature=0.1,
+            model=model_name,
+        )
+    except Exception as e:
+        print(f"  [InterCode API Error]: {e}")
+        return None
 
 
 def get_intercode_default_tasks() -> List[Dict[str, Any]]:

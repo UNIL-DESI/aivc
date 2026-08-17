@@ -67,12 +67,17 @@ except ImportError:
 
 # Import unified configuration, prompt template, and tool schemas from eval.config
 from config import (
+    InferenceClient,
     add_eval_args,
     get_aivc_system_prompt,
     get_benchmark_tools_schema,
     load_benchmark_config,
     load_models_registry,
+    sanitize_messages,
 )
+
+AIVC_SYSTEM_PROMPT = get_aivc_system_prompt(benchmark_type="swebench_cl")
+AIVC_BENCHMARK_TOOLS_SCHEMA = get_benchmark_tools_schema(include_workspace=True, benchmark_type="swebench_cl")
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +470,9 @@ class SWEBenchCLRunner:
         max_tokens: int = 4096,
         max_cost_per_instance_usd: float = 0.10,
         dry_run: bool = False,
+        fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
+        prompt_price_per_1m: Optional[float] = None,
+        completion_price_per_1m: Optional[float] = None,
     ):
         self.model_name = model_name
         self.api_key = api_key
@@ -475,64 +483,51 @@ class SWEBenchCLRunner:
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
         self.aivc_env = AIVCEnvironment()
 
+        # Resilient Inference Client
+        self.client = InferenceClient(
+            api_key=self.api_key,
+            default_model=self.model_name,
+            fallback_model=fallback_model,
+            max_retries=5,
+            base_delay=1.5,
+            max_delay=30.0,
+            timeout=60.0,
+            app_title="AIVC SWE-bench-CL Benchmark Runner",
+        )
+
         # Pricing per 1M tokens
-        self.prompt_price_per_1m = 0.03
-        self.completion_price_per_1m = 0.13
+        self.prompt_price_per_1m = prompt_price_per_1m if prompt_price_per_1m is not None else 0.03
+        self.completion_price_per_1m = completion_price_per_1m if completion_price_per_1m is not None else 0.13
 
     def _calculate_step_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_cost = (prompt_tokens / 1_000_000.0) * self.prompt_price_per_1m
         c_cost = (completion_tokens / 1_000_000.0) * self.completion_price_per_1m
         return p_cost + c_cost
 
+    def _sanitize_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Sanitize message history to prevent OpenRouter/provider JSON argument parsing errors."""
+        return sanitize_messages(messages)
+
     def _call_openrouter_api(
         self,
         messages: List[Dict[str, Any]],
-        retries: int = 3,
+        retries: int = 5,
     ) -> Optional[Dict[str, Any]]:
-        """Send chat completion request to OpenRouter with tools schema."""
+        """Send chat completion request to OpenRouter with tools schema using InferenceClient."""
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY is not set or empty. Real execution requires a valid API key.")
 
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/aivc/aivc",
-            "X-Title": "AIVC SWE-bench-CL Benchmark Runner",
-        }
-
-        payload = {
-            "model": self.model_name,
-            "messages": messages,
-            "tools": AIVC_BENCHMARK_TOOLS_SCHEMA,
-            "max_tokens": self.max_tokens,
-            "temperature": 0.2,
-        }
-
-        for attempt in range(1, retries + 1):
-            try:
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers=headers,
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=45) as resp:
-                    if resp.status == 200:
-                        body = resp.read().decode("utf-8")
-                        return json.loads(body)
-            except urllib.error.HTTPError as e:
-                err_body = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
-                print(f"  [API HTTP Error] (Attempt {attempt}/{retries}) Status {e.code}: {err_body}")
-                if attempt == retries:
-                    raise RuntimeError(f"OpenRouter API failed with HTTP {e.code}: {err_body}")
-                time.sleep(2 * attempt)
-            except Exception as e:
-                print(f"  [API Network Error] (Attempt {attempt}/{retries}): {e}")
-                if attempt == retries:
-                    raise RuntimeError(f"OpenRouter API connection failed: {e}")
-                time.sleep(2 * attempt)
-        return None
+        try:
+            return self.client.complete(
+                messages=messages,
+                tools=AIVC_BENCHMARK_TOOLS_SCHEMA,
+                max_tokens=self.max_tokens,
+                temperature=0.2,
+                model=self.model_name,
+            )
+        except Exception as e:
+            print(f"  [API Exception]: {e}")
+            return None
 
     def run_episode(self, instance: Dict[str, Any], episode_index: int) -> Dict[str, Any]:
         """
@@ -954,6 +949,24 @@ def main() -> None:
             records=all_records,
             curves_path=curves_file,
         )
+        # Also mirror to general files for DVC pipeline tracking
+        general_metrics = EVAL_DIR / "metrics" / "swebench_cl_metrics.json"
+        general_curves = EVAL_DIR / "plots" / "swebench_cl_curves.csv"
+        try:
+            if metrics_file != general_metrics:
+                export_metrics(
+                    records=all_records,
+                    metrics_path=general_metrics,
+                    model_name=cfg.model,
+                    dataset_name=used_dataset_name,
+                )
+            if curves_file != general_curves:
+                export_plots_curves(
+                    records=all_records,
+                    curves_path=general_curves,
+                )
+        except Exception:
+            pass
 
     print("\n" + "=" * 70)
     print("[SUMMARY] SWE-bench-CL Evaluation Execution Finished")

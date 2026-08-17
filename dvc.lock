@@ -18,17 +18,16 @@ stages:
       size: 638
   eval_swebench_cl:
     cmd: python eval/benchmarks/swebench_cl_runner.py --limit 15 --max-turns 50 
-      --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash 
-      --reset-checkpoint
+      --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
     deps:
     - path: .dvc-viewer/hashes/eval_swebench_cl.hash
       hash: md5
-      md5: 1012a160948758e65ac55c364cb98549
+      md5: 20ef9b81f12ec0b1adcd04b530b62c07
       size: 64
     - path: eval/benchmarks/swebench_cl_runner.py
       hash: md5
-      md5: f57b9a0fc84817a9f88d8963d692228d
-      size: 46871
+      md5: 8f17096f67090a7bd2ec6715519220f9
+      size: 39930
     params:
       params.yaml:
         eval.limit: 15
@@ -39,25 +38,24 @@ stages:
     outs:
     - path: eval/metrics/swebench_cl_metrics.json
       hash: md5
-      md5: 9f7ac013a46ff51156935e532fca267b
-      size: 694
+      md5: 470a5acec5fc8f876558e396114ab483
+      size: 690
     - path: eval/plots/swebench_cl_curves.csv
       hash: md5
-      md5: cf30f8acf5780c29c991c90bc496a115
-      size: 1767
+      md5: d8c82c5be828ee405e781bc85aaf5923
+      size: 1736
   eval_devbench:
     cmd: python eval/benchmarks/devbench_runner.py --limit 15 --max-turns 50 
-      --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash 
-      --reset-checkpoint
+      --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
     deps:
     - path: .dvc-viewer/hashes/eval_devbench.hash
       hash: md5
-      md5: 0b791862df0ba00edc483a958f7ce150
+      md5: 7deacb21c1606777f0812ae4ee493fe0
       size: 64
     - path: eval/benchmarks/devbench_runner.py
       hash: md5
-      md5: 91f329f0e3fdcd306f51a14f788e152e
-      size: 45538
+      md5: 19cda9aba1811f162fd41ce5623ffc6b
+      size: 39666
     params:
       params.yaml:
         eval.limit: 15
@@ -68,12 +66,12 @@ stages:
     outs:
     - path: eval/metrics/devbench_metrics.json
       hash: md5
-      md5: 58abfd0f9bc4fa06c2a278a15c35b91a
-      size: 20140
+      md5: e539f65bb8a64d37a396385695653dbf
+      size: 21596
     - path: eval/plots/devbench_curves.csv
       hash: md5
-      md5: 1970223882f4694dd76cb740f06135a3
-      size: 1897
+      md5: e02b69a2e32eb2411acaf2069cadd990
+      size: 1941
   eval_intercode:
     cmd: python eval/benchmarks/intercode_runner.py --limit 10
     deps:
@@ -126,6 +124,66 @@ stages:
     outs:
     - path: .dvc-viewer/hashes
       hash: md5
-      md5: 723e9b7cde4828471b878152f8cf7583.dir
-      size: 1418
+      md5: bf030c15dc0d7d6eab297ece0d12c555.dir
+      size: 1438
       nfiles: 8
+  eval_agentic_rag:
+    cmd: python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 
+      --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
+    deps:
+    - path: .dvc-viewer/hashes/eval_agentic_rag.hash
+      hash: md5
+      md5: 1a19feb59220178bc20eec27dc1b6968
+      size: 64
+    - path: eval/benchmarks/agentic_rag_runner.py
+      hash: md5
+      md5: fb5a726d905b165b62e03e60fd5e5957
+      size: 72242
+    params:
+      params.yaml:
+        eval.limit: 15
+        eval.max_cost_per_instance_usd: 0.1
+        eval.max_tokens: 4096
+        eval.max_turns: 50
+        eval.model: qwen/qwen3.7-flash
+    outs:
+    - path: eval/metrics/agentic_rag_metrics.json
+      hash: md5
+      md5: af499aacd8e717d972593b0c5e047c35
+      size: 1002
+    - path: eval/plots/agentic_rag_curves.csv
+      hash: md5
+      md5: 480ae87ee5bbfd9a70e02a216a816de9
+      size: 3324
+  aggregate_metrics:
+    cmd: python eval/scripts/aggregate_metrics.py
+    deps:
+    - path: .dvc-viewer/hashes/aggregate_metrics.hash
+      hash: md5
+      md5: 093fea798dcb051e9af2825dd0af8431
+      size: 64
+    - path: eval/metrics/agentic_rag_metrics.json
+      hash: md5
+      md5: af499aacd8e717d972593b0c5e047c35
+      size: 1002
+    - path: eval/metrics/devbench_metrics.json
+      hash: md5
+      md5: e539f65bb8a64d37a396385695653dbf
+      size: 21596
+    - path: eval/metrics/swebench_cl_metrics.json
+      hash: md5
+      md5: 470a5acec5fc8f876558e396114ab483
+      size: 690
+    - path: eval/scripts/aggregate_metrics.py
+      hash: md5
+      md5: 36ccdf53e5daf9d1ea049bc7d3f7c990
+      size: 925
+    outs:
+    - path: eval/metrics/summary_metrics.json
+      hash: md5
+      md5: 6080d5ad24db65f99f07cd16c593ab72
+      size: 3513
+    - path: eval/plots/comparative_summary.csv
+      hash: md5
+      md5: bc44dfb55292d2eed45eda040e835836
+      size: 643

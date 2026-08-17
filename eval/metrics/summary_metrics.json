@@ -1,24 +1,24 @@
 {
-  "aggregated_at": "2026-08-14T13:17:16.557914+00:00",
-  "total_benchmarks": 3,
+  "aggregated_at": "2026-08-17T09:52:07.869243+00:00",
+  "total_benchmarks": 4,
   "overall_summary": {
     "total_tasks": 25,
-    "total_successful_tasks": 9,
-    "overall_pass_rate": 0.36,
+    "total_successful_tasks": 7,
+    "overall_pass_rate": 0.28,
     "token_counts": {
-      "total_prompt_tokens": 5737884,
-      "total_completion_tokens": 155155,
-      "total_tokens": 5893039
+      "total_prompt_tokens": 9955758,
+      "total_completion_tokens": 261409,
+      "total_tokens": 10217167
     },
     "openrouter_execution_costs_usd": {
-      "total_prompt_cost_usd": 0.172137,
-      "total_completion_cost_usd": 0.02017,
-      "total_execution_cost_usd": 0.192309
+      "total_prompt_cost_usd": 0.298673,
+      "total_completion_cost_usd": 0.033983,
+      "total_execution_cost_usd": 0.332654
     },
     "mean_evaluation_ratios": {
-      "mean_exploration_overhead_ratio_eor": 0.8476,
-      "mean_memory_utility_index_mui": 0.0847,
-      "mean_cumulative_cost_savings_ratio_ccsr": 0.5623
+      "mean_exploration_overhead_ratio_eor": 0.8366,
+      "mean_memory_utility_index_mui": 0.107,
+      "mean_cumulative_cost_savings_ratio_ccsr": -0.407
     }
   },
   "benchmarks": {
@@ -49,22 +49,22 @@
       "benchmark_name": "SWE-bench-CL Continual Learning",
       "model_name": "qwen/qwen3.7-flash",
       "total_tasks": 15,
-      "successful_tasks": 1,
-      "pass_rate": 0.0667,
+      "successful_tasks": 0,
+      "pass_rate": 0.0,
       "token_counts": {
-        "prompt_tokens": 3865746,
-        "completion_tokens": 54466,
-        "total_tokens": 3920212
+        "prompt_tokens": 4940248,
+        "completion_tokens": 65796,
+        "total_tokens": 5006044
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.115972,
-        "completion_cost_usd": 0.007081,
-        "total_cost_usd": 0.123054
+        "prompt_cost_usd": 0.148207,
+        "completion_cost_usd": 0.008553,
+        "total_cost_usd": 0.15676
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.9331,
+        "exploration_overhead_ratio_eor": 0.9528,
         "memory_utility_index_mui": 0.0,
-        "cumulative_cost_savings_ratio_ccsr": 0.9412
+        "cumulative_cost_savings_ratio_ccsr": 0.9474
       },
       "is_sample_data": false
     },
@@ -72,22 +72,45 @@
       "benchmark_name": "DevBench",
       "model_name": "qwen/qwen3.7-flash",
       "total_tasks": 5,
-      "successful_tasks": 3,
-      "pass_rate": 0.6,
+      "successful_tasks": 2,
+      "pass_rate": 0.4,
       "token_counts": {
-        "prompt_tokens": 1872138,
-        "completion_tokens": 100689,
-        "total_tokens": 1972827
+        "prompt_tokens": 2117062,
+        "completion_tokens": 124172,
+        "total_tokens": 2241234
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.056164,
-        "completion_cost_usd": 0.01309,
-        "total_cost_usd": 0.069255
+        "prompt_cost_usd": 0.063512,
+        "completion_cost_usd": 0.016142,
+        "total_cost_usd": 0.079653
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.6096,
-        "memory_utility_index_mui": 0.2541,
-        "cumulative_cost_savings_ratio_ccsr": -0.2478
+        "exploration_overhead_ratio_eor": 0.6139,
+        "memory_utility_index_mui": 0.3019,
+        "cumulative_cost_savings_ratio_ccsr": -0.4352
+      },
+      "is_sample_data": false
+    },
+    "Agentic RAG Continual Learning": {
+      "benchmark_name": "Agentic RAG Continual Learning",
+      "model_name": "qwen/qwen3.7-flash",
+      "total_tasks": 0,
+      "successful_tasks": 0,
+      "pass_rate": 0.0,
+      "token_counts": {
+        "prompt_tokens": 2898448,
+        "completion_tokens": 71441,
+        "total_tokens": 2969889
+      },
+      "openrouter_costs_usd": {
+        "prompt_cost_usd": 0.086953,
+        "completion_cost_usd": 0.009287,
+        "total_cost_usd": 0.096241
+      },
+      "evaluation_ratios": {
+        "exploration_overhead_ratio_eor": 0.7798,
+        "memory_utility_index_mui": 0.126,
+        "cumulative_cost_savings_ratio_ccsr": -3.1337
       },
       "is_sample_data": false
     }

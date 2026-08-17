@@ -1,4 +1,6 @@
-# No Automatic Test Execution
+# RÈGLE CRITIQUE : INTERDICTION FORMELLE D'EXÉCUTER LES TESTS UNITAIRES
+
+Il est STRICTEMENT INTERDIT à Antigravity ainsi qu'à tout sous-agent ou script d'exécuter des tests unitaires (pytest, unittest, etc.) sans l'accord explicite et préalable d'Henri.
 
 ## Core Principle
 > Agents are strictly forbidden from executing tests automatically or as a precautionary verification step during development, build, or audit tasks, unless explicitly requested by the user.

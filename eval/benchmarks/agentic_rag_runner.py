@@ -57,6 +57,10 @@ from aivc_prompt_template import (
     NAIVE_RAG_TOOLS_SCHEMA,
     format_agentic_rag_prompt,
 )
+from inference_client import (
+    InferenceClient,
+    sanitize_messages,
+)
 from metrics.trajectory_analyzer import (
     EXPLORATION_TOOLS,
     TrajectoryAnalyzer,
@@ -744,6 +748,7 @@ class AgenticRAGRunner:
         max_tokens: int = 4096,
         max_cost_per_query_usd: float = 0.10,
         dry_run: bool = False,
+        fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
     ):
         self.arm = arm.lower()
         self.model_name = model_name
@@ -761,60 +766,48 @@ class AgenticRAGRunner:
 
         self.initial_episode_tool_calls: Optional[int] = None
 
+        # Resilient Inference Client
+        self.client = InferenceClient(
+            api_key=self.api_key,
+            default_model=self.model_name,
+            fallback_model=fallback_model,
+            max_retries=5,
+            base_delay=1.5,
+            max_delay=30.0,
+            timeout=60.0,
+            app_title=f"AIVC Agentic RAG Continual Learning ({self.arm.upper()})",
+        )
+
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_c = (prompt_tokens / 1_000_000.0) * self.prompt_price_1m
         c_c = (completion_tokens / 1_000_000.0) * self.completion_price_1m
         return p_c + c_c
 
+    def _sanitize_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Sanitize message history to prevent OpenRouter/provider JSON argument parsing errors."""
+        return sanitize_messages(messages)
+
     def _call_openrouter(
         self,
         messages: List[Dict[str, Any]],
         tools_schema: List[Dict[str, Any]],
-        retries: int = 3,
+        retries: int = 5,
     ) -> Optional[Dict[str, Any]]:
-        """Call OpenRouter API with tool schemas and exponential retry backoff."""
+        """Call OpenRouter API with tool schemas and exponential retry backoff using InferenceClient."""
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY is not set or empty. Valid API key required for live execution.")
 
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/aivc/aivc",
-            "X-Title": f"AIVC Agentic RAG Continual Learning ({self.arm.upper()})",
-        }
-        payload = {
-            "model": self.model_name,
-            "messages": messages,
-            "tools": tools_schema,
-            "max_tokens": self.max_tokens,
-            "temperature": 0.2,
-        }
-
-        for attempt in range(1, retries + 1):
-            try:
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers=headers,
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=45) as resp:
-                    if resp.status == 200:
-                        body = resp.read().decode("utf-8")
-                        return json.loads(body)
-            except urllib.error.HTTPError as e:
-                err_b = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
-                print(f"  [API Error] (Attempt {attempt}/{retries}) HTTP {e.code}: {err_b}")
-                if attempt == retries:
-                    raise RuntimeError(f"OpenRouter API failed HTTP {e.code}: {err_b}")
-                time.sleep(2 * attempt)
-            except Exception as e:
-                print(f"  [API Network Error] (Attempt {attempt}/{retries}): {e}")
-                if attempt == retries:
-                    raise RuntimeError(f"OpenRouter API connection failed: {e}")
-                time.sleep(2 * attempt)
-        return None
+        try:
+            return self.client.complete(
+                messages=messages,
+                tools=tools_schema,
+                max_tokens=self.max_tokens,
+                temperature=0.2,
+                model=self.model_name,
+            )
+        except Exception as e:
+            print(f"  [API Exception]: {e}")
+            return None
 
     def _simulate_dry_run_turn(
         self,
@@ -1503,8 +1496,9 @@ def main() -> None:
     metrics_path = Path(args.metrics_file) if args.metrics_file else resolved_paths["metrics_path"]
     curves_path = Path(args.curves_file) if args.curves_file else resolved_paths["plots_path"]
 
-    # Also keep standard general curves path for DVC plots if running default
+    # Also keep standard general curves & metrics paths for DVC access
     general_curves_path = EVAL_DIR / "plots" / "agentic_rag_curves.csv"
+    general_metrics_path = EVAL_DIR / "metrics" / "agentic_rag_metrics.json"
 
     if args.reset_checkpoint and ckpt_path.exists():
         print(f"[RESET] Purging checkpoint file '{ckpt_path}'...")
@@ -1584,8 +1578,15 @@ def main() -> None:
             records=all_records,
             curves_path=curves_path,
         )
-        # Also mirror to general curves file for easy DVC plotting access
+        # Also mirror to general files for easy DVC access
         try:
+            export_agentic_rag_metrics(
+                records=all_records,
+                metrics_path=general_metrics_path,
+                arm=args.arm,
+                model_name=args.model,
+                dataset_name=used_dataset_name,
+            )
             export_agentic_rag_curves(
                 records=all_records,
                 curves_path=general_curves_path,
