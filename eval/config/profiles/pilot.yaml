@@ -1,0 +1,29 @@
+# AIVC Evaluation Profile: Real Pilot Execution Protocol (N=3 to 5 tasks, Zero Mock, Live API)
+# Stratification Tri-Modèle Together AI / OpenRouter (IEEE/ACM MSR 2027)
+
+profile: "pilot"
+dry_run: false
+
+# Stratification Tri-Modèle validée par Henri
+model: "google/gemini-3.7-flash"
+models:
+  # 1. Closed-source Frontier API (via OpenRouter)
+  - "google/gemini-3.7-flash"
+  # 2. Datacenter Open-weights (via Together AI)
+  - "deepseek/deepseek-v4-pro"
+  # 3. Compact Open-weights SLM (via Together AI)
+  - "muse/muse-glimmer"
+
+# Pilot limits & budgets (N=15 tasks per dataset)
+limit: 15
+reset_checkpoint: true
+max_turns: 50
+max_tokens: 4096
+max_cost_per_instance_usd: 0.10
+
+# Output paths supporting {model_slug} variable expansion
+paths:
+  checkpoints_dir: "eval/checkpoints/pilot/{model_slug}"
+  metrics_dir: "eval/metrics/pilot/{model_slug}"
+  plots_dir: "eval/plots/pilot/{model_slug}"
+  scratch_dir: "eval/scratch/pilot/{model_slug}"

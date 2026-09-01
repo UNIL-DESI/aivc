@@ -1,0 +1,22 @@
+{
+  "benchmark": "SWE-bench-CL Continual Learning",
+  "dataset_name": "thomasjoshi/swe-bench-cl",
+  "model_name": "google/gemini-3.7-flash",
+  "timestamp": "2026-09-01T21:47:35.809224+00:00",
+  "summary": {
+    "total_instances": 17,
+    "resolved_instances": 17,
+    "unresolved_instances": 0,
+    "resolve_rate_pass_at_1": 1.0,
+    "average_exploration_overhead_ratio_eor": 0.3424,
+    "average_memory_utility_index_mui": 0.0,
+    "average_cumulative_cost_savings_ratio_ccsr": 0.9446
+  },
+  "resource_consumption": {
+    "prompt_tokens": 262108,
+    "completion_tokens": 18188,
+    "total_tokens": 280296,
+    "aivc_total_cost_usd": 0.016742,
+    "baseline_estimated_cost_usd": 1.43548
+  }
+}

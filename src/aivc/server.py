@@ -80,13 +80,8 @@ To retrieve memory, follow this funnel:
 2. **`get_recent_memories`** — for recalling recent history chronologically.
 3. **`consult_memory`** — to read the full note of a specific memory.
    → Call this AFTER identifying a relevant memory.
-
-## Remote Memories & Sync Policy
-
-AIVC synchronizes ONLY memory metadata (titles, notes) between machines. 
-**File contents (blobs) are NOT synchronized.** 
-If you see a memory marked as `[Remote: machine-id]`, the historical version 
-of files associated with it might not be available for `read_past_file_content`.
+4. **`get_file_history_metadata`** — to see the chronological commit/memory history of a specific file.
+5. **`read_past_file_content`** — to inspect the actual historical content or diff of a file at a past memory.
 
 ## Tool Reference
 
@@ -137,7 +132,8 @@ def _get_syncer() -> BackgroundSyncer:
         with _lock:
             if _syncer is None:
                 _syncer = BackgroundSyncer(_storage_root, on_pull_callback=_on_sync_pull)
-                _syncer.start()
+                if _syncer.manager.enabled:
+                    _syncer.start()
     return _syncer
 
 
@@ -152,7 +148,9 @@ def _get_engine() -> SemanticEngine:
             if _engine is None:
                 _engine = SemanticEngine(_storage_root)
                 _local_machine_id = get_machine_id()
-        _get_syncer()
+        syncer = _get_syncer()
+        if syncer.manager.enabled:
+            syncer.trigger_sync()
     return _engine
 
 # ---------------------------------------------------------------------------
@@ -363,7 +361,9 @@ async def remember(
     )
 
     try:
-        _get_syncer().trigger_sync()
+        syncer = _get_syncer()
+        if syncer and syncer.manager.enabled:
+            syncer.trigger_sync()
     except Exception as e:
         import sys
         print(f"Warning: Failed to trigger instant sync push: {e}", file=sys.stderr)
@@ -379,7 +379,7 @@ async def remember(
 
 
 @mcp.tool()
-async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: bool = False) -> str:
+async def recall(query: str, top_n: int = 5, filter_glob: str = "") -> str:
     """Recall past memories by semantic meaning.
 
     Must be called whenever user mentions anything fuzzy, an unfamiliar project, concept or context. Never make assumptions—always call recall first to retrieve context.
@@ -396,7 +396,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
         top_n: Number of results to return (default 5, max 20).
         filter_glob: Optional glob pattern (e.g. "src/*.py") to restrict search to memories
                      that touched matching files.
-        only_local: If True, only search memories created on this machine.
     """
     import asyncio
     top_n = min(top_n, 20)
@@ -423,9 +422,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
 
     # Run the heavy semantic search query in a background thread to keep the event loop responsive
     results = await asyncio.to_thread(engine.search, query, top_n=top_n, filter_glob=filter_glob)
-
-    if only_local:
-        results = [r for r in results if getattr(r, 'machine_id', _local_machine_id) == _local_machine_id]
 
     if not results:
         return warning_header + "No matching memories found."
@@ -565,7 +561,7 @@ def consult_memory(memory_id: str) -> str:
 
 
 @mcp.tool()
-def get_recent_memories(limit: int = 10, offset: int = 0, only_local: bool = False) -> str:
+def get_recent_memories(limit: int = 10, offset: int = 0) -> str:
     """Display the recent memory history.
 
     Use this tool at the start of a session or when you need to recall what
@@ -576,18 +572,12 @@ def get_recent_memories(limit: int = 10, offset: int = 0, only_local: bool = Fal
     Args:
         limit:  Number of memories to show (default 10, max 50).
         offset: Number of memories to skip from the most recent (default 0).
-        only_local: If True, only show memories created on this machine.
     """
     limit = min(limit, 50)
 
     all_recent = _get_engine().get_log(
         limit=offset + limit,
-        include_remote=not only_local,
-        only_local=only_local,
     )
-    
-    if only_local:
-        all_recent = [m for m in all_recent if m.machine_id == _local_machine_id]
 
     page = all_recent[offset : offset + limit]
 

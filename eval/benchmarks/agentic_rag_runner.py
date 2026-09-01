@@ -42,6 +42,9 @@ for p in [str(REPO_ROOT), str(EVAL_DIR), str(BENCHMARK_DIR)]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
+# Enforce deterministic 100% local execution (no background sync/network calls)
+os.environ.setdefault("AIVC_DISABLE_SYNC", "1")
+
 # Centralized imports from eval suite
 from config_loader import (
     get_model_pricing,
@@ -99,10 +102,12 @@ class AIVCContinualEnvironment:
     Live in-memory AIVC execution environment maintained across continual learning episodes.
     Stores structured memory notes, tracks file snapshots & dependency linkages,
     and performs semantic/keyword retrieval for multi-hop code reasoning queries.
+    Hermetically isolated per repository to eliminate cross-repo contamination.
     """
 
-    def __init__(self, arm: str = "aivc"):
+    def __init__(self, arm: str = "aivc", repo: Optional[str] = None):
         self.arm = arm
+        self.repo = repo or "default"
         self.memories: Dict[str, Dict[str, Any]] = {}
         self.file_snapshots: Dict[str, List[Dict[str, Any]]] = {}
         self._memory_counter = 0
@@ -120,15 +125,18 @@ class AIVCContinualEnvironment:
         note: str,
         read_files: Optional[List[str]] = None,
         edited_files: Optional[List[str]] = None,
+        repo: Optional[str] = None,
     ) -> str:
         self._memory_counter += 1
         mem_id = f"mem-{self._memory_counter:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
+        effective_repo = repo or self.repo
 
         record = {
             "id": mem_id,
             "title": title,
             "note": note,
+            "repo": effective_repo,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
             "timestamp": now_str,
@@ -140,6 +148,7 @@ class AIVCContinualEnvironment:
                 self.file_snapshots[f] = []
             self.file_snapshots[f].append({
                 "memory_id": mem_id,
+                "repo": effective_repo,
                 "timestamp": now_str,
                 "note_ref": title,
             })
@@ -148,70 +157,81 @@ class AIVCContinualEnvironment:
             if f not in self.file_snapshots:
                 self.file_snapshots[f] = []
 
-        return f"✅ Memory recorded [{mem_id}] '{title}'. Mapped {len(read_files or [])} read, {len(edited_files or [])} edited/dependent files."
+        return f"✅ Memory recorded [{mem_id}] '{title}' in [{effective_repo}]. Mapped {len(read_files or [])} read, {len(edited_files or [])} edited/dependent files."
 
-    def recall(self, query: str, limit: int = 5) -> str:
-        if not self.memories:
-            return "No previous memories stored in AIVC yet. Perform initial exploration with grep_search / view_file."
+    def recall(self, query: str, limit: int = 5, repo: Optional[str] = None) -> str:
+        effective_repo = repo or self.repo
+        target_memories = [m for m in self.memories.values() if m.get("repo", self.repo) == effective_repo]
+        if not target_memories:
+            return f"No previous memories stored in AIVC for repository '{effective_repo}' yet. Perform initial exploration with grep_search / view_file."
 
         query_terms = [t.lower() for t in query.split() if len(t) > 2]
         scored_results = []
 
-        for mem_id, mem in self.memories.items():
+        for mem in target_memories:
             text = f"{mem['title']} {mem['note']} {' '.join(mem['read_files'])} {' '.join(mem['edited_files'])}".lower()
             score = sum(2 if q in mem['title'].lower() else 1 for q in query_terms if q in text)
             if score > 0 or not query_terms:
                 scored_results.append((score, mem))
 
         scored_results.sort(key=lambda x: x[0], reverse=True)
-        top = scored_results[:limit] if scored_results else [(0, m) for m in list(self.memories.values())[-limit:]]
+        top = scored_results[:limit] if scored_results else [(0, m) for m in target_memories[-limit:]]
 
-        lines = [f"Found {len(top)} relevant AIVC memories for '{query}':"]
+        lines = [f"Found {len(top)} relevant AIVC memories for '{query}' in [{effective_repo}]:"]
         for _, m in top:
             snippet = m["note"][:180].replace("\n", " ") + "..."
             files_str = f" [Files: {', '.join((m.get('read_files', []) + m.get('edited_files', []))[:3])}]"
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}): {snippet}{files_str}")
         return "\n".join(lines)
 
-    def get_recent_memories(self, limit: int = 10, offset: int = 0) -> str:
-        all_mems = list(self.memories.values())
-        all_mems.reverse()
-        slice_mems = all_mems[offset : offset + limit]
+    def get_recent_memories(self, limit: int = 10, offset: int = 0, repo: Optional[str] = None) -> str:
+        effective_repo = repo or self.repo
+        target_memories = [m for m in self.memories.values() if m.get("repo", self.repo) == effective_repo]
+        target_memories.reverse()
+        slice_mems = target_memories[offset : offset + limit]
         if not slice_mems:
-            return "No memories found in range."
+            return f"No memories found for repository '{effective_repo}' in range."
 
-        lines = [f"Recent AIVC memories (offset={offset}, limit={limit}):"]
+        lines = [f"Recent AIVC memories in [{effective_repo}] (offset={offset}, limit={limit}):"]
         for m in slice_mems:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}) -> {len(m.get('read_files', []))} files tracked")
         return "\n".join(lines)
 
-    def consult_memory(self, memory_id: str) -> str:
+    def consult_memory(self, memory_id: str, repo: Optional[str] = None) -> str:
         mem = self.memories.get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
+        effective_repo = repo or self.repo
+        if mem.get("repo") and mem.get("repo") != effective_repo:
+            return f"Memory ID '{memory_id}' belongs to repository '{mem.get('repo')}' (access denied for '{effective_repo}')."
         return (
             f"# {mem['title']}\n"
+            f"**Repository**: {mem.get('repo', effective_repo)}\n"
             f"**Created**: {mem['timestamp']}\n"
             f"**Read Files**: {mem.get('read_files', [])}\n"
             f"**Edited / Linked Files**: {mem.get('edited_files', [])}\n\n"
             f"### Content:\n{mem['note']}"
         )
 
-    def get_file_history_metadata(self, filepath: str) -> str:
-        hist = self.file_snapshots.get(filepath, [])
+    def get_file_history_metadata(self, filepath: str, repo: Optional[str] = None) -> str:
+        effective_repo = repo or self.repo
+        hist = [h for h in self.file_snapshots.get(filepath, []) if h.get("repo", self.repo) == effective_repo]
         if not hist:
-            return f"No AIVC version history found for '{filepath}'."
-        lines = [f"AIVC version history for '{filepath}':"]
+            return f"No AIVC version history found for '{filepath}' in repository '{effective_repo}'."
+        lines = [f"AIVC version history for '{filepath}' in [{effective_repo}]:"]
         for h in hist:
             lines.append(f"- Memory [{h['memory_id']}] at {h['timestamp']}: {h['note_ref']}")
         return "\n".join(lines)
 
-    def read_past_file_content(self, filepath: str, memory_id: str) -> str:
+    def read_past_file_content(self, filepath: str, memory_id: str, repo: Optional[str] = None) -> str:
         mem = self.memories.get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
+        effective_repo = repo or self.repo
+        if mem.get("repo") and mem.get("repo") != effective_repo:
+            return f"Memory ID '{memory_id}' belongs to repository '{mem.get('repo')}' (access denied for '{effective_repo}')."
         return (
-            f"// [AIVC Snapshot] File: {filepath} | Ref Memory: {memory_id} ({mem['title']})\n"
+            f"// [AIVC Snapshot] File: {filepath} in [{effective_repo}] | Ref Memory: {memory_id} ({mem['title']})\n"
             f"// Note Context:\n{mem['note'][:300]}"
         )
 
@@ -221,7 +241,8 @@ class AIVCContinualEnvironment:
         arguments: Dict[str, Any],
         query_context: Dict[str, Any],
     ) -> str:
-        """Dispatch and execute tool action in benchmark environment."""
+        """Dispatch and execute tool action in benchmark environment with repo isolation."""
+        repo = query_context.get("repo", self.repo)
         try:
             if tool_name == "remember":
                 if self.arm == "naive":
@@ -231,13 +252,15 @@ class AIVCContinualEnvironment:
                     note=arguments.get("note", ""),
                     read_files=arguments.get("read_files", []),
                     edited_files=arguments.get("edited_files", []),
+                    repo=repo,
                 )
             elif tool_name == "recall":
                 if self.arm == "naive":
                     return "Error: recall tool is disabled in naive baseline mode."
                 return self.recall(
                     query=arguments.get("query", ""),
-                    limit=int(arguments.get("limit", 5)),
+                    limit=int(arguments.get("top_n", arguments.get("limit", 5))),
+                    repo=repo,
                 )
             elif tool_name == "get_recent_memories":
                 if self.arm == "naive":
@@ -245,21 +268,31 @@ class AIVCContinualEnvironment:
                 return self.get_recent_memories(
                     limit=int(arguments.get("limit", 10)),
                     offset=int(arguments.get("offset", 0)),
+                    repo=repo,
                 )
             elif tool_name == "consult_memory":
                 if self.arm == "naive":
                     return "Error: consult_memory is disabled in naive baseline mode."
-                return self.consult_memory(memory_id=arguments.get("memory_id", ""))
+                return self.consult_memory(
+                    memory_id=arguments.get("memory_id", ""),
+                    repo=repo,
+                )
             elif tool_name == "get_file_history_metadata":
                 if self.arm == "naive":
                     return "Error: get_file_history_metadata is disabled in naive baseline mode."
-                return self.get_file_history_metadata(filepath=arguments.get("filepath", ""))
+                target_fp = arguments.get("file_path", arguments.get("filepath", ""))
+                return self.get_file_history_metadata(
+                    filepath=target_fp,
+                    repo=repo,
+                )
             elif tool_name == "read_past_file_content":
                 if self.arm == "naive":
                     return "Error: read_past_file_content is disabled in naive baseline mode."
+                target_fp = arguments.get("file_path", arguments.get("filepath", ""))
                 return self.read_past_file_content(
-                    filepath=arguments.get("filepath", ""),
+                    filepath=target_fp,
                     memory_id=arguments.get("memory_id", ""),
+                    repo=repo,
                 )
             elif tool_name == "view_file":
                 filepath = arguments.get("filepath", "")
@@ -757,9 +790,8 @@ class AgenticRAGRunner:
         self.max_tokens = max_tokens
         self.max_cost_per_query_usd = max_cost_per_query_usd
         self.dry_run = dry_run
-
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
-        self.env = AIVCContinualEnvironment(arm=self.arm)
+        self.repo_envs: Dict[str, AIVCContinualEnvironment] = {}
 
         models_cfg = load_models_config()
         self.prompt_price_1m, self.completion_price_1m, _ = get_model_pricing(model_name, models_cfg)
@@ -775,8 +807,19 @@ class AgenticRAGRunner:
             base_delay=1.5,
             max_delay=30.0,
             timeout=60.0,
-            app_title=f"AIVC Agentic RAG Continual Learning ({self.arm.upper()})",
+            app_title="AIVC Continual Learning Agentic RAG Runner",
         )
+
+    def get_env_for_repo(self, repo: str) -> AIVCContinualEnvironment:
+        """Get or create a dedicated, hermetically isolated AIVC memory environment for a repository."""
+        if repo not in self.repo_envs:
+            self.repo_envs[repo] = AIVCContinualEnvironment(arm=self.arm, repo=repo)
+        return self.repo_envs[repo]
+
+    @property
+    def env(self) -> AIVCContinualEnvironment:
+        """Default/fallback environment property."""
+        return self.get_env_for_repo("default")
 
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_c = (prompt_tokens / 1_000_000.0) * self.prompt_price_1m
@@ -793,10 +836,7 @@ class AgenticRAGRunner:
         tools_schema: List[Dict[str, Any]],
         retries: int = 5,
     ) -> Optional[Dict[str, Any]]:
-        """Call OpenRouter API with tool schemas and exponential retry backoff using InferenceClient."""
-        if not self.api_key:
-            raise ValueError("OPENROUTER_API_KEY is not set or empty. Valid API key required for live execution.")
-
+        """Call LLM API (OpenRouter or Together AI) with tool schemas and exponential retry backoff using InferenceClient."""
         try:
             return self.client.complete(
                 messages=messages,
@@ -807,7 +847,7 @@ class AgenticRAGRunner:
             )
         except Exception as e:
             print(f"  [API Exception]: {e}")
-            return None
+            raise
 
     def _simulate_dry_run_turn(
         self,
@@ -995,12 +1035,13 @@ class AgenticRAGRunner:
         start_time = time.time()
         query_id = query_item.get("query_id", f"RAG-CL-{episode_index:03d}")
         repo = query_item.get("repo", "unknown_repo")
+        env = self.get_env_for_repo(repo)
         query_text = query_item.get("query", "")
         ground_truth_files = query_item.get("relevant_files", [])
         baseline_cost_est = query_item.get("baseline_est_cost", 0.015)
 
         # In naive mode, reset any memory state between queries
-        self.env.reset_if_stateless()
+        env.reset_if_stateless()
 
         print("\n" + "=" * 76)
         print(f"[EPISODE {episode_index:02d}/{total_episodes:02d}] Arm: {self.arm.upper()} | Query: {query_id} ({repo})")
@@ -1101,7 +1142,8 @@ class AgenticRAGRunner:
                         submitted_answer = fn_args.get("answer", "")
                         submitted_files = fn_args.get("relevant_files", [])
 
-                    tool_res = self.env.execute_tool(fn_name, fn_args, query_item)
+                    # Live execution in isolated repository environment
+                    tool_res = env.execute_tool(fn_name, fn_args, query_item)
 
                     messages.append({
                         "role": "tool",
@@ -1375,7 +1417,12 @@ def export_agentic_rag_curves(
 def main() -> None:
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         try:
-            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
 
@@ -1506,7 +1553,7 @@ def main() -> None:
 
     # Load environment / API key
     env_vars = load_env_file()
-    api_key = os.getenv("OPENROUTER_API_KEY", env_vars.get("OPENROUTER_API_KEY", ""))
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("TOGETHER_API_KEY") or env_vars.get("OPENROUTER_API_KEY", "") or env_vars.get("TOGETHER_API_KEY", "")
 
     print("=" * 76)
     print("      AIVC AGENTIC RAG CONTINUAL LEARNING BENCHMARK RUNNER")

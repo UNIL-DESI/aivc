@@ -39,12 +39,14 @@ if str(EVAL_DIR) not in sys.path:
 DEFAULT_MODEL = "qwen/qwen3.7-flash"
 PROMPT_PRICE_PER_1M = 0.03
 COMPLETION_PRICE_PER_1M = 0.13
-
 BENCHMARK_FILES = [
-    "dry_run_metrics.json",
     "swebench_cl_metrics.json",
+    "swebench_cl_naive_metrics.json",
     "devbench_metrics.json",
+    "devbench_naive_metrics.json",
     "agentic_rag_metrics.json",
+    "agentic_rag_naive_metrics.json",
+    "dry_run_metrics.json",
 ]
 
 
@@ -53,6 +55,7 @@ class BenchmarkMetrics:
     """Dataclass storing normalized metrics for a single benchmark suite."""
 
     benchmark_name: str
+    arm: str = "aivc"
     model_name: str = DEFAULT_MODEL
     total_tasks: int = 0
     successful_tasks: int = 0
@@ -71,6 +74,7 @@ class BenchmarkMetrics:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "benchmark_name": self.benchmark_name,
+            "arm": self.arm,
             "model_name": self.model_name,
             "total_tasks": self.total_tasks,
             "successful_tasks": self.successful_tasks,
@@ -237,17 +241,21 @@ class DVCExporter:
                 or data.get("total_steps")
                 or data.get("tasks")
                 or summary_block.get("total_instances")
-                or summary_block.get("total_repos")
+                or summary_block.get("total_queries")
                 or summary_block.get("total_phases_executed")
+                or summary_block.get("total_repos")
                 or 0
             )
             succ_tasks = int(
                 data.get("successful_tasks")
                 or data.get("successful_steps")
                 or summary_block.get("resolved_instances")
+                or summary_block.get("resolved_queries")
+                or (int(summary_block.get("total_phases_executed", 0) * summary_block.get("phase_pass_rate", 1.0)) if "total_phases_executed" in summary_block else 0)
                 or summary_block.get("completed_sdlc_repos")
                 or 0
             )
+
 
             # Pass rate
             pass_rate = float(
@@ -331,8 +339,11 @@ class DVCExporter:
                 or 0.0
             )
 
+            arm_val = data.get("arm") or ("naive" if "_naive" in filename else "aivc")
+
             return BenchmarkMetrics(
                 benchmark_name=b_name,
+                arm=arm_val,
                 model_name=m_name,
                 total_tasks=tot_tasks,
                 successful_tasks=succ_tasks,
@@ -354,6 +365,7 @@ class DVCExporter:
             sample = SAMPLE_BENCHMARKS.get(bmark_key, SAMPLE_BENCHMARKS["dry_run"])
             bm = BenchmarkMetrics(**sample)
             bm.benchmark_name = bmark_key
+            bm.arm = "naive" if "_naive" in filename else "aivc"
             bm.is_sample_data = True
             return bm
 
@@ -377,10 +389,15 @@ class DVCExporter:
         mui_sum = 0.0
         ccsr_sum = 0.0
 
+        seen_files = set()
         for bfile in BENCHMARK_FILES:
+            file_p = self.find_benchmark_file(bfile)
+            if file_p:
+                seen_files.add(file_p.name)
             bm = self.parse_metrics_json(bfile)
             benchmark_metrics_list.append(bm)
-            benchmarks_dict[bm.benchmark_name] = bm.to_dict()
+            dict_key = f"{bm.benchmark_name}_{bm.arm}" if bm.arm != "aivc" else bm.benchmark_name
+            benchmarks_dict[dict_key] = bm.to_dict()
 
             total_tasks_all += bm.total_tasks
             successful_tasks_all += bm.successful_tasks
@@ -394,6 +411,15 @@ class DVCExporter:
             eor_sum += bm.eor
             mui_sum += bm.mui
             ccsr_sum += bm.ccsr
+
+        # Also discover any other metrics files in metrics_dir
+        if self.metrics_dir.exists():
+            for extra_file in self.metrics_dir.glob("*_metrics.json"):
+                if extra_file.name not in seen_files and extra_file.name != "summary_metrics.json":
+                    bm = self.parse_metrics_json(extra_file.name)
+                    benchmark_metrics_list.append(bm)
+                    dict_key = f"{bm.benchmark_name}_{bm.arm}" if bm.arm != "aivc" else bm.benchmark_name
+                    benchmarks_dict[dict_key] = bm.to_dict()
 
         num_bmarks = max(1, len(benchmark_metrics_list))
         overall_pass_rate = (successful_tasks_all / float(total_tasks_all)) if total_tasks_all > 0 else 0.0
@@ -444,6 +470,7 @@ class DVCExporter:
 
         fieldnames = [
             "benchmark",
+            "arm",
             "model_name",
             "total_tasks",
             "successful_tasks",
@@ -468,6 +495,7 @@ class DVCExporter:
                 writer.writerow(
                     {
                         "benchmark": bm.benchmark_name,
+                        "arm": bm.arm,
                         "model_name": bm.model_name,
                         "total_tasks": bm.total_tasks,
                         "successful_tasks": bm.successful_tasks,

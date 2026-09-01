@@ -4,12 +4,15 @@
 profile: "production"
 dry_run: false
 
-# Target models evaluated in the scientific paper
-model: "deepseek/deepseek-v4-flash-0731"
+# Target models evaluated in the scientific paper (IEEE/ACM MSR 2027)
+model: "google/gemini-3.7-flash"
 models:
-  - "deepseek/deepseek-v4-flash-0731"
+  # 1. Closed-source Frontier API (via OpenRouter)
   - "google/gemini-3.7-flash"
-  - "openai/gpt-5.6-luna-pro"
+  # 2. Datacenter Open-weights (via Together AI)
+  - "deepseek/deepseek-v4-pro"
+  # 3. Compact Open-weights SLM (via Together AI)
+  - "muse/muse-glimmer"
 
 # Full dataset budget & crash-recovery policy
 limit: 273  # Full benchmark sequence (273 episodes)

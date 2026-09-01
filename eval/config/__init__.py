@@ -5,6 +5,11 @@ Centralizes configuration resolution, model pricing, system prompts,
 tool schemas, and resilient inference clients for all evaluation runners.
 """
 
+import os
+
+# Guarantee deterministic, 100% local SQLite WAL execution during evaluations (disable cloud/Drive background sync)
+os.environ.setdefault("AIVC_DISABLE_SYNC", "1")
+
 from .aivc_prompt_template import (
     AIVC_BENCHMARK_PROMPT,
     AIVC_CORE_TOOLS_SCHEMA,

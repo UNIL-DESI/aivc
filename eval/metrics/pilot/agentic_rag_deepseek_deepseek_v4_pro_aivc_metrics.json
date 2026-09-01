@@ -1,0 +1,35 @@
+{
+  "benchmark": "Agentic RAG Continual Learning",
+  "arm": "aivc",
+  "model_name": "deepseek/deepseek-v4-pro",
+  "dataset_name": "aivc/swe-explore-continual-rag",
+  "timestamp": "2026-09-01T22:26:08.450842+00:00",
+  "summary": {
+    "total_queries": 5,
+    "resolved_queries": 5,
+    "unresolved_queries": 0,
+    "pass_rate": 1.0,
+    "average_exploration_overhead_ratio_eor": 0.0,
+    "average_memory_utility_index_mui": 0.0,
+    "average_cumulative_cost_savings_ratio_ccsr": 0.9482,
+    "tool_call_decay": {
+      "initial_query_tool_calls": 2,
+      "final_query_tool_calls": 2,
+      "decay_factor": 1.0
+    }
+  },
+  "retrieval_metrics": {
+    "mean_reciprocal_rank_mrr": 0.8667,
+    "precision_at_1": 0.8,
+    "precision_at_3": 0.6,
+    "recall_at_1": 0.2666,
+    "recall_at_3": 0.6
+  },
+  "resource_consumption": {
+    "prompt_tokens": 22970,
+    "completion_tokens": 3895,
+    "total_tokens": 26865,
+    "total_cost_usd": 0.001195,
+    "baseline_estimated_cost_usd": 0.072
+  }
+}

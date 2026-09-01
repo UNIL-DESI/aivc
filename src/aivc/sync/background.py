@@ -21,6 +21,8 @@ class BackgroundSyncer:
 
     def trigger_sync(self):
         """Wake up background syncer loop immediately."""
+        if not self.manager.enabled:
+            return
         self._wake_event.set()
 
     def start(self):

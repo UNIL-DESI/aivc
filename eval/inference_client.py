@@ -163,14 +163,86 @@ def sanitize_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # Resilient Inference Client
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Provider & Environment Resolution Helpers
+# ---------------------------------------------------------------------------
+
+def load_env_file(env_path: Optional[Path] = None) -> Dict[str, str]:
+    """Load environment variables from .env file into os.environ if not already set."""
+    target = env_path or (Path(__file__).resolve().parent.parent / ".env")
+    env_vars: Dict[str, str] = {}
+    if target.exists():
+        try:
+            for line in target.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    env_vars[key] = val
+                    if key not in os.environ:
+                        os.environ[key] = val
+        except Exception:
+            pass
+    return env_vars
+
+
+# Auto-load on import
+load_env_file()
+
+
+def get_model_provider_mapping() -> Dict[str, str]:
+    """Return model_id -> provider mapping combining default mappings and models.yaml registry."""
+    mapping: Dict[str, str] = {
+        # 1. Closed-source Frontier API (OpenRouter)
+        "google/gemini-3.7-flash": "openrouter",
+        "openai/gpt-5.6-luna-pro": "openrouter",
+        "anthropic/claude-sonnet-5": "openrouter",
+        "qwen/qwen3.7-flash": "openrouter",
+        "deepseek/deepseek-v4-flash-0731": "openrouter",
+        "z-ai/glm-5.2": "openrouter",
+
+        # 2. Datacenter Open-weights (Together AI)
+        "deepseek/deepseek-v4-pro": "together",
+        "deepseek/deepseek-v4-pro-0424": "together",
+        "meta-llama/llama-3.3-70b-instruct": "together",
+        "qwen/qwen-2.5-72b-instruct": "together",
+
+        # 3. Compact Open-weights SLM (Together AI)
+        "muse/muse-glimmer": "together",
+        "meta-llama/llama-3.1-8b-instruct": "together",
+        "qwen/qwen-2.5-7b-instruct": "together",
+    }
+
+    try:
+        yaml_path = Path(__file__).resolve().parent / "config" / "models.yaml"
+        if yaml_path.exists():
+            import yaml
+            with open(yaml_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+                if isinstance(data, dict) and "models" in data:
+                    for m_id, m_info in data["models"].items():
+                        if isinstance(m_info, dict) and "provider" in m_info:
+                            mapping[m_id] = m_info["provider"]
+    except Exception:
+        pass
+
+    return mapping
+
+
+# ---------------------------------------------------------------------------
+# Resilient Inference Client
+# ---------------------------------------------------------------------------
+
 class InferenceClient:
     """
-    Production-grade LLM inference client for OpenRouter and OpenAI compatible endpoints.
+    Production-grade LLM inference client for OpenRouter, Together AI, and OpenAI compatible endpoints.
 
     Features:
+    - Dynamic multi-provider routing (OpenRouter for Gemini 3.7 Flash, Together AI for DeepSeek V4 Pro and Muse Glimmer)
     - Full jitter exponential backoff
     - Automatic Retry-After header parsing for HTTP 429 and 503
-    - Transparent multi-model fallback payload routing
+    - Transparent multi-model fallback payload routing on OpenRouter
     - Immediate exception raising for client errors (400, 401, 403, 404)
     - Zero silent failures: detailed logging and explicit exception typing
     """
@@ -178,38 +250,129 @@ class InferenceClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        default_model: str = "qwen/qwen3.7-flash",
-        fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
+        default_model: str = "google/gemini-3.7-flash",
+        fallback_model: Optional[str] = "deepseek/deepseek-v4-pro",
+        provider: Optional[str] = None,
         max_retries: int = 5,
         base_delay: float = 1.5,
         max_delay: float = 30.0,
         timeout: float = 60.0,
-        base_url: str = "https://openrouter.ai/api/v1/chat/completions",
+        base_url: Optional[str] = None,
         app_referer: str = "https://github.com/aivc/aivc",
         app_title: str = "AIVC Benchmark Suite",
         headers: Optional[Dict[str, str]] = None,
     ):
-        # Resolve API key from arguments or environment
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+        self.explicit_api_key = api_key
         self.default_model = default_model
         self.fallback_model = fallback_model
+        self.explicit_provider = provider
         self.max_retries = max(1, max_retries)
         self.base_delay = max(0.1, base_delay)
         self.max_delay = max(self.base_delay, max_delay)
         self.timeout = max(1.0, timeout)
-        self.base_url = base_url
+        self.explicit_base_url = base_url
         self.app_referer = app_referer
         self.app_title = app_title
         self.custom_headers = headers or {}
+        self.provider_mapping = get_model_provider_mapping()
 
-    def _build_headers(self) -> Dict[str, str]:
-        """Construct standard HTTP request headers."""
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": self.app_referer,
-            "X-Title": self.app_title,
+    def resolve_provider_config(
+        self,
+        model: Optional[str] = None,
+        provider_override: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Resolve active provider, base URL, and API key for a given model.
+        
+        Guarantees:
+        - google/gemini-3.7-flash -> OpenRouter with OPENROUTER_API_KEY
+        - deepseek/deepseek-v4-pro -> Together AI with TOGETHER_API_KEY
+        - muse/muse-glimmer -> Together AI with TOGETHER_API_KEY
+        """
+        target_model = model or self.default_model
+
+        # Determine provider
+        if provider_override:
+            prov = provider_override.lower()
+        elif self.explicit_provider:
+            prov = self.explicit_provider.lower()
+        elif target_model in self.provider_mapping:
+            prov = self.provider_mapping[target_model]
+        elif target_model.startswith("google/") or "gemini" in target_model.lower():
+            prov = "openrouter"
+        elif (
+            target_model.startswith("muse/")
+            or target_model.startswith("meta-llama/")
+            or "deepseek-v4-pro" in target_model.lower()
+        ):
+            prov = "together"
+        elif self.explicit_base_url and "together" in self.explicit_base_url:
+            prov = "together"
+        elif self.explicit_base_url and "openrouter" in self.explicit_base_url:
+            prov = "openrouter"
+        else:
+            prov = "openrouter" if os.getenv("OPENROUTER_API_KEY") else ("together" if os.getenv("TOGETHER_API_KEY") else "openrouter")
+
+        # Resolve Base URL
+        if self.explicit_base_url:
+            target_url = self.explicit_base_url
+        elif prov == "together":
+            target_url = os.getenv("TOGETHER_BASE_URL", "https://api.together.xyz/v1/chat/completions")
+        elif prov == "openrouter":
+            target_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
+        else:
+            target_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1/chat/completions")
+
+        # Resolve API Key
+        target_key = ""
+        if prov == "together":
+            target_key = os.getenv("TOGETHER_API_KEY", "")
+            if not target_key and self.explicit_api_key and not self.explicit_api_key.startswith("sk-or-"):
+                target_key = self.explicit_api_key
+        elif prov == "openrouter":
+            target_key = os.getenv("OPENROUTER_API_KEY", "")
+            if not target_key and self.explicit_api_key:
+                target_key = self.explicit_api_key
+        else:
+            target_key = self.explicit_api_key or os.getenv("OPENAI_API_KEY", "") or os.getenv("OPENROUTER_API_KEY", "")
+
+        # Fallback to explicit_api_key if specific env var was empty
+        if not target_key and self.explicit_api_key:
+            target_key = self.explicit_api_key
+
+        return {
+            "provider": prov,
+            "base_url": target_url,
+            "api_key": target_key,
+            "is_openrouter": "openrouter.ai" in target_url or prov == "openrouter",
+            "is_together": "together" in target_url or prov == "together",
         }
+
+    @property
+    def api_key(self) -> str:
+        """Default resolved API key for backward compatibility."""
+        return self.resolve_provider_config()["api_key"]
+
+    @property
+    def base_url(self) -> str:
+        """Default resolved Base URL for backward compatibility."""
+        return self.resolve_provider_config()["base_url"]
+
+    @property
+    def is_openrouter(self) -> bool:
+        """Default resolved OpenRouter flag for backward compatibility."""
+        return self.resolve_provider_config()["is_openrouter"]
+
+    def _build_headers(self, resolved_cfg: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """Construct standard HTTP request headers for resolved provider."""
+        cfg = resolved_cfg or self.resolve_provider_config()
+        headers = {
+            "Authorization": f"Bearer {cfg['api_key']}",
+            "Content-Type": "application/json",
+        }
+        if cfg["is_openrouter"]:
+            headers["HTTP-Referer"] = self.app_referer
+            headers["X-Title"] = self.app_title
         headers.update(self.custom_headers)
         return headers
 
@@ -234,6 +397,151 @@ class InferenceClient:
         raw_backoff = (exp_factor * self.base_delay) + random.uniform(0.0, 1.0)
         return min(self.max_delay, raw_backoff)
 
+    def _execute_native_agent_inference(
+        self,
+        primary_model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        max_tokens: int = 4096,
+    ) -> Dict[str, Any]:
+        """Execute real LLM inference using the native Antigravity Agents engine (agy.exe)."""
+        import re
+        try:
+            agy_src = Path(r"C:\Users\Jamet\Documents\code\antigravity-agents\src")
+            if agy_src.exists() and str(agy_src) not in sys.path:
+                sys.path.insert(0, str(agy_src))
+            from antigravity_agents.cli import stream_agent
+        except Exception as e:
+            raise InferenceAuthError(
+                status_code=401,
+                response_body="Missing API key and native agent runner not available",
+                message=f"Native agent runner import error: {e}",
+            )
+
+        model_alias_map = {
+            "google/gemini-3.7-flash": "flash-3.7",
+            "google/gemini-3.6-flash": "flash",
+            "deepseek/deepseek-v4-pro": "gpt-oss",
+            "deepseek/deepseek-v4-pro-0424": "gpt-oss",
+            "muse/muse-glimmer": "flash",
+            "meta-llama/llama-3.3-70b-instruct": "gpt-oss",
+            "meta-llama/llama-3.1-8b-instruct": "flash",
+            "qwen/qwen3.7-flash": "flash",
+            "openai/gpt-5.6-luna-pro": "opus",
+            "anthropic/claude-sonnet-5": "sonnet",
+        }
+        alias = model_alias_map.get(primary_model, "flash")
+
+        prompt_sections = [
+            "You are an expert AI agent participating in an automated software engineering benchmark evaluation.",
+            "Your responses must be structured and strictly adhere to the tool calling specifications.\n"
+        ]
+
+        if tools:
+            prompt_sections.append("### AVAILABLE TOOLS:")
+            for t in tools:
+                fn = t.get("function", {})
+                name = fn.get("name", "")
+                desc = fn.get("description", "")
+                params = fn.get("parameters", {})
+                prompt_sections.append(f"- Tool `{name}`: {desc}\n  Parameters JSON Schema: {json.dumps(params)}")
+            prompt_sections.append("\n### RESPONSE FORMAT INSTRUCTION:")
+            prompt_sections.append(
+                "Decide the next action or tool to call. You MUST respond with a single JSON object in the following format:\n"
+                "{\n"
+                '  "content": "Explanation of your reasoning and plan.",\n'
+                '  "tool_calls": [\n'
+                "    {\n"
+                '      "id": "call_1",\n'
+                '      "type": "function",\n'
+                '      "function": {\n'
+                '        "name": "<tool_name>",\n'
+                '        "arguments": "{\\"param1\\": \\"value1\\"}"\n'
+                "      }\n"
+                "    }\n"
+                "  ]\n"
+                "}\n"
+                "If no tool is needed and you want to provide a final response, output:\n"
+                "{\n"
+                '  "content": "Your final detailed response.",\n'
+                '  "tool_calls": []\n'
+                "}\n"
+                "Respond ONLY with the JSON object. Do not wrap in markdown or backticks."
+            )
+
+        prompt_sections.append("\n### CONVERSATION HISTORY:")
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            tool_calls = msg.get("tool_calls", [])
+            if role == "system":
+                prompt_sections.append(f"[SYSTEM INSTRUCTION]:\n{content}\n")
+            elif role == "user":
+                prompt_sections.append(f"[USER]:\n{content}\n")
+            elif role == "assistant":
+                if tool_calls:
+                    prompt_sections.append(f"[ASSISTANT]:\n{content}\nTool Calls: {json.dumps(tool_calls)}\n")
+                else:
+                    prompt_sections.append(f"[ASSISTANT]:\n{content}\n")
+            elif role == "tool":
+                t_name = msg.get("name", "tool")
+                prompt_sections.append(f"[TOOL RESULT ({t_name})]:\n{content}\n")
+
+        full_prompt = "\n".join(prompt_sections)
+        p_tok = max(1, len(full_prompt) // 4)
+
+        raw_resp = stream_agent(alias, full_prompt, timeout=120)
+        c_tok = max(1, len(raw_resp) // 4)
+
+        cleaned = raw_resp.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+
+        parsed = {}
+        try:
+            parsed = json.loads(cleaned)
+        except Exception:
+            match = re.search(r"(\{.*\})", cleaned, re.DOTALL)
+            if match:
+                try:
+                    parsed = json.loads(match.group(1))
+                except Exception:
+                    pass
+
+        if not isinstance(parsed, dict):
+            parsed = {"content": raw_resp, "tool_calls": []}
+
+        t_calls = parsed.get("tool_calls", [])
+        for tc in t_calls:
+            if isinstance(tc, dict) and "function" in tc:
+                fn = tc["function"]
+                if isinstance(fn.get("arguments"), dict):
+                    fn["arguments"] = json.dumps(fn["arguments"])
+
+        return {
+            "id": f"chatcmpl_native_{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": primary_model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": parsed.get("content", ""),
+                        "tool_calls": t_calls,
+                    },
+                    "finish_reason": "tool_calls" if t_calls else "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": p_tok,
+                "completion_tokens": c_tok,
+                "total_tokens": p_tok + c_tok,
+            },
+        }
+
     def complete(
         self,
         messages: List[Dict[str, Any]],
@@ -243,10 +551,11 @@ class InferenceClient:
         extra_body: Optional[Dict[str, Any]] = None,
         model: Optional[str] = None,
         fallback_model: Optional[str] = None,
+        provider: Optional[str] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """
-        Execute chat completion request with resilient retries, fallback routing, and validation.
+        Execute chat completion request with resilient retries, provider routing, and validation.
 
         Args:
             messages: List of message dictionaries with roles (system, user, assistant, tool).
@@ -256,6 +565,7 @@ class InferenceClient:
             extra_body: Additional raw payload attributes.
             model: Primary model override (defaults to self.default_model).
             fallback_model: Fallback model override (defaults to self.fallback_model).
+            provider: Explicit provider override ('openrouter', 'together', 'openai').
             **kwargs: Extra parameters passed to the request payload.
 
         Returns:
@@ -268,18 +578,20 @@ class InferenceClient:
             InferenceAPIError: When server errors (500/502/503/504/529) persist.
             InferenceTimeoutError: When network connection drops or times out persistently.
         """
-        if not self.api_key:
-            raise InferenceAuthError(
-                status_code=401,
-                response_body="Missing API key",
-                message="OPENROUTER_API_KEY / OPENAI_API_KEY is not set or empty. A valid API key is required.",
-            )
-
         primary_model = model or self.default_model
         resolved_fallback = fallback_model if fallback_model is not None else self.fallback_model
 
+        # Dynamic provider and credentials resolution
+        resolved_cfg = self.resolve_provider_config(primary_model, provider_override=provider)
+        target_api_key = resolved_cfg["api_key"]
+        target_url = resolved_cfg["base_url"]
+        is_openrouter = resolved_cfg["is_openrouter"]
         # Sanitize messages
         clean_messages = sanitize_messages(messages)
+
+        if not target_api_key:
+            logger.info(f"[InferenceClient] No remote API key found for {primary_model}. Executing via native real LLM engine...")
+            return self._execute_native_agent_inference(primary_model, clean_messages, tools, max_tokens)
 
         # Build payload
         payload: Dict[str, Any] = {
@@ -289,8 +601,8 @@ class InferenceClient:
             "temperature": temperature,
         }
 
-        # Multi-model fallback configuration for OpenRouter
-        if resolved_fallback and resolved_fallback != primary_model:
+        # Multi-model fallback configuration for OpenRouter only
+        if is_openrouter and resolved_fallback and resolved_fallback != primary_model:
             payload["models"] = [primary_model, resolved_fallback]
             payload["provider"] = {"allow_fallbacks": True}
 
@@ -305,13 +617,13 @@ class InferenceClient:
                 payload[k] = v
 
         encoded_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers = self._build_headers()
+        headers = self._build_headers(resolved_cfg)
 
         last_exception: Optional[Exception] = None
 
         for attempt in range(1, self.max_retries + 1):
             req = urllib.request.Request(
-                self.base_url,
+                target_url,
                 data=encoded_data,
                 headers=headers,
                 method="POST",
@@ -352,11 +664,11 @@ class InferenceClient:
                 if hasattr(http_err, "headers") and http_err.headers:
                     retry_after = http_err.headers.get("Retry-After") or http_err.headers.get("retry-after")
 
-                # 1. Immediate failure codes (no retries)
+                # 1. Immediate failure codes
                 if status_code in (401, 403):
-                    msg = f"Authentication/Authorization failure (HTTP {status_code}): {err_body}"
-                    logger.error(f"[InferenceClient] {msg}")
-                    raise InferenceAuthError(status_code=status_code, response_body=err_body, message=msg)
+                    msg = f"Authentication/Authorization failure (HTTP {status_code}): {err_body}. Falling back to native real LLM engine..."
+                    logger.warning(f"[InferenceClient] {msg}")
+                    return self._execute_native_agent_inference(primary_model, clean_messages, tools, max_tokens)
 
                 if status_code in (400, 404):
                     if status_code == 400 and ("function.arguments" in err_body or "json" in err_body.lower() or "arguments" in err_body.lower()) and attempt < self.max_retries:

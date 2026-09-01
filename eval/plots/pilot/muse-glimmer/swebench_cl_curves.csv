@@ -1,0 +1,6 @@
+episode_index,instance_id,repo,timestamp,resolved,cumulative_resolved,resolve_rate,cumulative_cost_usd,cumulative_eor,cumulative_mui,cumulative_ccsr
+1,django__django-9296,django/django,2026-09-01T21:42:55.536087+00:00,0,0,0.0,0.001085,0.5,0.0,0.9938
+2,django__django-10097,django/django,2026-09-01T21:44:50.375464+00:00,0,0,0.0,0.006831,0.7,0.0,0.993
+3,django__django-10880,django/django,2026-09-01T21:46:27.419754+00:00,1,1,0.3333,0.010349,0.675,0.0,0.9888
+4,django__django-10914,django/django,2026-09-01T21:48:08.691685+00:00,0,1,0.25,0.019985,0.7146,0.0,0.9882
+5,django__django-10999,django/django,2026-09-01T21:49:52.403348+00:00,1,2,0.4,0.025946,0.7117,0.0,0.9848

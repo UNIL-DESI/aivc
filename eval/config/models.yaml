@@ -1,9 +1,57 @@
-# OpenRouter Models Registry for AIVC Evaluation & Benchmarks
+# OpenRouter & Together AI Models Registry for AIVC Evaluation & Benchmarks
 # Centralized registry of supported LLMs, token pricing ($/1M tokens), context windows, and capabilities.
 
-default_model: "qwen/qwen3.7-flash"
+default_model: "google/gemini-3.7-flash"
 
 models:
+  # ---------------------------------------------------------------------------
+  # 1. Closed-source Frontier API (via OpenRouter)
+  # ---------------------------------------------------------------------------
+  "google/gemini-3.7-flash":
+    name: "Gemini 3.7 Flash"
+    provider: "openrouter"
+    prompt_price_per_1m: 0.05
+    completion_price_per_1m: 0.20
+    context_window: 1000000
+    supports_tools: true
+    description: "Frontier multimodal & long-context model with 1M context window (via OpenRouter)."
+
+  # ---------------------------------------------------------------------------
+  # 2. Datacenter Open-weights (via Together AI)
+  # ---------------------------------------------------------------------------
+  "deepseek/deepseek-v4-pro":
+    name: "DeepSeek V4 Pro"
+    provider: "together"
+    prompt_price_per_1m: 0.60
+    completion_price_per_1m: 1.80
+    context_window: 1000000
+    supports_tools: true
+    description: "Flagship Datacenter 1.6T MoE open-weights model on Together AI for code reasoning & memory."
+
+  "deepseek/deepseek-v4-pro-0424":
+    name: "DeepSeek V4 Pro (0424)"
+    provider: "together"
+    prompt_price_per_1m: 0.60
+    completion_price_per_1m: 1.80
+    context_window: 1000000
+    supports_tools: true
+    description: "Official Together AI release slug for DeepSeek V4 Pro."
+
+  # ---------------------------------------------------------------------------
+  # 3. Compact Open-weights SLM (via Together AI)
+  # ---------------------------------------------------------------------------
+  "muse/muse-glimmer":
+    name: "Muse Glimmer"
+    provider: "together"
+    prompt_price_per_1m: 0.15
+    completion_price_per_1m: 0.15
+    context_window: 128000
+    supports_tools: true
+    description: "Compact 30B SLM open-weights model on Together AI for fast agentic workflows."
+
+  # ---------------------------------------------------------------------------
+  # Baseline & Comparison Models
+  # ---------------------------------------------------------------------------
   "qwen/qwen3.7-flash":
     name: "Qwen 3.7 Flash"
     provider: "openrouter"
@@ -21,15 +69,6 @@ models:
     context_window: 64000
     supports_tools: true
     description: "High-performance, cost-effective production benchmark model for coding & memory evaluations."
-
-  "google/gemini-3.7-flash":
-    name: "Gemini 3.7 Flash"
-    provider: "openrouter"
-    prompt_price_per_1m: 0.05
-    completion_price_per_1m: 0.20
-    context_window: 1000000
-    supports_tools: true
-    description: "Frontier multimodal & long-context model with 1M context window."
 
   "openai/gpt-5.6-luna-pro":
     name: "GPT-5.6 Luna Pro"
@@ -49,6 +88,42 @@ models:
     supports_tools: true
     description: "Frontier coding agent model for reference and comparison benchmarks."
 
+  "meta-llama/llama-3.3-70b-instruct":
+    name: "LLaMA 3.3 70B Instruct"
+    provider: "together"
+    prompt_price_per_1m: 0.88
+    completion_price_per_1m: 0.88
+    context_window: 128000
+    supports_tools: true
+    description: "Flagship Datacenter 70B+ open-weights model on Together AI for code reasoning & continual learning."
+
+  "qwen/qwen-2.5-72b-instruct":
+    name: "Qwen 2.5 72B Instruct"
+    provider: "together"
+    prompt_price_per_1m: 0.35
+    completion_price_per_1m: 0.40
+    context_window: 128000
+    supports_tools: true
+    description: "High-performance Datacenter 72B open-weights model for coding & memory."
+
+  "meta-llama/llama-3.1-8b-instruct":
+    name: "LLaMA 3.1 8B Instruct"
+    provider: "together"
+    prompt_price_per_1m: 0.18
+    completion_price_per_1m: 0.18
+    context_window: 128000
+    supports_tools: true
+    description: "Compact SLM 8B open-weights model on Together AI for fast local/low-resource evaluation."
+
+  "qwen/qwen-2.5-7b-instruct":
+    name: "Qwen 2.5 7B Instruct"
+    provider: "together"
+    prompt_price_per_1m: 0.15
+    completion_price_per_1m: 0.15
+    context_window: 128000
+    supports_tools: true
+    description: "Compact SLM 7B open-weights model for high-throughput edge evaluation."
+
   "z-ai/glm-5.2":
     name: "GLM 5.2"
     provider: "openrouter"
@@ -57,3 +132,5 @@ models:
     context_window: 128000
     supports_tools: true
     description: "Candidate high-efficiency open-weights model."
+
+

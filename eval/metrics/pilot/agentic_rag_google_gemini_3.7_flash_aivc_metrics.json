@@ -1,0 +1,35 @@
+{
+  "benchmark": "Agentic RAG Continual Learning",
+  "arm": "aivc",
+  "model_name": "google/gemini-3.7-flash",
+  "dataset_name": "aivc/swe-explore-continual-rag",
+  "timestamp": "2026-09-01T22:35:59.190936+00:00",
+  "summary": {
+    "total_queries": 19,
+    "resolved_queries": 17,
+    "unresolved_queries": 2,
+    "pass_rate": 0.8947,
+    "average_exploration_overhead_ratio_eor": 0.4755,
+    "average_memory_utility_index_mui": 0.117,
+    "average_cumulative_cost_savings_ratio_ccsr": 0.6021,
+    "tool_call_decay": {
+      "initial_query_tool_calls": 0,
+      "final_query_tool_calls": 7,
+      "decay_factor": 1.0
+    }
+  },
+  "retrieval_metrics": {
+    "mean_reciprocal_rank_mrr": 0.8684,
+    "precision_at_1": 0.8421,
+    "precision_at_3": 0.7369,
+    "recall_at_1": 0.2807,
+    "recall_at_3": 0.7369
+  },
+  "resource_consumption": {
+    "prompt_tokens": 375745,
+    "completion_tokens": 25520,
+    "total_tokens": 401265,
+    "total_cost_usd": 0.023893,
+    "baseline_estimated_cost_usd": 0.268
+  }
+}

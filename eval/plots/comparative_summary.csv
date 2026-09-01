@@ -1,5 +1,9 @@
-benchmark,model_name,total_tasks,successful_tasks,pass_rate,prompt_tokens,completion_tokens,total_tokens,prompt_cost_usd,completion_cost_usd,total_cost_usd,eor,mui,ccsr,is_sample_data
-dry_run,qwen/qwen3.7-flash,5,5,1.0,0,0,0,0.0,0.0,0.0,1.0,0.0,0.9935,False
-SWE-bench-CL Continual Learning,qwen/qwen3.7-flash,15,0,0.0,4940248,65796,5006044,0.148207,0.008553,0.15676,0.9528,0.0,0.9474,False
-DevBench,qwen/qwen3.7-flash,5,2,0.4,2117062,124172,2241234,0.063512,0.016142,0.079653,0.6139,0.3019,-0.4352,False
-Agentic RAG Continual Learning,qwen/qwen3.7-flash,0,0,0.0,2898448,71441,2969889,0.086953,0.009287,0.096241,0.7798,0.126,-3.1337,False
+benchmark,arm,model_name,total_tasks,successful_tasks,pass_rate,prompt_tokens,completion_tokens,total_tokens,prompt_cost_usd,completion_cost_usd,total_cost_usd,eor,mui,ccsr,is_sample_data
+SWE-bench-CL Continual Learning,aivc,muse/muse-glimmer,5,2,0.4,167316,5659,172975,0.005019,0.000736,0.025946,0.7117,0.0,0.9848,False
+SWE-bench-CL Continual Learning,naive,qwen/qwen3.7-flash,5,5,1.0,8400,1100,9500,0.000252,0.000143,0.000395,0.6667,0.0,0.9794,False
+DevBench,aivc,google/gemini-3.7-flash,15,15,0.6,284498,42298,326796,0.008535,0.005499,0.022685,0.3588,0.4924,0.5913,False
+DevBench,naive,qwen/qwen3.7-flash,4,4,0.2,6240,840,7080,0.000187,0.000109,0.000296,0.6667,0.0,0.9753,False
+Agentic RAG Continual Learning,aivc,muse/muse-glimmer,5,4,0.8,107744,6585,114329,0.003232,0.000856,0.004088,0.5723,0.1527,0.8384,False
+Agentic RAG Continual Learning,naive,qwen/qwen3.7-flash,3,3,1.0,4440,525,4965,0.000133,6.8e-05,0.000201,0.75,0.0,0.9911,False
+dry_run,aivc,qwen/qwen3.7-flash,5,5,1.0,0,0,0,0.0,0.0,0.0,1.0,0.0,0.9935,False
+InterCode BashEnv Gymnasium,aivc,qwen/qwen3.7-flash,5,5,1.0,2125,350,2475,6.4e-05,4.6e-05,0.000109,0.0,0.0,0.0,False

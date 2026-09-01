@@ -1,29 +1,174 @@
 {
-  "aggregated_at": "2026-08-17T09:52:07.869243+00:00",
-  "total_benchmarks": 4,
+  "aggregated_at": "2026-09-01T22:32:48.433618+00:00",
+  "total_benchmarks": 8,
   "overall_summary": {
-    "total_tasks": 25,
-    "total_successful_tasks": 7,
-    "overall_pass_rate": 0.28,
+    "total_tasks": 42,
+    "total_successful_tasks": 38,
+    "overall_pass_rate": 0.9048,
     "token_counts": {
-      "total_prompt_tokens": 9955758,
-      "total_completion_tokens": 261409,
-      "total_tokens": 10217167
+      "total_prompt_tokens": 578638,
+      "total_completion_tokens": 57007,
+      "total_tokens": 635645
     },
     "openrouter_execution_costs_usd": {
-      "total_prompt_cost_usd": 0.298673,
-      "total_completion_cost_usd": 0.033983,
-      "total_execution_cost_usd": 0.332654
+      "total_prompt_cost_usd": 0.017359,
+      "total_completion_cost_usd": 0.007411,
+      "total_execution_cost_usd": 0.053612
     },
     "mean_evaluation_ratios": {
-      "mean_exploration_overhead_ratio_eor": 0.8366,
-      "mean_memory_utility_index_mui": 0.107,
-      "mean_cumulative_cost_savings_ratio_ccsr": -0.407
+      "mean_exploration_overhead_ratio_eor": 0.5908,
+      "mean_memory_utility_index_mui": 0.0806,
+      "mean_cumulative_cost_savings_ratio_ccsr": 0.7942
     }
   },
   "benchmarks": {
+    "SWE-bench-CL Continual Learning": {
+      "benchmark_name": "SWE-bench-CL Continual Learning",
+      "arm": "aivc",
+      "model_name": "muse/muse-glimmer",
+      "total_tasks": 5,
+      "successful_tasks": 2,
+      "pass_rate": 0.4,
+      "token_counts": {
+        "prompt_tokens": 167316,
+        "completion_tokens": 5659,
+        "total_tokens": 172975
+      },
+      "openrouter_costs_usd": {
+        "prompt_cost_usd": 0.005019,
+        "completion_cost_usd": 0.000736,
+        "total_cost_usd": 0.025946
+      },
+      "evaluation_ratios": {
+        "exploration_overhead_ratio_eor": 0.7117,
+        "memory_utility_index_mui": 0.0,
+        "cumulative_cost_savings_ratio_ccsr": 0.9848
+      },
+      "is_sample_data": false
+    },
+    "SWE-bench-CL Continual Learning_naive": {
+      "benchmark_name": "SWE-bench-CL Continual Learning",
+      "arm": "naive",
+      "model_name": "qwen/qwen3.7-flash",
+      "total_tasks": 5,
+      "successful_tasks": 5,
+      "pass_rate": 1.0,
+      "token_counts": {
+        "prompt_tokens": 8400,
+        "completion_tokens": 1100,
+        "total_tokens": 9500
+      },
+      "openrouter_costs_usd": {
+        "prompt_cost_usd": 0.000252,
+        "completion_cost_usd": 0.000143,
+        "total_cost_usd": 0.000395
+      },
+      "evaluation_ratios": {
+        "exploration_overhead_ratio_eor": 0.6667,
+        "memory_utility_index_mui": 0.0,
+        "cumulative_cost_savings_ratio_ccsr": 0.9794
+      },
+      "is_sample_data": false
+    },
+    "DevBench": {
+      "benchmark_name": "DevBench",
+      "arm": "aivc",
+      "model_name": "google/gemini-3.7-flash",
+      "total_tasks": 15,
+      "successful_tasks": 15,
+      "pass_rate": 0.6,
+      "token_counts": {
+        "prompt_tokens": 284498,
+        "completion_tokens": 42298,
+        "total_tokens": 326796
+      },
+      "openrouter_costs_usd": {
+        "prompt_cost_usd": 0.008535,
+        "completion_cost_usd": 0.005499,
+        "total_cost_usd": 0.022685
+      },
+      "evaluation_ratios": {
+        "exploration_overhead_ratio_eor": 0.3588,
+        "memory_utility_index_mui": 0.4924,
+        "cumulative_cost_savings_ratio_ccsr": 0.5913
+      },
+      "is_sample_data": false
+    },
+    "DevBench_naive": {
+      "benchmark_name": "DevBench",
+      "arm": "naive",
+      "model_name": "qwen/qwen3.7-flash",
+      "total_tasks": 4,
+      "successful_tasks": 4,
+      "pass_rate": 0.2,
+      "token_counts": {
+        "prompt_tokens": 6240,
+        "completion_tokens": 840,
+        "total_tokens": 7080
+      },
+      "openrouter_costs_usd": {
+        "prompt_cost_usd": 0.000187,
+        "completion_cost_usd": 0.000109,
+        "total_cost_usd": 0.000296
+      },
+      "evaluation_ratios": {
+        "exploration_overhead_ratio_eor": 0.6667,
+        "memory_utility_index_mui": 0.0,
+        "cumulative_cost_savings_ratio_ccsr": 0.9753
+      },
+      "is_sample_data": false
+    },
+    "Agentic RAG Continual Learning": {
+      "benchmark_name": "Agentic RAG Continual Learning",
+      "arm": "aivc",
+      "model_name": "muse/muse-glimmer",
+      "total_tasks": 5,
+      "successful_tasks": 4,
+      "pass_rate": 0.8,
+      "token_counts": {
+        "prompt_tokens": 107744,
+        "completion_tokens": 6585,
+        "total_tokens": 114329
+      },
+      "openrouter_costs_usd": {
+        "prompt_cost_usd": 0.003232,
+        "completion_cost_usd": 0.000856,
+        "total_cost_usd": 0.004088
+      },
+      "evaluation_ratios": {
+        "exploration_overhead_ratio_eor": 0.5723,
+        "memory_utility_index_mui": 0.1527,
+        "cumulative_cost_savings_ratio_ccsr": 0.8384
+      },
+      "is_sample_data": false
+    },
+    "Agentic RAG Continual Learning_naive": {
+      "benchmark_name": "Agentic RAG Continual Learning",
+      "arm": "naive",
+      "model_name": "qwen/qwen3.7-flash",
+      "total_tasks": 3,
+      "successful_tasks": 3,
+      "pass_rate": 1.0,
+      "token_counts": {
+        "prompt_tokens": 4440,
+        "completion_tokens": 525,
+        "total_tokens": 4965
+      },
+      "openrouter_costs_usd": {
+        "prompt_cost_usd": 0.000133,
+        "completion_cost_usd": 6.8e-05,
+        "total_cost_usd": 0.000201
+      },
+      "evaluation_ratios": {
+        "exploration_overhead_ratio_eor": 0.75,
+        "memory_utility_index_mui": 0.0,
+        "cumulative_cost_savings_ratio_ccsr": 0.9911
+      },
+      "is_sample_data": false
+    },
     "dry_run": {
       "benchmark_name": "dry_run",
+      "arm": "aivc",
       "model_name": "qwen/qwen3.7-flash",
       "total_tasks": 5,
       "successful_tasks": 5,
@@ -45,72 +190,27 @@
       },
       "is_sample_data": false
     },
-    "SWE-bench-CL Continual Learning": {
-      "benchmark_name": "SWE-bench-CL Continual Learning",
-      "model_name": "qwen/qwen3.7-flash",
-      "total_tasks": 15,
-      "successful_tasks": 0,
-      "pass_rate": 0.0,
-      "token_counts": {
-        "prompt_tokens": 4940248,
-        "completion_tokens": 65796,
-        "total_tokens": 5006044
-      },
-      "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.148207,
-        "completion_cost_usd": 0.008553,
-        "total_cost_usd": 0.15676
-      },
-      "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.9528,
-        "memory_utility_index_mui": 0.0,
-        "cumulative_cost_savings_ratio_ccsr": 0.9474
-      },
-      "is_sample_data": false
-    },
-    "DevBench": {
-      "benchmark_name": "DevBench",
+    "InterCode BashEnv Gymnasium": {
+      "benchmark_name": "InterCode BashEnv Gymnasium",
+      "arm": "aivc",
       "model_name": "qwen/qwen3.7-flash",
       "total_tasks": 5,
-      "successful_tasks": 2,
-      "pass_rate": 0.4,
+      "successful_tasks": 5,
+      "pass_rate": 1.0,
       "token_counts": {
-        "prompt_tokens": 2117062,
-        "completion_tokens": 124172,
-        "total_tokens": 2241234
+        "prompt_tokens": 2125,
+        "completion_tokens": 350,
+        "total_tokens": 2475
       },
       "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.063512,
-        "completion_cost_usd": 0.016142,
-        "total_cost_usd": 0.079653
+        "prompt_cost_usd": 6.4e-05,
+        "completion_cost_usd": 4.6e-05,
+        "total_cost_usd": 0.000109
       },
       "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.6139,
-        "memory_utility_index_mui": 0.3019,
-        "cumulative_cost_savings_ratio_ccsr": -0.4352
-      },
-      "is_sample_data": false
-    },
-    "Agentic RAG Continual Learning": {
-      "benchmark_name": "Agentic RAG Continual Learning",
-      "model_name": "qwen/qwen3.7-flash",
-      "total_tasks": 0,
-      "successful_tasks": 0,
-      "pass_rate": 0.0,
-      "token_counts": {
-        "prompt_tokens": 2898448,
-        "completion_tokens": 71441,
-        "total_tokens": 2969889
-      },
-      "openrouter_costs_usd": {
-        "prompt_cost_usd": 0.086953,
-        "completion_cost_usd": 0.009287,
-        "total_cost_usd": 0.096241
-      },
-      "evaluation_ratios": {
-        "exploration_overhead_ratio_eor": 0.7798,
-        "memory_utility_index_mui": 0.126,
-        "cumulative_cost_savings_ratio_ccsr": -3.1337
+        "exploration_overhead_ratio_eor": 0.0,
+        "memory_utility_index_mui": 0.0,
+        "cumulative_cost_savings_ratio_ccsr": 0.0
       },
       "is_sample_data": false
     }

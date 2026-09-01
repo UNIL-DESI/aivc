@@ -1,8 +1,16 @@
-profile: "dry_run"
+profile: "pilot"
 
 eval:
   limit: 15
   max_turns: 50
   max_tokens: 4096
   max_cost_per_instance_usd: 0.10
-  model: "qwen/qwen3.7-flash"
+  model: "google/gemini-3.7-flash"
+  arms:
+    - "aivc"
+    - "naive"
+  models:
+    - "google/gemini-3.7-flash"
+    - "deepseek/deepseek-v4-pro"
+    - "muse/muse-glimmer"
+

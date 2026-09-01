@@ -4,8 +4,8 @@ stages:
     always_changed: true
     outs:
     - .dvc-viewer/hashes: {cache: false}
-  eval_swebench_cl:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns
+  eval_swebench_cl_aivc:
+    cmd: python eval/benchmarks/swebench_cl_runner.py --arm aivc --limit ${eval.limit} --max-turns
       ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
       --model ${eval.model}
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
@@ -15,8 +15,19 @@ stages:
     - eval/metrics/swebench_cl_metrics.json: {cache: false}
     plots:
     - eval/plots/swebench_cl_curves.csv: {cache: false}
-  eval_devbench:
-    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns
+  eval_swebench_cl_naive:
+    cmd: python eval/benchmarks/swebench_cl_runner.py --arm naive --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model ${eval.model}
+    params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
+      eval.model]
+    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl.hash]
+    metrics:
+    - eval/metrics/swebench_cl_naive_metrics.json: {cache: false}
+    plots:
+    - eval/plots/swebench_cl_naive_curves.csv: {cache: false}
+  eval_devbench_aivc:
+    cmd: python eval/benchmarks/devbench_runner.py --arm aivc --limit ${eval.limit} --max-turns
       ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
       --model ${eval.model}
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
@@ -26,8 +37,19 @@ stages:
     - eval/metrics/devbench_metrics.json: {cache: false}
     plots:
     - eval/plots/devbench_curves.csv: {cache: false}
-  eval_agentic_rag:
-    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns
+  eval_devbench_naive:
+    cmd: python eval/benchmarks/devbench_runner.py --arm naive --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model ${eval.model}
+    params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
+      eval.model]
+    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench.hash]
+    metrics:
+    - eval/metrics/devbench_naive_metrics.json: {cache: false}
+    plots:
+    - eval/plots/devbench_naive_curves.csv: {cache: false}
+  eval_agentic_rag_aivc:
+    cmd: python eval/benchmarks/agentic_rag_runner.py --arm aivc --limit ${eval.limit} --max-turns
       ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
       --model ${eval.model}
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
@@ -37,11 +59,25 @@ stages:
     - eval/metrics/agentic_rag_metrics.json: {cache: false}
     plots:
     - eval/plots/agentic_rag_curves.csv: {cache: false}
+  eval_agentic_rag_naive:
+    cmd: python eval/benchmarks/agentic_rag_runner.py --arm naive --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model ${eval.model}
+    params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd,
+      eval.model]
+    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag.hash]
+    metrics:
+    - eval/metrics/agentic_rag_naive_metrics.json: {cache: false}
+    plots:
+    - eval/plots/agentic_rag_naive_curves.csv: {cache: false}
   aggregate_metrics:
     cmd: python eval/scripts/aggregate_metrics.py
     deps: [eval/scripts/aggregate_metrics.py, eval/metrics/swebench_cl_metrics.json,
-      eval/metrics/devbench_metrics.json, eval/metrics/agentic_rag_metrics.json, .dvc-viewer/hashes/aggregate_metrics.hash]
+      eval/metrics/swebench_cl_naive_metrics.json, eval/metrics/devbench_metrics.json,
+      eval/metrics/devbench_naive_metrics.json, eval/metrics/agentic_rag_metrics.json,
+      eval/metrics/agentic_rag_naive_metrics.json, .dvc-viewer/hashes/aggregate_metrics.hash]
     metrics:
     - eval/metrics/summary_metrics.json: {cache: false}
     plots:
     - eval/plots/comparative_summary.csv: {cache: false}
+
