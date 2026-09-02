@@ -24,7 +24,7 @@ Use `dvc push` to send your updates to remote storage.
 ==================================================
 🔄 Syncing metrics and plots for completed stage 'dvc-code-analysis'...
 🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
-[cluster-draft/hjamet f753f0c] chore(ci): auto-sync dvc.lock [skip ci]
+[cluster-draft/hjamet c69c004] chore(ci): auto-sync dvc.lock [skip ci]
  1 file changed, 1 insertion(+), 1 deletion(-)
 ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
 ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync dvc.lock [skip ci]
@@ -36,6 +36,22 @@ Use `dvc push` to send your updates to remote storage.
 ==================================================
 Running stage 'eval_agentic_rag_deepseek_pro_aivc':
 > python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl
+Traceback (most recent call last):
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1586, in <module>
+    main()
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1526, in main
+    ep_record = runner.run_episode(
+                ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1002, in run_episode
+    api_response = self._call_openrouter(messages, tools_schema)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 923, in _call_openrouter
+    return self.client.complete(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/eval/inference_client.py", line 591, in complete
+    resolved_cfg = self.resolve_provider_config(primary_model, provider_override=provider)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'InferenceClient' object has no attribute 'resolve_provider_config'
 ============================================================================
       AIVC AGENTIC RAG CONTINUAL LEARNING BENCHMARK RUNNER
 ============================================================================
@@ -52,19 +68,12 @@ Curves Output  : eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv
 ============================================================================
 [CHECKPOINT] Loaded 0 previously processed queries from checkpoint.
 [DATASET] Loaded 15 continual learning multi-hop queries from 'aivc/swe-explore-continual-rag'.
-Traceback (most recent call last):
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1584, in <module>
-    main()
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1524, in main
-    ep_record = runner.run_episode(
-                ^^^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 944, in run_episode
-    env = self.get_env_for_repo(repo)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 888, in get_env_for_repo
-    self.repo_envs[repo] = AIVCContinualEnvironment(arm=self.arm, repo=repo)
-                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-TypeError: AIVCContinualEnvironment.__init__() got an unexpected keyword argument 'repo'
+
+============================================================================
+[EPISODE 01/15] Arm: AIVC | Query: RAG-CL-001 (django/django)
+Query: Trace the HTTP authentication middleware pipeline from request entry down to cryptographic session token hashi...
+============================================================================
+  [TURN 01/50] Calling deepseek/deepseek-v4-pro (Cost: $0.0000)...   [API Exception]: 'InferenceClient' object has no attribute 'resolve_provider_config'
 ERROR: failed to reproduce 'eval_agentic_rag_deepseek_pro_aivc': failed to run: python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl, exited with 1
 ❌ Stage eval_agentic_rag_deepseek_pro_aivc failed with code 255
 💾 Committing and pushing failure state to GitHub...

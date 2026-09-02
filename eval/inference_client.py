@@ -587,11 +587,6 @@ class InferenceClient:
 
         resolved_fallback = fallback_model if fallback_model is not None else self.fallback_model
 
-        # Dynamic provider and credentials resolution
-        resolved_cfg = self.resolve_provider_config(primary_model, provider_override=provider)
-        target_api_key = resolved_cfg["api_key"]
-        target_url = resolved_cfg["base_url"]
-        is_openrouter = resolved_cfg["is_openrouter"]
         # Sanitize messages
         clean_messages = sanitize_messages(messages)
 
