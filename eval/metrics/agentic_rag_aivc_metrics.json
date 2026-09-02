@@ -1,0 +1,52 @@
+{
+  "benchmark": "Agentic RAG Continual Learning",
+  "arm": "aivc",
+  "model_name": "google/gemini-3.7-flash",
+  "dataset_name": "aivc/swe-explore-continual-rag",
+  "timestamp": "2026-09-02T10:15:31.222720+00:00",
+  "summary": {
+    "total_queries": 15,
+    "resolved_queries": 14,
+    "unresolved_queries": 1,
+    "pass_rate": 0.9333,
+    "average_exploration_overhead_ratio_eor": 0.5529,
+    "average_memory_utility_index_mui": 0.0,
+    "average_cumulative_cost_savings_ratio_ccsr": -0.094,
+    "tool_call_decay": {
+      "initial_query_tool_calls": 11,
+      "final_query_tool_calls": 12,
+      "decay_factor": 1.0909
+    },
+    "total_tool_calls": 206,
+    "total_tool_interactions": 206,
+    "tool_interaction_breakdown": {
+      "recall": 16,
+      "view_file": 48,
+      "grep_search": 51,
+      "list_dir": 21,
+      "remember": 14,
+      "submit_answer": 14,
+      "get_recent_memories": 14,
+      "find_symbol": 28
+    }
+  },
+  "retrieval_metrics": {
+    "mean_reciprocal_rank_mrr": 0.9333,
+    "precision_at_1": 0.9333,
+    "precision_at_3": 0.9111,
+    "precision_at_5": 0.56,
+    "recall_at_1": 0.3111,
+    "recall_at_3": 0.9111,
+    "recall_at_5": 0.9333,
+    "ndcg_at_1": 0.0,
+    "ndcg_at_3": 0.0,
+    "ndcg_at_5": 0.0
+  },
+  "resource_consumption": {
+    "prompt_tokens": 469864,
+    "completion_tokens": 25230,
+    "total_tokens": 495094,
+    "total_cost_usd": 0.028539,
+    "baseline_estimated_cost_usd": 0.211
+  }
+}

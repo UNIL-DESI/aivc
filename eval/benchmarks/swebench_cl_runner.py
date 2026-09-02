@@ -250,7 +250,7 @@ class AIVCEnvironment:
         scored_results.sort(key=lambda x: x[0], reverse=True)
         top = scored_results[:limit] if scored_results else [(0, m) for m in list(mems.values())[-limit:]]
 
-        lines = [f"Found {len(top)} relevant memories for [{effective_repo}]:"]
+        lines = [f"Found {len(top)} relevant memories for [{target_repo}]:"]
         for _, m in top:
             snippet = m["note"][:160].replace("\n", " ") + "..."
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}): {snippet}")
@@ -262,9 +262,9 @@ class AIVCEnvironment:
         all_mems.reverse()
         slice_mems = all_mems[offset: offset + limit]
         if not slice_mems:
-            return f"No memories found for repository '{effective_repo}' in range."
+            return f"No memories found for repository '{target_repo}' in range."
 
-        lines = [f"Recent memories for [{effective_repo}] (offset={offset}, limit={limit}):"]
+        lines = [f"Recent memories for [{target_repo}] (offset={offset}, limit={limit}):"]
         for m in slice_mems:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]})")
         return "\n".join(lines)
@@ -274,7 +274,7 @@ class AIVCEnvironment:
         mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
-        effective_repo = repo or self.repo
+        effective_repo = target_repo
         if mem.get("repo") and mem.get("repo") != effective_repo:
             return f"Memory ID '{memory_id}' belongs to repository '{mem.get('repo')}' (access denied for '{effective_repo}')."
         return f"# {mem['title']}\n**Repository**: {mem.get('repo', effective_repo)}\n**Created**: {mem['timestamp']}\n**Read Files**: {mem['read_files']}\n**Edited Files**: {mem['edited_files']}\n\n{mem['note']}"
@@ -283,8 +283,8 @@ class AIVCEnvironment:
         target_repo = repo or self.current_repo
         hist = self.repo_stores.get(target_repo, {}).get("file_snapshots", {}).get(filepath, [])
         if not hist:
-            return f"No AIVC version history for file '{filepath}' in repository '{effective_repo}'."
-        lines = [f"Version history for '{filepath}' in [{effective_repo}]:"]
+            return f"No AIVC version history for file '{filepath}' in repository '{target_repo}'."
+        lines = [f"Version history for '{filepath}' in [{target_repo}]:"]
         for h in hist:
             lines.append(f"- Memory [{h['memory_id']}] at {h['timestamp']}: {h['note_ref']}")
         return "\n".join(lines)
@@ -294,7 +294,7 @@ class AIVCEnvironment:
         mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
-        effective_repo = repo or self.repo
+        effective_repo = target_repo
         if mem.get("repo") and mem.get("repo") != effective_repo:
             return f"Memory ID '{memory_id}' belongs to repository '{mem.get('repo')}' (access denied for '{effective_repo}')."
         return f"// Snapshot of {filepath} in [{effective_repo}] associated with {memory_id} ({mem['title']})\n// Memory context:\n{mem['note'][:300]}"
@@ -982,7 +982,7 @@ class SWEBenchCLRunner:
         hints_text = instance.get("hints_text", "")
 
         # Reset memory state if running in naive stateless baseline mode
-        aivc_env.reset_if_stateless()
+        self.aivc_env.reset_if_stateless()
 
         print(f"\n" + "=" * 70)
         print(f"[EPISODE {episode_index}] Arm: {self.arm.upper()} | Instance: {instance_id} ({repo})")

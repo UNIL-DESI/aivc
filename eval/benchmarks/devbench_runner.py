@@ -306,6 +306,11 @@ class DevBenchAIVCEnvironment:
             except Exception:
                 pass
 
+    def reset_if_stateless(self) -> None:
+        """For naive baseline arm, clear memories between episodes."""
+        if self.arm in ("naive", "baseline"):
+            self.reset()
+
     @property
     def memories(self) -> Dict[str, Dict[str, Any]]:
         return self.repo_stores.get(self.current_repo_id, {}).get("memories", {})
@@ -330,13 +335,11 @@ class DevBenchAIVCEnvironment:
         store["counter"] += 1
         mem_id = f"dev-mem-{store['counter']:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
-        effective_repo = repo_id or self.repo_id
 
         record = {
             "id": mem_id,
             "title": title,
             "note": note,
-            "repo_id": effective_repo,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
             "repo_id": target_repo,
@@ -349,7 +352,7 @@ class DevBenchAIVCEnvironment:
                 store["file_snapshots"][f] = []
             store["file_snapshots"][f].append({
                 "memory_id": mem_id,
-                "repo_id": effective_repo,
+                "repo_id": target_repo,
                 "timestamp": now_str,
                 "note_ref": title,
             })
@@ -393,7 +396,7 @@ class DevBenchAIVCEnvironment:
         if not slice_mems:
             return "No memories found in range.", []
 
-        lines = [f"Recent SDLC memories for [{effective_repo}] (offset={offset}, limit={limit}):"]
+        lines = [f"Recent SDLC memories for [{target_repo}] (offset={offset}, limit={limit}):"]
         for m in slice_mems:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]})")
         return "\n".join(lines), slice_mems
@@ -403,7 +406,7 @@ class DevBenchAIVCEnvironment:
         mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
-        effective_repo = repo_id or self.repo_id
+        effective_repo = target_repo
         if mem.get("repo_id") and mem.get("repo_id") != effective_repo:
             return f"Memory ID '{memory_id}' belongs to repository '{mem.get('repo_id')}' (access denied for '{effective_repo}')."
         return f"# {mem['title']}\n**Repository**: {mem.get('repo_id', effective_repo)}\n**Created**: {mem['timestamp']}\n**Read Files**: {mem['read_files']}\n**Edited Files**: {mem['edited_files']}\n\n{mem['note']}"
@@ -412,8 +415,8 @@ class DevBenchAIVCEnvironment:
         target_repo = repo_id or self.current_repo_id
         hist = self.repo_stores.get(target_repo, {}).get("file_snapshots", {}).get(filepath, [])
         if not hist:
-            return f"No AIVC version history for file '{filepath}' in repository '{effective_repo}'."
-        lines = [f"Version history for '{filepath}' in [{effective_repo}]:"]
+            return f"No AIVC version history for file '{filepath}' in repository '{target_repo}'."
+        lines = [f"Version history for '{filepath}' in [{target_repo}]:"]
         for h in hist:
             lines.append(f"- Memory [{h['memory_id']}] at {h['timestamp']}: {h['note_ref']}")
         return "\n".join(lines)
@@ -423,7 +426,7 @@ class DevBenchAIVCEnvironment:
         mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
-        return f"// Snapshot of {filepath} associated with {memory_id} ({mem['title']})\n// Memory context:\n{mem['note'][:300]}"
+        return f"// Snapshot of {filepath} in [{target_repo}] associated with {memory_id} ({mem['title']})\n// Memory context:\n{mem['note'][:300]}"
 
     def execute_tool(self, tool_name: str, arguments: Dict[str, Any], phase_context: Dict[str, Any]) -> Tuple[str, List[str]]:
         returned_files: List[str] = []
@@ -909,7 +912,7 @@ class DevBenchRunner:
         initial_files = phase_config.get("initial_files", [])
 
         # Reset memory state if running in naive stateless baseline mode
-        aivc_env.reset_if_stateless()
+        self.aivc_env.reset_if_stateless()
 
         start_time = time.time()
 

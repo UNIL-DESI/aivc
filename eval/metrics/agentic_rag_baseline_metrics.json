@@ -3,7 +3,7 @@
   "arm": "baseline",
   "model_name": "google/gemini-3.7-flash",
   "dataset_name": "aivc/swe-explore-continual-rag",
-  "timestamp": "2026-09-02T10:27:01.855023+00:00",
+  "timestamp": "2026-09-02T10:27:01.855174+00:00",
   "summary": {
     "total_queries": 15,
     "resolved_queries": 15,
