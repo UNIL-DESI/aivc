@@ -172,37 +172,49 @@ stages:
     deps:
     - path: .dvc-viewer/hashes/aggregate_metrics.hash
       hash: md5
-      md5: 6b69f1cd08707dfd493132ce31d14089
+      md5: cb8a0d20d0c691a619179b2de791aee9
       size: 64
-    - path: eval/metrics/agentic_rag_metrics.json
+    - path: eval/metrics/agentic_rag_aivc_metrics.json
       hash: md5
-      md5: 3405957d53fd4e592ef5820cb37eff14
-      size: 1528
-    - path: eval/metrics/devbench_metrics.json
+      md5: 5afd6959d1040903cd3aa1deae48cc74
+      size: 1435
+    - path: eval/metrics/agentic_rag_baseline_metrics.json
       hash: md5
-      md5: a5be8492c26053d6e25ff74f83d52145
-      size: 790142
-    - path: eval/metrics/swebench_cl_metrics.json
+      md5: b7addbc93958798a1e4270140e9c986b
+      size: 1348
+    - path: eval/metrics/devbench_aivc_metrics.json
       hash: md5
-      md5: 567e4ef39da93483558a7a6bedf6f01d
-      size: 1363
+      md5: 424b0ac7a5940a96d2d39b765e1f1adc
+      size: 261281
+    - path: eval/metrics/devbench_baseline_metrics.json
+      hash: md5
+      md5: 7cfcbe880dbfb135c4c82f72c63e0b58
+      size: 173057
+    - path: eval/metrics/swebench_cl_aivc_metrics.json
+      hash: md5
+      md5: 9712a9a88a4f0e76b9b9bdb03c4a580b
+      size: 1308
+    - path: eval/metrics/swebench_cl_baseline_metrics.json
+      hash: md5
+      md5: 0cfb1444487d745fb81e9faba6e394fb
+      size: 1212
     - path: eval/scripts/aggregate_metrics.py
       hash: md5
-      md5: 24b6d2d418512077dca0865785d46d2e
-      size: 2129
+      md5: c8ea761d24f65520859488aebd0b5455
+      size: 2273
     outs:
     - path: eval/metrics/summary_metrics.json
       hash: md5
-      md5: 9d20926275c39eb99531cea727e5e491
-      size: 5826
+      md5: 2368464bb1935246b4d5283147ab5880
+      size: 19059
     - path: eval/metrics/tool_interactions.jsonl
       hash: md5
-      md5: b0e2dc43e52621eaac208d55065b5755
-      size: 1549151
+      md5: 7da0a26715ebdabf100072bb96185460
+      size: 844418
     - path: eval/plots/comparative_summary.csv
       hash: md5
-      md5: b781649a365c8e080562d54dc68d7816
-      size: 883
+      md5: ce2d8288f01588c31610a9800eda58a5
+      size: 2658
   prep_agentic_rag:
     cmd: python eval/scripts/prep_benchmark.py --benchmark agentic_rag
     deps:
