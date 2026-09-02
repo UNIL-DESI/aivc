@@ -1505,9 +1505,8 @@ def main() -> None:
 
     # Instantiate Runner
     runner = SWEBenchCLRunner(
-        arm=parsed_args.arm,
-        model_name=cfg.model,
         arm=effective_arm,
+        model_name=cfg.model,
         api_key=api_key,
         max_turns=cfg.max_turns,
         max_tokens=cfg.max_tokens,
