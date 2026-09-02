@@ -3,7 +3,7 @@
   "arm": "baseline",
   "dataset_name": "thomasjoshi/swe-bench-cl",
   "model_name": "google/gemini-3.7-flash",
-  "timestamp": "2026-09-02T12:32:49.624869+00:00",
+  "timestamp": "2026-09-02T12:32:49.624331+00:00",
   "summary": {
     "total_instances": 15,
     "resolved_instances": 14,

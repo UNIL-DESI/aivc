@@ -132,7 +132,7 @@ stages:
     outs:
     - path: .dvc-viewer/hashes
       hash: md5
-      md5: cf7eba77e75bbc9ab16679f3a0f19e68.dir
+      md5: d45ef3d50f9427c616a3bab533e38855.dir
       size: 3568
       nfiles: 20
   eval_agentic_rag:
@@ -403,3 +403,79 @@ stages:
       hash: md5
       md5: 02291dabd2d5456d99ef42bce1d8ed9e
       size: 1957
+  eval_swebench_cl_aivc:
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit 15 --max-turns 50 
+      --max-tokens 4096 --max-cost 0.1 --arm aivc --metrics-file 
+      eval/metrics/swebench_cl_aivc_metrics.json --curves-file 
+      eval/plots/swebench_cl_aivc_curves.csv --checkpoint-file 
+      eval/checkpoints/swebench_cl_aivc_checkpoint.jsonl
+    deps:
+    - path: .dvc-viewer/hashes/eval_swebench_cl_aivc.hash
+      hash: md5
+      md5: 37795f5babc187c320a79d5eefd6a14e
+      size: 64
+    - path: eval/benchmarks/swebench_cl_runner.py
+      hash: md5
+      md5: 6fb972352ab83b74ba80bac7aced62ed
+      size: 69565
+    - path: eval/setup/swebench_cl_ready.flag
+      hash: md5
+      md5: 18e6719ec196cdd50c3d8cb906c57afe
+      size: 237
+    params:
+      params.yaml:
+        eval.limit: 15
+        eval.max_cost_per_instance_usd: 0.1
+        eval.max_tokens: 4096
+        eval.max_turns: 50
+    outs:
+    - path: eval/metrics/swebench_cl_aivc_metrics.json
+      hash: md5
+      md5: 9712a9a88a4f0e76b9b9bdb03c4a580b
+      size: 1308
+    - path: eval/metrics/swebench_cl_aivc_tool_interactions.jsonl
+      hash: md5
+      md5: 6f08d6447f96771b168ad80da06be338
+      size: 140743
+    - path: eval/plots/swebench_cl_aivc_curves.csv
+      hash: md5
+      md5: 15cd0418e12805451fdaa17e1d4a9747
+      size: 1822
+  eval_swebench_cl_baseline:
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit 15 --max-turns 50 
+      --max-tokens 4096 --max-cost 0.1 --arm baseline --metrics-file 
+      eval/metrics/swebench_cl_baseline_metrics.json --curves-file 
+      eval/plots/swebench_cl_baseline_curves.csv --checkpoint-file 
+      eval/checkpoints/swebench_cl_baseline_checkpoint.jsonl
+    deps:
+    - path: .dvc-viewer/hashes/eval_swebench_cl_baseline.hash
+      hash: md5
+      md5: 37795f5babc187c320a79d5eefd6a14e
+      size: 64
+    - path: eval/benchmarks/swebench_cl_runner.py
+      hash: md5
+      md5: 6fb972352ab83b74ba80bac7aced62ed
+      size: 69565
+    - path: eval/setup/swebench_cl_ready.flag
+      hash: md5
+      md5: 18e6719ec196cdd50c3d8cb906c57afe
+      size: 237
+    params:
+      params.yaml:
+        eval.limit: 15
+        eval.max_cost_per_instance_usd: 0.1
+        eval.max_tokens: 4096
+        eval.max_turns: 50
+    outs:
+    - path: eval/metrics/swebench_cl_baseline_metrics.json
+      hash: md5
+      md5: 0cfb1444487d745fb81e9faba6e394fb
+      size: 1212
+    - path: eval/metrics/swebench_cl_baseline_tool_interactions.jsonl
+      hash: md5
+      md5: f5711ed6b989e560861ad335bb10c59c
+      size: 123693
+    - path: eval/plots/swebench_cl_baseline_curves.csv
+      hash: md5
+      md5: c4f7ab7454e1796a9b09489a17c472ae
+      size: 1891

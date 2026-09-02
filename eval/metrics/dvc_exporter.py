@@ -97,7 +97,6 @@ class BenchmarkMetrics:
             "benchmark_name": self.benchmark_name,
             "arm": self.arm,
             "model_name": self.model_name,
-            "arm": self.arm,
             "total_tasks": self.total_tasks,
             "successful_tasks": self.successful_tasks,
             "pass_rate": round(self.pass_rate, 4),
@@ -357,71 +356,102 @@ class DVCExporter:
                 or 0.0
             )
 
+            def _safe_float(val: Any, default: float = 0.0) -> float:
+                if val is None:
+                    return default
+                if isinstance(val, (int, float)):
+                    return float(val)
+                if isinstance(val, dict):
+                    for k in ("decay_factor", "rate", "decay_rate", "factor", "value", "decay", "eor", "mui", "ccsr", "mrr"):
+                        if k in val and isinstance(val[k], (int, float, str)):
+                            try:
+                                return float(val[k])
+                            except (ValueError, TypeError):
+                                pass
+                    return default
+                try:
+                    return float(val)
+                except (ValueError, TypeError):
+                    return default
+
+            def _safe_int(val: Any, default: int = 0) -> int:
+                if val is None:
+                    return default
+                if isinstance(val, int):
+                    return val
+                if isinstance(val, float):
+                    return int(val)
+                if isinstance(val, dict):
+                    for k in ("total", "count", "calls", "interactions", "value"):
+                        if k in val and isinstance(val[k], (int, float, str)):
+                            try:
+                                return int(val[k])
+                            except (ValueError, TypeError):
+                                pass
+                    return default
+                try:
+                    return int(val)
+                except (ValueError, TypeError):
+                    return default
+
             ratios_data = data.get("evaluation_ratios") or data.get("metrics") or {}
-            eor = float(
+            eor = _safe_float(
                 ratios_data.get("exploration_overhead_ratio_eor")
                 or data.get("eor")
                 or data.get("exploration_overhead_ratio")
                 or summary_block.get("average_exploration_overhead_ratio_eor")
                 or summary_block.get("avg_eor")
-                or 0.0
             )
-            mui = float(
+            mui = _safe_float(
                 ratios_data.get("memory_utility_index_mui")
                 or data.get("mui")
                 or data.get("memory_utility_index")
                 or summary_block.get("average_memory_utility_index_mui")
                 or summary_block.get("avg_mui")
-                or 0.0
             )
-            ccsr = float(
+            ccsr = _safe_float(
                 ratios_data.get("cumulative_cost_savings_ratio_ccsr")
                 or data.get("ccsr")
                 or data.get("cumulative_cost_savings_ratio")
                 or summary_block.get("average_cumulative_cost_savings_ratio_ccsr")
                 or summary_block.get("overall_ccsr")
-                or 0.0
             )
-            decay = float(
+            decay = _safe_float(
                 ratios_data.get("tool_call_decay")
                 or data.get("tool_call_decay")
                 or summary_block.get("tool_call_decay")
-                or 0.0
             )
 
             ret_data = data.get("retrieval_metrics") or {}
-            ndcg1 = float(ret_data.get("ndcg_at_1") or data.get("ndcg_at_1") or 0.0)
-            ndcg3 = float(ret_data.get("ndcg_at_3") or data.get("ndcg_at_3") or 0.0)
-            ndcg5 = float(ret_data.get("ndcg_at_5") or data.get("ndcg_at_5") or 0.0)
-            p1 = float(ret_data.get("precision_at_1") or data.get("precision_at_1") or 0.0)
-            p3 = float(ret_data.get("precision_at_3") or data.get("precision_at_3") or 0.0)
-            p5 = float(ret_data.get("precision_at_5") or data.get("precision_at_5") or 0.0)
-            r1 = float(ret_data.get("recall_at_1") or data.get("recall_at_1") or 0.0)
-            r3 = float(ret_data.get("recall_at_3") or data.get("recall_at_3") or 0.0)
-            r5 = float(ret_data.get("recall_at_5") or data.get("recall_at_5") or 0.0)
-            mrr = float(ret_data.get("mean_reciprocal_rank_mrr") or data.get("mrr") or 0.0)
+            ndcg1 = _safe_float(ret_data.get("ndcg_at_1") or data.get("ndcg_at_1"))
+            ndcg3 = _safe_float(ret_data.get("ndcg_at_3") or data.get("ndcg_at_3"))
+            ndcg5 = _safe_float(ret_data.get("ndcg_at_5") or data.get("ndcg_at_5"))
+            p1 = _safe_float(ret_data.get("precision_at_1") or data.get("precision_at_1"))
+            p3 = _safe_float(ret_data.get("precision_at_3") or data.get("precision_at_3"))
+            p5 = _safe_float(ret_data.get("precision_at_5") or data.get("precision_at_5"))
+            r1 = _safe_float(ret_data.get("recall_at_1") or data.get("recall_at_1"))
+            r3 = _safe_float(ret_data.get("recall_at_3") or data.get("recall_at_3"))
+            r5 = _safe_float(ret_data.get("recall_at_5") or data.get("recall_at_5"))
+            mrr = _safe_float(ret_data.get("mean_reciprocal_rank_mrr") or data.get("mrr"))
 
             tool_telem = data.get("tool_telemetry") or {}
-            tot_tool_calls = int(
+            tot_tool_calls = _safe_int(
                 tool_telem.get("total_tool_calls")
                 or summary_block.get("total_tool_calls")
                 or data.get("total_tool_calls")
-                or 0
             )
-            tot_tool_interactions = int(
+            tot_tool_interactions = _safe_int(
                 tool_telem.get("total_tool_interactions")
                 or summary_block.get("total_tool_interactions")
                 or data.get("total_tool_interactions")
-                or 0
             )
 
-            arm_val = data.get("arm") or ("naive" if "_naive" in filename else "aivc")
+            arm_val = arm
 
             return BenchmarkMetrics(
                 benchmark_name=b_name,
                 arm=arm_val,
                 model_name=m_name,
-                arm=arm,
                 total_tasks=tot_tasks,
                 successful_tasks=succ_tasks,
                 pass_rate=pass_rate,
@@ -456,7 +486,7 @@ class DVCExporter:
             sample = SAMPLE_BENCHMARKS.get(bmark_key, SAMPLE_BENCHMARKS["dry_run"])
             bm = BenchmarkMetrics(**sample)
             bm.benchmark_name = bmark_key
-            bm.arm = "naive" if "_naive" in filename else "aivc"
+            bm.arm = inferred_arm
             bm.is_sample_data = True
             return bm
 
@@ -570,7 +600,6 @@ class DVCExporter:
             "benchmark",
             "arm",
             "model_name",
-            "arm",
             "total_tasks",
             "successful_tasks",
             "pass_rate",

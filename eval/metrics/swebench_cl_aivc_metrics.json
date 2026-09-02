@@ -3,43 +3,44 @@
   "arm": "aivc",
   "dataset_name": "thomasjoshi/swe-bench-cl",
   "model_name": "google/gemini-3.7-flash",
-  "timestamp": "2026-09-02T11:40:33.925586+00:00",
+  "timestamp": "2026-09-02T12:12:43.894143+00:00",
   "summary": {
     "total_instances": 15,
-    "resolved_instances": 12,
-    "unresolved_instances": 3,
-    "resolve_rate_pass_at_1": 0.8,
-    "average_exploration_overhead_ratio_eor": 0.839,
+    "resolved_instances": 13,
+    "unresolved_instances": 2,
+    "resolve_rate_pass_at_1": 0.8667,
+    "average_exploration_overhead_ratio_eor": 0.8167,
     "average_memory_utility_index_mui": 0.0,
-    "average_cumulative_cost_savings_ratio_ccsr": 0.9155,
-    "total_tool_calls": 258,
-    "total_tool_interactions": 258,
+    "average_cumulative_cost_savings_ratio_ccsr": 0.9092,
+    "total_tool_calls": 267,
+    "total_tool_interactions": 267,
     "tool_interaction_breakdown": {
-      "recall": 15,
-      "grep_search": 124,
-      "view_file": 70,
-      "list_dir": 25,
-      "remember": 12,
-      "submit_patch": 12
+      "recall": 18,
+      "grep_search": 120,
+      "view_file": 73,
+      "list_dir": 29,
+      "remember": 13,
+      "submit_patch": 13,
+      "get_file_history_metadata": 1
     }
   },
   "retrieval_metrics": {
-    "mean_reciprocal_rank_mrr": 0.335,
+    "mean_reciprocal_rank_mrr": 0.3,
     "precision_at_1": 0.0667,
-    "precision_at_3": 0.2444,
-    "precision_at_5": 0.24,
+    "precision_at_3": 0.2,
+    "precision_at_5": 0.2133,
     "recall_at_1": 0.0667,
-    "recall_at_3": 0.4667,
-    "recall_at_5": 0.7333,
+    "recall_at_3": 0.3333,
+    "recall_at_5": 0.5333,
     "ndcg_at_1": 0.0667,
-    "ndcg_at_3": 0.3754,
-    "ndcg_at_5": 0.5102
+    "ndcg_at_3": 0.2754,
+    "ndcg_at_5": 0.4435
   },
   "resource_consumption": {
-    "prompt_tokens": 1025983,
-    "completion_tokens": 79696,
-    "total_tokens": 1105679,
-    "aivc_total_cost_usd": 0.067239,
-    "baseline_estimated_cost_usd": 5.558395
+    "prompt_tokens": 1182545,
+    "completion_tokens": 82470,
+    "total_tokens": 1265015,
+    "aivc_total_cost_usd": 0.07562,
+    "baseline_estimated_cost_usd": 6.355075
   }
 }

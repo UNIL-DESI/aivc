@@ -1,5 +1,15 @@
-benchmark,model_name,total_tasks,successful_tasks,pass_rate,prompt_tokens,completion_tokens,total_tokens,prompt_cost_usd,completion_cost_usd,total_cost_usd,eor,mui,ccsr,ndcg_at_1,ndcg_at_3,ndcg_at_5,precision_at_3,recall_at_3,mrr,total_tool_interactions,is_sample_data
-dry_run,qwen/qwen3.7-flash,5,5,1.0,0,0,0,0.0,0.0,0.0,1.0,0.0,0.9935,0.0,0.0,0.0,0.0,0.0,0.0,0,False
-SWE-bench-CL Continual Learning,qwen/qwen3.7-flash,30,2,0.0667,9536260,187627,9723887,0.286088,0.024392,0.310477,0.896,0.0131,0.9029,0.2333,0.6,0.9234,0.4667,0.8333,0.4972,1441,False
-DevBench,qwen/qwen3.7-flash,5,4,0.8,3441122,203570,3644692,0.103234,0.026464,0.129699,0.6022,0.2911,-0.7293,0.35,0.4561,0.5834,0.35,0.5167,0.5067,516,False
-Agentic RAG Continual Learning,qwen/qwen3.7-flash,0,0,0.0,2419957,68471,2488428,0.072599,0.008901,0.0815,0.6959,0.2145,-2.2568,0.0,0.0,0.0,0.7333,0.7333,0.8461,481,False
+benchmark,arm,model_name,total_tasks,successful_tasks,pass_rate,prompt_tokens,completion_tokens,total_tokens,prompt_cost_usd,completion_cost_usd,total_cost_usd,baseline_estimated_cost_usd,eor,mui,ccsr,tool_call_decay,ndcg_at_1,ndcg_at_3,ndcg_at_5,precision_at_3,recall_at_3,mrr,total_tool_calls,total_tool_interactions,is_sample_data
+agentic_rag,aivc,google/gemini-3.7-flash,15,14,0.9333,469864,25230,495094,0.023493,0.005046,0.028539,0.211,0.5529,0.0,-0.094,1.0909,0.0,0.0,0.0,0.9111,0.9111,0.9333,206,206,False
+agentic_rag,baseline,google/gemini-3.7-flash,15,15,1.0,259019,22037,281056,0.012951,0.004407,0.017358,0.211,0.7945,0.0,0.3115,1.0,0.0,0.0,0.0,0.9778,0.9778,1.0,186,186,False
+agentic_rag,baseline,google/gemini-3.7-flash,15,15,1.0,259019,22037,281056,0.012951,0.004407,0.017358,0.211,0.7945,0.0,0.3115,1.0,0.0,0.0,0.0,0.9778,0.9778,1.0,186,186,False
+agentic_rag,baseline,qwen/qwen3.7-flash,3,3,1.0,4440,525,4965,0.000222,0.000105,0.000327,0.045,0.75,0.0,0.9911,1.0,0.0,0.0,0.0,1.0,1.0,1.0,0,0,False
+devbench,aivc,google/gemini-3.7-flash,15,15,0.6,496827,67262,564089,0.024841,0.013452,0.038294,0.0555,0.6244,0.2764,0.31,0.0,0.2667,0.3333,0.4768,0.2444,0.3667,0.4475,202,202,False
+devbench,baseline,google/gemini-3.7-flash,15,15,0.6,122237,42121,164358,0.006112,0.008424,0.014534,0.0555,0.9269,0.0,0.7381,0.0,1.0,1.0,1.0,0.6222,1.0,1.0,128,128,False
+devbench,aivc,google/gemini-3.7-flash,15,15,0.6,496827,67262,564089,0.024841,0.013452,0.038294,0.0555,0.6244,0.2764,0.31,0.0,0.2667,0.3333,0.4768,0.2444,0.3667,0.4475,202,202,False
+devbench,baseline,qwen/qwen3.7-flash,4,4,0.2,6240,840,7080,0.000312,0.000168,0.000296,0.012,0.6667,0.0,0.9753,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,False
+dry_run,aivc,qwen/qwen3.7-flash,5,5,1.0,0,0,0,0.0,0.0,0.0,0.0,1.0,0.0,0.9935,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,False
+InterCode BashEnv Gymnasium,aivc,qwen/qwen3.7-flash,5,5,1.0,2125,350,2475,0.000106,7e-05,0.000109,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,10,0,False
+swebench_cl,aivc,google/gemini-3.7-flash,15,13,0.8667,1182545,82470,1265015,0.059127,0.016494,0.07562,6.355075,0.8167,0.0,0.9092,0.0,0.0667,0.2754,0.4435,0.2,0.3333,0.3,267,267,False
+swebench_cl,baseline,google/gemini-3.7-flash,15,14,0.9333,959711,72500,1032211,0.047986,0.0145,0.062486,5.191055,0.9336,0.0,0.8821,0.0,1.0,1.0,1.0,0.7334,1.0,1.0,253,253,False
+swebench_cl,baseline,google/gemini-3.7-flash,15,14,0.9333,959711,72500,1032211,0.047986,0.0145,0.062486,5.191055,0.9336,0.0,0.8821,0.0,1.0,1.0,1.0,0.7334,1.0,1.0,253,253,False
+swebench_cl,baseline,qwen/qwen3.7-flash,5,5,1.0,8400,1100,9500,0.00042,0.00022,0.000395,0.0575,0.6667,0.0,0.9794,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,False
