@@ -698,7 +698,6 @@ class SWEBenchCLRunner:
         self,
         arm: str = "aivc",
         model_name: str = "qwen/qwen3.7-flash",
-        arm: str = "aivc",
         api_key: str = "",
         max_turns: int = 50,
         max_tokens: int = 4096,
@@ -712,7 +711,6 @@ class SWEBenchCLRunner:
     ):
         self.arm = arm.lower()
         self.model_name = model_name
-        self.arm = arm.lower()
         self.api_key = api_key
         self.max_turns = max_turns
         self.max_tokens = max_tokens
@@ -721,7 +719,9 @@ class SWEBenchCLRunner:
         self.run_id = run_id
         self.workspace_dir = workspace_dir
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
-        self.aivc_env = AIVCEnvironment(run_id=self.run_id, workspace_dir=self.workspace_dir)
+        self.repo_envs: Dict[str, AIVCEnvironment] = {}
+        self._aivc_env = AIVCEnvironment(run_id=self.run_id, workspace_dir=self.workspace_dir)
+        self.repo_envs["default"] = self._aivc_env
 
         # Dynamic system prompt & tools schema based on arm
         self.system_prompt = get_aivc_system_prompt(benchmark_type="swebench_cl", arm=self.arm)
@@ -752,7 +752,15 @@ class SWEBenchCLRunner:
     @property
     def aivc_env(self) -> AIVCEnvironment:
         """Default/fallback environment property."""
+        if hasattr(self, "_aivc_env") and self._aivc_env is not None:
+            return self._aivc_env
         return self.get_env_for_repo("default")
+
+    @aivc_env.setter
+    def aivc_env(self, value: AIVCEnvironment) -> None:
+        self._aivc_env = value
+        if hasattr(self, "repo_envs"):
+            self.repo_envs["default"] = value
 
     def _calculate_step_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_cost = (prompt_tokens / 1_000_000.0) * self.prompt_price_per_1m

@@ -861,7 +861,9 @@ class AgenticRAGRunner:
         self.workspace_dir = workspace_dir
 
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
-        self.env = AIVCContinualEnvironment(arm=self.arm, run_id=self.run_id, workspace_dir=self.workspace_dir)
+        self.repo_envs: Dict[str, AIVCContinualEnvironment] = {}
+        self._env = AIVCContinualEnvironment(arm=self.arm, run_id=self.run_id, workspace_dir=self.workspace_dir)
+        self.repo_envs["default"] = self._env
 
         models_cfg = load_models_config()
         self.prompt_price_1m, self.completion_price_1m, _ = get_model_pricing(model_name, models_cfg)
@@ -889,7 +891,15 @@ class AgenticRAGRunner:
     @property
     def env(self) -> AIVCContinualEnvironment:
         """Default/fallback environment property."""
+        if hasattr(self, "_env") and self._env is not None:
+            return self._env
         return self.get_env_for_repo("default")
+
+    @env.setter
+    def env(self, value: AIVCContinualEnvironment) -> None:
+        self._env = value
+        if hasattr(self, "repo_envs"):
+            self.repo_envs["default"] = value
 
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_c = (prompt_tokens / 1_000_000.0) * self.prompt_price_1m

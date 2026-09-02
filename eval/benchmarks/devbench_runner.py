@@ -613,7 +613,6 @@ class DevBenchRunner:
         self,
         arm: str = "aivc",
         model_name: str = "qwen/qwen3.7-flash",
-        arm: str = "aivc",
         checkpoint_path: Optional[Path] = None,
         metrics_path: Optional[Path] = None,
         plots_path: Optional[Path] = None,
@@ -630,7 +629,6 @@ class DevBenchRunner:
     ):
         self.arm = arm.lower()
         self.model_name = model_name
-        self.arm = arm.lower()
         self.api_key = api_key
         self.max_turns = max_turns
         self.max_tokens = max_tokens
@@ -653,7 +651,9 @@ class DevBenchRunner:
         self.completion_price_per_1m = completion_price_per_1m if completion_price_per_1m is not None else (model_spec.completion_price_per_1m if model_spec else 0.13)
 
         self.checkpoint_manager = DevBenchCheckpointManager(self.checkpoint_path)
-        self.aivc_env = DevBenchAIVCEnvironment(run_id=self.run_id, workspace_dir=self.workspace_dir)
+        self.repo_envs: Dict[str, DevBenchAIVCEnvironment] = {}
+        self._aivc_env = DevBenchAIVCEnvironment(run_id=self.run_id, workspace_dir=self.workspace_dir)
+        self.repo_envs["default"] = self._aivc_env
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
 
         # Resilient Inference Client
@@ -677,7 +677,15 @@ class DevBenchRunner:
     @property
     def aivc_env(self) -> DevBenchAIVCEnvironment:
         """Default/fallback environment property."""
+        if hasattr(self, "_aivc_env") and self._aivc_env is not None:
+            return self._aivc_env
         return self.get_env_for_repo("default")
+
+    @aivc_env.setter
+    def aivc_env(self, value: DevBenchAIVCEnvironment) -> None:
+        self._aivc_env = value
+        if hasattr(self, "repo_envs"):
+            self.repo_envs["default"] = value
 
     def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_cost = (prompt_tokens / 1_000_000.0) * self.prompt_price_per_1m
@@ -1426,9 +1434,8 @@ def main() -> None:
                     pass
 
     runner = DevBenchRunner(
-        arm=parsed_args.arm,
-        model_name=cfg.model,
         arm=effective_arm,
+        model_name=cfg.model,
         checkpoint_path=checkpoint_path,
         metrics_path=metrics_path,
         plots_path=plots_path,
