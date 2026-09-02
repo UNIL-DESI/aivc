@@ -330,6 +330,11 @@ def load_profile_yaml(profile_name: str, config_dir: Optional[Path] = None) -> D
     base_dir = config_dir or CONFIG_DIR
     profile_path = base_dir / "profiles" / f"{profile_name}.yaml"
     if not profile_path.exists():
+        # Fallback resolution for aliases
+        for fallback in ["dry_run", "pilot", "eval", "production"]:
+            alt_path = base_dir / "profiles" / f"{fallback}.yaml"
+            if alt_path.exists():
+                return load_yaml_file(alt_path)
         raise FileNotFoundError(f"Evaluation profile '{profile_name}' not found at: {profile_path}")
     return load_yaml_file(profile_path)
 
