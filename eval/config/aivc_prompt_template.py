@@ -475,6 +475,41 @@ BASH_TOOL_SCHEMA: Dict[str, Any] = {
 }
 
 
+BASELINE_BENCHMARK_PROMPT: str = """# Autonomous Software Engineering Agent (Stateless Baseline)
+
+You are an expert autonomous software engineer solving benchmark engineering tasks across sequential episodes.
+You operate in a **stateless, ephemeral environment** with zero persistent memory between tasks.
+
+## Workspace & Execution Tools:
+1. `view_file(file_path: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file in the workspace.
+2. `grep_search(query: str, search_path: str = ".")`: Search for text patterns across the repository.
+3. `list_dir(directory: str = ".")`: List files and subdirectories.
+4. `submit_patch(patch: str, explanation: str)`: Submit the final git patch and complete the task.
+
+## Mandatory Execution Protocol:
+- **Codebase Exploration**: Search and inspect files using `grep_search`, `list_dir`, and `view_file` to diagnose the issue.
+- **Root Cause & Fix**: Implement a clean and robust bug fix.
+- **Final Submission**: When your patch is ready and verified, call `submit_patch` with the unified diff and explanation.
+"""
+
+BASELINE_DEVBENCH_SYSTEM_PROMPT: str = """# Autonomous Software Engineer for DevBench SDLC (Stateless Baseline)
+
+You are an expert autonomous software engineer working through the Software Development Life Cycle (SDLC).
+Each SDLC phase is executed independently and statelessly with zero persistent memory transfer across phases.
+
+## Workspace Tools:
+1. `view_file(filepath: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file.
+2. `grep_search(query: str, search_path: str = ".")`: Search pattern across codebase.
+3. `list_dir(directory: str = ".")`: List contents of a directory.
+4. `submit_phase_deliverable(deliverable: str, notes: str)`: Submit the final deliverable for the current SDLC phase.
+
+## Protocol Rules:
+- Inspect codebase and configuration files using `grep_search`, `list_dir`, and `view_file`.
+- Draft and implement the required deliverable for the active SDLC phase.
+- Call `submit_phase_deliverable` when the phase goal is achieved.
+"""
+
+
 # ---------------------------------------------------------------------------
 # 4. Helper Functions
 # ---------------------------------------------------------------------------
@@ -483,14 +518,22 @@ def get_aivc_system_prompt(
     benchmark_mode: bool = False,
     benchmark_type: Optional[str] = None,
     task_instructions: Optional[str] = None,
+    arm: str = "aivc",
 ) -> str:
-    """Return the system prompt for AIVC, optionally including benchmark instructions."""
-    if benchmark_type in ("devbench", "sdlc"):
-        base = AIVC_DEVBENCH_SYSTEM_PROMPT
-    elif benchmark_mode or benchmark_type in ("swebench_cl", "swebench", "agentic_rag", "rag"):
-        base = AIVC_BENCHMARK_PROMPT
+    """Return the system prompt for AIVC or baseline, optionally including benchmark instructions."""
+    is_baseline = str(arm).lower() in ("baseline", "naive")
+    if is_baseline:
+        if benchmark_type in ("devbench", "sdlc"):
+            base = BASELINE_DEVBENCH_SYSTEM_PROMPT
+        else:
+            base = BASELINE_BENCHMARK_PROMPT
     else:
-        base = AIVC_SYSTEM_PROMPT
+        if benchmark_type in ("devbench", "sdlc"):
+            base = AIVC_DEVBENCH_SYSTEM_PROMPT
+        elif benchmark_mode or benchmark_type in ("swebench_cl", "swebench", "agentic_rag", "rag"):
+            base = AIVC_BENCHMARK_PROMPT
+        else:
+            base = AIVC_SYSTEM_PROMPT
 
     if task_instructions:
         return f"{base}\n\n## Current Task Context:\n{task_instructions}"
@@ -501,9 +544,15 @@ def get_benchmark_tools_schema(
     include_workspace: bool = True,
     include_bash: bool = False,
     benchmark_type: str = "swebench_cl",
+    arm: str = "aivc",
 ) -> List[Dict[str, Any]]:
     """Return harmonized list of tool schemas for benchmark agent execution."""
-    tools: List[Dict[str, Any]] = copy.deepcopy(AIVC_CORE_TOOLS_SCHEMA)
+    tools: List[Dict[str, Any]] = []
+    is_baseline = str(arm).lower() in ("baseline", "naive")
+
+    if not is_baseline:
+        tools.extend(copy.deepcopy(AIVC_CORE_TOOLS_SCHEMA))
+
     if include_workspace:
         ws_tools = [t for t in WORKSPACE_TOOLS_SCHEMA if t["function"]["name"] != "submit_patch"]
         tools.extend(copy.deepcopy(ws_tools))
@@ -516,3 +565,4 @@ def get_benchmark_tools_schema(
     if include_bash:
         tools.append(copy.deepcopy(BASH_TOOL_SCHEMA))
     return tools
+

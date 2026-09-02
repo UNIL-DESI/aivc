@@ -11,6 +11,8 @@ from .aivc_prompt_template import (
     AIVC_DEVBENCH_SYSTEM_PROMPT,
     AIVC_SYSTEM_PROMPT,
     BASH_TOOL_SCHEMA,
+    BASELINE_BENCHMARK_PROMPT,
+    BASELINE_DEVBENCH_SYSTEM_PROMPT,
     DEVBENCH_DELIVERABLE_TOOL_SCHEMA,
     WORKSPACE_TOOLS_SCHEMA,
     get_aivc_system_prompt,
@@ -43,7 +45,11 @@ try:
         InferenceError,
         InferenceRateLimitError,
         InferenceTimeoutError,
+        OPENROUTER_BASE_URL,
         OpenRouterClient,
+        TOGETHER_BASE_URL,
+        TOGETHER_BATCH_ENDPOINT,
+        TOGETHER_FILES_ENDPOINT,
         sanitize_messages,
     )
 except (ImportError, ValueError):
@@ -56,7 +62,11 @@ except (ImportError, ValueError):
             InferenceError,
             InferenceRateLimitError,
             InferenceTimeoutError,
+            OPENROUTER_BASE_URL,
             OpenRouterClient,
+            TOGETHER_BASE_URL,
+            TOGETHER_BATCH_ENDPOINT,
+            TOGETHER_FILES_ENDPOINT,
             sanitize_messages,
         )
     except ImportError:
@@ -68,9 +78,14 @@ except (ImportError, ValueError):
             InferenceError,
             InferenceRateLimitError,
             InferenceTimeoutError,
+            OPENROUTER_BASE_URL,
             OpenRouterClient,
+            TOGETHER_BASE_URL,
+            TOGETHER_BATCH_ENDPOINT,
+            TOGETHER_FILES_ENDPOINT,
             sanitize_messages,
         )
+
 
 __all__ = [
     "AIVC_BENCHMARK_PROMPT",
@@ -106,4 +121,9 @@ __all__ = [
     "InferenceRateLimitError",
     "InferenceTimeoutError",
     "sanitize_messages",
+    "OPENROUTER_BASE_URL",
+    "TOGETHER_BASE_URL",
+    "TOGETHER_BATCH_ENDPOINT",
+    "TOGETHER_FILES_ENDPOINT",
 ]
+

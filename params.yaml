@@ -1,8 +1,24 @@
-profile: "dry_run"
+profile: "eval"
+
+models:
+  - "google/gemini-3.7-flash"
+  - "deepseek/deepseek-v4-pro"
+  - "meta-models/Muse-Glimmer-30B"
+
+variants:
+  - "aivc"
+  - "baseline"
 
 eval:
   limit: 15
   max_turns: 50
   max_tokens: 4096
   max_cost_per_instance_usd: 0.10
-  model: "qwen/qwen3.7-flash"
+  models:
+    - "google/gemini-3.7-flash"
+    - "deepseek/deepseek-v4-pro"
+    - "meta-models/Muse-Glimmer-30B"
+  variants:
+    - "aivc"
+    - "baseline"
+

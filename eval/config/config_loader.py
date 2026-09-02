@@ -4,6 +4,11 @@ AIVC Evaluation Configuration Resolver & Loader.
 Handles hierarchical configuration loading, profile resolution (dry_run vs production),
 CLI argument parsing, and dataclass typing for benchmark runners.
 
+Supported Providers & Routing:
+- 'openrouter': Routes to OpenRouter API (https://openrouter.ai/api/v1/chat/completions) via OPENROUTER_API_KEY.
+- 'together': Routes to Together AI API (https://api.together.ai/v1/chat/completions) via TOGETHER_API_KEY.
+  Includes support for Together AI Batch Inference API with 50% pricing discount.
+
 Hierarchical Resolution Order:
 1. Hardcoded Baseline Defaults
 2. Repository `params.yaml` configuration
@@ -72,8 +77,11 @@ class ModelSpec:
     provider: str = "openrouter"
     prompt_price_per_1m: float = 0.0
     completion_price_per_1m: float = 0.0
+    batch_prompt_price_per_1m: Optional[float] = None
+    batch_completion_price_per_1m: Optional[float] = None
     context_window: int = 128000
     supports_tools: bool = True
+    role: Optional[str] = None
     description: str = ""
 
     @property
@@ -88,11 +96,27 @@ class ModelSpec:
         """Full namespaced slug replacing '/' with '_' (e.g. 'qwen_qwen3.7-flash')."""
         return self.model_id.replace("/", "_")
 
-    def compute_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
-        """Calculate total inference cost in USD for the given token counts."""
-        prompt_cost = (prompt_tokens / 1_000_000.0) * self.prompt_price_per_1m
-        completion_cost = (completion_tokens / 1_000_000.0) * self.completion_price_per_1m
+    def compute_cost(
+        self,
+        prompt_tokens: int,
+        completion_tokens: int,
+        is_batch: bool = False,
+    ) -> float:
+        """
+        Calculate total inference cost in USD for the given token counts.
+        
+        Args:
+            prompt_tokens: Number of prompt / input tokens.
+            completion_tokens: Number of completion / output tokens.
+            is_batch: If True and batch pricing is configured, apply batch discounted rates (e.g. 50% off).
+        """
+        p_price = self.batch_prompt_price_per_1m if (is_batch and self.batch_prompt_price_per_1m is not None) else self.prompt_price_per_1m
+        c_price = self.batch_completion_price_per_1m if (is_batch and self.batch_completion_price_per_1m is not None) else self.completion_price_per_1m
+
+        prompt_cost = (prompt_tokens / 1_000_000.0) * p_price
+        completion_cost = (completion_tokens / 1_000_000.0) * c_price
         return prompt_cost + completion_cost
+
 
 
 @dataclass
@@ -118,7 +142,8 @@ class EvalProfileConfig:
     dry_run: bool
     model: str
     models: List[str] = field(default_factory=list)
-    limit: Optional[int] = 15
+    limit: Optional[int] = 30
+    limits: Dict[str, int] = field(default_factory=dict)
     reset_checkpoint: bool = True
     max_turns: int = 50
     max_tokens: int = 4096
@@ -126,6 +151,18 @@ class EvalProfileConfig:
     raw_paths: Dict[str, str] = field(default_factory=dict)
     model_spec: Optional[ModelSpec] = None
     registry: Dict[str, ModelSpec] = field(default_factory=dict)
+
+    def get_benchmark_limit(self, benchmark_name: Optional[str] = None) -> Optional[int]:
+        """
+        Get the instance limit for a specific benchmark, falling back to global limit.
+        """
+        if benchmark_name:
+            if benchmark_name in self.limits:
+                return self.limits[benchmark_name]
+            norm_name = benchmark_name.lower().replace("-", "_")
+            if norm_name in self.limits:
+                return self.limits[norm_name]
+        return self.limit
 
     def get_paths(self, model_name: Optional[str] = None, base_dir: Optional[Path] = None) -> PathConfig:
         """
@@ -192,6 +229,7 @@ class EvalProfileConfig:
             "model": self.model,
             "models": self.models,
             "limit": self.limit,
+            "limits": self.limits,
             "reset_checkpoint": self.reset_checkpoint,
             "max_turns": self.max_turns,
             "max_tokens": self.max_tokens,
@@ -200,8 +238,12 @@ class EvalProfileConfig:
             "model_spec": {
                 "name": self.model_spec.name,
                 "model_id": self.model_spec.model_id,
+                "provider": self.model_spec.provider,
+                "role": self.model_spec.role,
                 "prompt_price_per_1m": self.model_spec.prompt_price_per_1m,
                 "completion_price_per_1m": self.model_spec.completion_price_per_1m,
+                "batch_prompt_price_per_1m": self.model_spec.batch_prompt_price_per_1m,
+                "batch_completion_price_per_1m": self.model_spec.batch_completion_price_per_1m,
                 "context_window": self.model_spec.context_window,
             } if self.model_spec else None,
         }
@@ -261,19 +303,26 @@ def load_models_registry(models_path: Optional[Path] = None) -> Dict[str, ModelS
     for model_id, info in models_dict.items():
         if not isinstance(info, dict):
             continue
+        batch_p = info.get("batch_prompt_price_per_1m")
+        batch_c = info.get("batch_completion_price_per_1m")
+        role = info.get("role")
         spec = ModelSpec(
             model_id=model_id,
             name=info.get("name", model_id),
             provider=info.get("provider", "openrouter"),
             prompt_price_per_1m=float(info.get("prompt_price_per_1m", 0.0)),
             completion_price_per_1m=float(info.get("completion_price_per_1m", 0.0)),
+            batch_prompt_price_per_1m=float(batch_p) if batch_p is not None else None,
+            batch_completion_price_per_1m=float(batch_c) if batch_c is not None else None,
             context_window=int(info.get("context_window", 128000)),
             supports_tools=bool(info.get("supports_tools", True)),
+            role=str(role) if role is not None else None,
             description=str(info.get("description", "")),
         )
         registry[model_id] = spec
 
     return registry
+
 
 
 def load_profile_yaml(profile_name: str, config_dir: Optional[Path] = None) -> Dict[str, Any]:
@@ -326,8 +375,18 @@ def resolve_config(
     profile_data = load_profile_yaml(selected_profile, base_cfg_dir)
 
     # 3. Hierarchical Merge: Profile -> Params.yaml -> CLI Overrides
-    is_dry_run = profile_data.get("dry_run", selected_profile == "dry_run")
+    is_dry_run = (selected_profile == "dry_run") or bool(profile_data.get("dry_run", False))
     
+    # Benchmark limits resolution
+    profile_limits = profile_data.get("limits", {})
+    limits_dict: Dict[str, int] = {}
+    if isinstance(profile_limits, dict):
+        for k, v in profile_limits.items():
+            try:
+                limits_dict[str(k)] = int(v)
+            except (ValueError, TypeError):
+                pass
+
     # Model resolution
     resolved_model = (
         model
@@ -340,16 +399,18 @@ def resolve_config(
     if resolved_model not in models_list:
         models_list.insert(0, resolved_model)
 
-    # Limit resolution
+    # Limit resolution: CLI overrides -> Profile YAML (limit/limits) -> params.yaml -> baseline default
     resolved_limit: Optional[int]
     if limit is not None:
         resolved_limit = limit
     elif "limit" in profile_data:
-        resolved_limit = profile_data["limit"]
+        resolved_limit = int(profile_data["limit"])
+    elif limits_dict:
+        resolved_limit = max(limits_dict.values())
     elif "limit" in params_eval:
-        resolved_limit = params_eval["limit"]
+        resolved_limit = int(params_eval["limit"])
     else:
-        resolved_limit = 15 if is_dry_run else 273
+        resolved_limit = 30 if is_dry_run else 273
 
     # Reset checkpoint resolution
     resolved_reset: bool
@@ -404,6 +465,7 @@ def resolve_config(
         model=resolved_model,
         models=models_list,
         limit=resolved_limit,
+        limits=limits_dict,
         reset_checkpoint=resolved_reset,
         max_turns=resolved_max_turns,
         max_tokens=resolved_max_tokens,
@@ -425,8 +487,8 @@ def add_eval_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         "--profile",
         type=str,
         default=None,
-        choices=["dry_run", "production"],
-        help="Evaluation execution profile (dry_run: 15 tasks/fast; production: 273 tasks/full paper).",
+        choices=["dry_run", "pilot", "production"],
+        help="Evaluation execution profile (dry_run / pilot: fast N=15-30; production: 273 tasks/full paper).",
     )
     group.add_argument(
         "--model",
@@ -549,6 +611,8 @@ if __name__ == "__main__":
     print(f"  Active Model        : {config.model}")
     print(f"  Supported Models    : {config.models}")
     print(f"  Instance Limit (N)  : {config.limit}")
+    if config.limits:
+        print(f"  Benchmark Limits    : {config.limits}")
     print(f"  Reset Checkpoint    : {config.reset_checkpoint}")
     print(f"  Max Turns / Episode : {config.max_turns}")
     print(f"  Max Tokens / Step   : {config.max_tokens}")

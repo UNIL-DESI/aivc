@@ -9,7 +9,7 @@ This module implements quantitative metrics for benchmark evaluation:
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 
 # Default pricing map per 1M tokens (USD)
@@ -30,6 +30,10 @@ DEFAULT_PRICING: Dict[str, Dict[str, float]] = {
         "prompt_price_per_1m": 0.05,
         "completion_price_per_1m": 0.20,
     },
+    "google/gemini-3.7-flash": {
+        "prompt_price_per_1m": 0.05,
+        "completion_price_per_1m": 0.20,
+    },
     "anthropic/claude-sonnet-5": {
         "prompt_price_per_1m": 3.00,
         "completion_price_per_1m": 15.00,
@@ -38,7 +42,14 @@ DEFAULT_PRICING: Dict[str, Dict[str, float]] = {
         "prompt_price_per_1m": 0.10,
         "completion_price_per_1m": 0.40,
     },
+    "meta-models/Muse-Glimmer-30B": {
+        "prompt_price_per_1m": 0.35,
+        "completion_price_per_1m": 1.50,
+        "batch_prompt_price_per_1m": 0.175,
+        "batch_completion_price_per_1m": 0.75,
+    },
 }
+
 
 EXPLORATION_TOOLS: Set[str] = {
     "grep_search",
@@ -149,6 +160,125 @@ def compute_ccsr(
         return 0.0
     savings = (baseline_cost - aivc_cost) / float(baseline_cost)
     return round(savings, 4)
+
+
+def extract_files_from_patch(patch_str: str) -> List[str]:
+    """Extract modified/inspected file paths from git patch text."""
+    if not patch_str:
+        return []
+    files: List[str] = []
+    for line in patch_str.splitlines():
+        line = line.strip()
+        if line.startswith("diff --git"):
+            parts = line.split()
+            if len(parts) >= 4:
+                f_path = parts[3].lstrip("b/").lstrip("a/")
+                if f_path and f_path not in files:
+                    files.append(f_path)
+        elif line.startswith("--- a/") or line.startswith("+++ b/"):
+            f_path = line[6:].strip()
+            if f_path and f_path not in files and f_path != "/dev/null":
+                files.append(f_path)
+    return files
+
+
+def compute_ndcg_at_k(
+    retrieved_files: List[str],
+    ground_truth_files: List[str],
+    k: int = 5,
+) -> float:
+    """
+    Compute Normalized Discounted Cumulative Gain at rank k (NDCG@k).
+    Binary relevance: 1 if file in ground_truth_files, 0 otherwise.
+    """
+    import math
+
+    def _norm(p: str) -> str:
+        return p.strip().replace("\\", "/").lower().lstrip("./")
+
+    norm_gt = set(_norm(f) for f in ground_truth_files if f.strip())
+    if not norm_gt or k <= 0:
+        return 0.0
+
+    norm_retrieved = [_norm(f) for f in retrieved_files if f.strip()][:k]
+
+    dcg = 0.0
+    for i, rf in enumerate(norm_retrieved):
+        rel = 1.0 if any(rf == gf or rf.endswith(gf) or gf.endswith(rf) for gf in norm_gt) else 0.0
+        dcg += rel / math.log2(i + 2)
+
+    ideal_hits = min(k, len(norm_gt))
+    idcg = sum(1.0 / math.log2(i + 2) for i in range(ideal_hits))
+
+    if idcg <= 0.0:
+        return 0.0
+    return round(min(1.0, dcg / idcg), 4)
+
+
+def compute_retrieval_metrics(
+    retrieved_files: List[Any],
+    ground_truth_files: List[Any],
+    k_list: Tuple[int, ...] = (1, 3, 5),
+) -> Dict[str, float]:
+    """
+    Compute Precision@k, Recall@k, F1@k, NDCG@k, and MRR (Mean Reciprocal Rank).
+    Normalizes file path comparisons (case-insensitive, forward slashes).
+    """
+    def _flatten_files(items: Any) -> List[str]:
+        flat: List[str] = []
+        if items is None:
+            return flat
+        if isinstance(items, (str, bytes)):
+            s = items.decode("utf-8", errors="replace") if isinstance(items, bytes) else items
+            s = s.strip()
+            if s:
+                flat.append(s)
+        elif isinstance(items, (list, tuple, set)):
+            for it in items:
+                flat.extend(_flatten_files(it))
+        elif isinstance(items, dict):
+            for v in items.values():
+                flat.extend(_flatten_files(v))
+        return flat
+
+    def _norm(p: str) -> str:
+        return p.strip().replace("\\", "/").lower().lstrip("./")
+
+    clean_gt = _flatten_files(ground_truth_files)
+    clean_retrieved = _flatten_files(retrieved_files)
+
+    norm_gt = set(_norm(f) for f in clean_gt if f.strip())
+    norm_retrieved = [_norm(f) for f in clean_retrieved if f.strip()]
+
+    metrics: Dict[str, float] = {}
+
+    # MRR (Mean Reciprocal Rank)
+    mrr = 0.0
+    for rank, rf in enumerate(norm_retrieved, 1):
+        if any(rf == gf or rf.endswith(gf) or gf.endswith(rf) for gf in norm_gt):
+            mrr = 1.0 / rank
+            break
+    metrics["mrr"] = round(mrr, 4)
+
+    # Precision@k, Recall@k, F1@k, NDCG@k
+    for k in k_list:
+        top_k = norm_retrieved[:k]
+        hits = 0
+        for rf in top_k:
+            if any(rf == gf or rf.endswith(gf) or gf.endswith(rf) for gf in norm_gt):
+                hits += 1
+
+        prec_k = hits / float(k) if k > 0 else 0.0
+        rec_k = hits / float(len(norm_gt)) if norm_gt else (1.0 if hits > 0 else 0.0)
+        f1_k = (2 * prec_k * rec_k) / (prec_k + rec_k) if (prec_k + rec_k) > 0 else 0.0
+        ndcg_k = compute_ndcg_at_k(norm_retrieved, list(norm_gt), k=k)
+
+        metrics[f"precision_at_{k}"] = round(min(1.0, prec_k), 4)
+        metrics[f"recall_at_{k}"] = round(min(1.0, rec_k), 4)
+        metrics[f"f1_at_{k}"] = round(min(1.0, f1_k), 4)
+        metrics[f"ndcg_at_{k}"] = ndcg_k
+
+    return metrics
 
 
 @dataclass

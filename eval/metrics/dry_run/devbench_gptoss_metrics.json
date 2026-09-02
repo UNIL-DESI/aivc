@@ -1,0 +1,87 @@
+{
+  "benchmark_name": "DevBench",
+  "model_name": "openai/gpt-oss-20b",
+  "timestamp": "2026-08-17T13:58:46.051604+00:00",
+  "summary": {
+    "total_repos": 5,
+    "completed_sdlc_repos": 0,
+    "sdlc_completion_rate": 0.0,
+    "total_phases_executed": 1,
+    "phase_pass_rate": 1.0,
+    "total_prompt_tokens": 1447,
+    "total_completion_tokens": 3701,
+    "total_tokens": 5148,
+    "total_cost_usd": 0.00251,
+    "baseline_cost_usd": 0.003,
+    "overall_ccsr": 0.1633,
+    "avg_eor": 0.0,
+    "avg_mui": 0.0
+  },
+  "phase_breakdown": {
+    "software_design": {
+      "total_executions": 1,
+      "passed_executions": 1,
+      "pass_rate": 1.0,
+      "avg_tokens": 5148.0,
+      "avg_cost_usd": 0.00251,
+      "avg_eor": 0.0,
+      "avg_mui": 0.0
+    },
+    "environment_setup": {
+      "total_executions": 0,
+      "passed_executions": 0,
+      "pass_rate": 0.0,
+      "avg_tokens": 0.0,
+      "avg_cost_usd": 0.0,
+      "avg_eor": 0.0,
+      "avg_mui": 0.0
+    },
+    "code_implementation": {
+      "total_executions": 0,
+      "passed_executions": 0,
+      "pass_rate": 0.0,
+      "avg_tokens": 0.0,
+      "avg_cost_usd": 0.0,
+      "avg_eor": 0.0,
+      "avg_mui": 0.0
+    },
+    "unit_testing": {
+      "total_executions": 0,
+      "passed_executions": 0,
+      "pass_rate": 0.0,
+      "avg_tokens": 0.0,
+      "avg_cost_usd": 0.0,
+      "avg_eor": 0.0,
+      "avg_mui": 0.0
+    }
+  },
+  "detailed_records": [
+    {
+      "phase_index": 1,
+      "repo_id": "devbench-python-calculator",
+      "domain": "Python",
+      "phase": "software_design",
+      "status": "PASSED",
+      "timestamp": "2026-08-17T13:58:46.050619+00:00",
+      "prompt": "Design architecture, class hierarchy, AST parser specification, and state machine for Python Calculator.",
+      "turns_count": 1,
+      "tool_calls_count": 3,
+      "tools": [
+        "recall",
+        "remember",
+        "submit_phase_deliverable"
+      ],
+      "prompt_tokens": 1447,
+      "completion_tokens": 3701,
+      "total_tokens": 5148,
+      "cost_usd": 0.00251,
+      "baseline_phase_cost": 0.003,
+      "eor": 0.0,
+      "mui": 0.0,
+      "ccsr": 0.1633,
+      "duration_sec": 27.443,
+      "recalled_memories": 1,
+      "used_memories": 0
+    }
+  ]
+}

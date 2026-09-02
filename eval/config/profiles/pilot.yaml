@@ -1,0 +1,31 @@
+﻿# AIVC Evaluation Profile: Pilot Run Testing
+# Optimized for quick validation, smoke tests, and N=15 benchmark iterations.
+
+profile: "pilot"
+
+# Target reference models evaluated in pilot run
+model: "google/gemini-3.7-flash"
+models:
+  - "google/gemini-3.7-flash"
+  - "deepseek/deepseek-v4-flash-0731"
+  - "deepseek/deepseek-v4-pro"
+  - "meta-models/Muse-Glimmer-30B"
+
+# Execution limits per benchmark (N=15)
+limits:
+  agentic_rag: 15
+  swebench_cl: 15
+  devbench: 15
+
+limit: 15
+reset_checkpoint: true
+max_turns: 50
+max_tokens: 4096
+max_cost_per_instance_usd: 0.10
+
+# Output paths
+paths:
+  checkpoints_dir: "eval/checkpoints/pilot"
+  metrics_dir: "eval/metrics/pilot"
+  plots_dir: "eval/plots/pilot"
+  scratch_dir: "eval/scratch/pilot"

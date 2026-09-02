@@ -25,10 +25,12 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import sys
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -43,11 +45,19 @@ for p in [str(REPO_ROOT), str(EVAL_DIR), str(BENCHMARK_DIR)]:
         sys.path.insert(0, p)
 
 # Centralized imports from eval suite
+from config import (
+    InferenceClient,
+    add_eval_args,
+    load_benchmark_config,
+    load_env_file,
+    load_models_registry,
+    load_params_yaml,
+    resolve_config,
+    sanitize_messages,
+)
 from config_loader import (
     get_model_pricing,
-    load_env_file,
     load_models_config,
-    load_params_yaml,
     resolve_benchmark_paths,
 )
 from aivc_prompt_template import (
@@ -57,10 +67,6 @@ from aivc_prompt_template import (
     NAIVE_RAG_TOOLS_SCHEMA,
     format_agentic_rag_prompt,
 )
-from inference_client import (
-    InferenceClient,
-    sanitize_messages,
-)
 from metrics.trajectory_analyzer import (
     EXPLORATION_TOOLS,
     TrajectoryAnalyzer,
@@ -68,6 +74,9 @@ from metrics.trajectory_analyzer import (
     compute_ccsr,
     compute_eor,
     compute_mui,
+    compute_ndcg_at_k,
+    compute_retrieval_metrics,
+    extract_files_from_patch,
 )
 
 # Optional dependencies with graceful fallbacks
@@ -91,28 +100,53 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# In-Memory AIVC Environment for Continual Learning Agentic RAG
+# In-Memory / Hermetic AIVC Environment for Continual Learning Agentic RAG
 # ---------------------------------------------------------------------------
 
 class AIVCContinualEnvironment:
     """
     Live in-memory AIVC execution environment maintained across continual learning episodes.
-    Stores structured memory notes, tracks file snapshots & dependency linkages,
-    and performs semantic/keyword retrieval for multi-hop code reasoning queries.
+    Hermetically isolated per benchmark run with dedicated scratch workspace directory,
+    structured memory notes, file snapshot tracking, and repo-level scoping.
     """
 
-    def __init__(self, arm: str = "aivc"):
-        self.arm = arm
+    def __init__(
+        self,
+        arm: str = "aivc",
+        run_id: Optional[str] = None,
+        workspace_dir: Optional[Path] = None,
+    ):
+        self.arm = arm.lower()
+        self.run_id = run_id or uuid.uuid4().hex[:8]
+        self.workspace_dir = workspace_dir or (EVAL_DIR / "scratch" / f"aivc_rag_{self.run_id}")
+        self.workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        # Set sandbox environment variables so any underlying AIVC calls never touch global storage
+        os.environ["AIVC_STORAGE_ROOT"] = str(self.workspace_dir)
+        os.environ["AIVC_WORKSPACE_DIR"] = str(self.workspace_dir)
+
         self.memories: Dict[str, Dict[str, Any]] = {}
         self.file_snapshots: Dict[str, List[Dict[str, Any]]] = {}
+        self.repo_memories: Dict[str, List[str]] = {}
         self._memory_counter = 0
 
+    def reset(self, clean_disk: bool = False) -> None:
+        """Completely reset in-memory records and optionally purge scratch directory."""
+        self.memories.clear()
+        self.file_snapshots.clear()
+        self.repo_memories.clear()
+        self._memory_counter = 0
+        if clean_disk and self.workspace_dir.exists():
+            try:
+                shutil.rmtree(self.workspace_dir, ignore_errors=True)
+                self.workspace_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
     def reset_if_stateless(self) -> None:
-        """For naive baseline arm, clear memories between episodes."""
-        if self.arm == "naive":
-            self.memories.clear()
-            self.file_snapshots.clear()
-            self._memory_counter = 0
+        """For baseline / naive arm, clear memories between episodes."""
+        if self.arm in ("naive", "baseline"):
+            self.reset(clean_disk=False)
 
     def remember(
         self,
@@ -120,6 +154,7 @@ class AIVCContinualEnvironment:
         note: str,
         read_files: Optional[List[str]] = None,
         edited_files: Optional[List[str]] = None,
+        repo: Optional[str] = None,
     ) -> str:
         self._memory_counter += 1
         mem_id = f"mem-{self._memory_counter:04d}"
@@ -131,9 +166,15 @@ class AIVCContinualEnvironment:
             "note": note,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
+            "repo": repo or "default",
             "timestamp": now_str,
         }
         self.memories[mem_id] = record
+
+        if repo:
+            if repo not in self.repo_memories:
+                self.repo_memories[repo] = []
+            self.repo_memories[repo].append(mem_id)
 
         for f in (edited_files or []):
             if f not in self.file_snapshots:
@@ -150,9 +191,14 @@ class AIVCContinualEnvironment:
 
         return f"✅ Memory recorded [{mem_id}] '{title}'. Mapped {len(read_files or [])} read, {len(edited_files or [])} edited/dependent files."
 
-    def recall(self, query: str, limit: int = 5) -> str:
-        if not self.memories:
-            return "No previous memories stored in AIVC yet. Perform initial exploration with grep_search / view_file."
+    def recall_with_records(self, query: str, limit: int = 5, repo: Optional[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
+        candidate_memories = self.memories
+        if repo and repo in self.repo_memories:
+            candidate_ids = set(self.repo_memories[repo])
+            candidate_memories = {k: v for k, v in self.memories.items() if k in candidate_ids}
+
+        if not candidate_memories:
+            return "No previous memories stored in AIVC yet. Perform initial exploration with grep_search / view_file.", []
 
         query_terms = [t.lower() for t in query.split() if len(t) > 2]
         scored_results = []
@@ -166,103 +212,125 @@ class AIVCContinualEnvironment:
         scored_results.sort(key=lambda x: x[0], reverse=True)
         top = scored_results[:limit] if scored_results else [(0, m) for m in list(self.memories.values())[-limit:]]
 
+        top_mems = [m for _, m in top]
         lines = [f"Found {len(top)} relevant AIVC memories for '{query}':"]
         for _, m in top:
             snippet = m["note"][:180].replace("\n", " ") + "..."
             files_str = f" [Files: {', '.join((m.get('read_files', []) + m.get('edited_files', []))[:3])}]"
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}): {snippet}{files_str}")
-        return "\n".join(lines)
+        return "\n".join(lines), top_mems
 
-    def get_recent_memories(self, limit: int = 10, offset: int = 0) -> str:
+    def get_recent_memories_with_records(self, limit: int = 10, offset: int = 0) -> Tuple[str, List[Dict[str, Any]]]:
         all_mems = list(self.memories.values())
         all_mems.reverse()
         slice_mems = all_mems[offset : offset + limit]
         if not slice_mems:
-            return "No memories found in range."
+            return "No memories found in range.", []
 
         lines = [f"Recent AIVC memories (offset={offset}, limit={limit}):"]
         for m in slice_mems:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}) -> {len(m.get('read_files', []))} files tracked")
-        return "\n".join(lines)
-
-    def consult_memory(self, memory_id: str) -> str:
-        mem = self.memories.get(memory_id)
-        if not mem:
-            return f"Memory ID '{memory_id}' not found."
-        return (
-            f"# {mem['title']}\n"
-            f"**Created**: {mem['timestamp']}\n"
-            f"**Read Files**: {mem.get('read_files', [])}\n"
-            f"**Edited / Linked Files**: {mem.get('edited_files', [])}\n\n"
-            f"### Content:\n{mem['note']}"
-        )
-
-    def get_file_history_metadata(self, filepath: str) -> str:
-        hist = self.file_snapshots.get(filepath, [])
-        if not hist:
-            return f"No AIVC version history found for '{filepath}'."
-        lines = [f"AIVC version history for '{filepath}':"]
-        for h in hist:
-            lines.append(f"- Memory [{h['memory_id']}] at {h['timestamp']}: {h['note_ref']}")
-        return "\n".join(lines)
-
-    def read_past_file_content(self, filepath: str, memory_id: str) -> str:
-        mem = self.memories.get(memory_id)
-        if not mem:
-            return f"Memory ID '{memory_id}' not found."
-        return (
-            f"// [AIVC Snapshot] File: {filepath} | Ref Memory: {memory_id} ({mem['title']})\n"
-            f"// Note Context:\n{mem['note'][:300]}"
-        )
+        return "\n".join(lines), slice_mems
 
     def execute_tool(
         self,
         tool_name: str,
         arguments: Dict[str, Any],
         query_context: Dict[str, Any],
-    ) -> str:
+    ) -> Tuple[str, List[str]]:
         """Dispatch and execute tool action in benchmark environment."""
+        returned_files: List[str] = []
+        def _normalize_file_list(val: Any) -> List[str]:
+            if val is None:
+                return []
+            if isinstance(val, str):
+                s = val.strip()
+                return [s] if s else []
+            if isinstance(val, (list, tuple, set)):
+                res = []
+                for it in val:
+                    res.extend(_normalize_file_list(it))
+                return res
+            if isinstance(val, dict):
+                res = []
+                for v in val.values():
+                    res.extend(_normalize_file_list(v))
+                return res
+            s = str(val).strip()
+            return [s] if s else []
+
         try:
             if tool_name == "remember":
-                if self.arm == "naive":
-                    return "Error: remember tool is disabled in naive baseline mode."
-                return self.remember(
-                    title=arguments.get("title", "Untitled note"),
-                    note=arguments.get("note", ""),
-                    read_files=arguments.get("read_files", []),
-                    edited_files=arguments.get("edited_files", []),
+                if self.arm in ("naive", "baseline"):
+                    return "Error: remember tool is disabled in baseline mode.", []
+                read_f = _normalize_file_list(arguments.get("read_files", []))
+                edit_f = _normalize_file_list(arguments.get("edited_files", []))
+                repo = query_context.get("repo", "default")
+                res = self.remember(
+                    title=str(arguments.get("title", "Untitled note")),
+                    note=str(arguments.get("note", "")),
+                    read_files=read_f,
+                    edited_files=edit_f,
+                    repo=repo,
                 )
+                returned_files = list(dict.fromkeys(read_f + edit_f))
+                return res, returned_files
             elif tool_name == "recall":
-                if self.arm == "naive":
-                    return "Error: recall tool is disabled in naive baseline mode."
-                return self.recall(
-                    query=arguments.get("query", ""),
-                    limit=int(arguments.get("limit", 5)),
-                )
+                if self.arm in ("naive", "baseline"):
+                    return "Error: recall tool is disabled in baseline mode.", []
+                query = arguments.get("query", "")
+                limit = int(arguments.get("limit", 5))
+                repo = query_context.get("repo")
+                res, matched_mems = self.recall_with_records(query=query, limit=limit, repo=repo)
+                for m in matched_mems:
+                    for f in m.get("read_files", []) + m.get("edited_files", []):
+                        if f and f not in returned_files:
+                            returned_files.append(f)
+                return res, returned_files
             elif tool_name == "get_recent_memories":
-                if self.arm == "naive":
-                    return "Error: get_recent_memories is disabled in naive baseline mode."
-                return self.get_recent_memories(
-                    limit=int(arguments.get("limit", 10)),
-                    offset=int(arguments.get("offset", 0)),
-                )
+                if self.arm in ("naive", "baseline"):
+                    return "Error: get_recent_memories is disabled in baseline mode.", []
+                limit = int(arguments.get("limit", 10))
+                offset = int(arguments.get("offset", 0))
+                res, sliced_mems = self.get_recent_memories_with_records(limit=limit, offset=offset)
+                for m in sliced_mems:
+                    for f in m.get("read_files", []) + m.get("edited_files", []):
+                        if f and f not in returned_files:
+                            returned_files.append(f)
+                return res, returned_files
             elif tool_name == "consult_memory":
-                if self.arm == "naive":
-                    return "Error: consult_memory is disabled in naive baseline mode."
-                return self.consult_memory(memory_id=arguments.get("memory_id", ""))
+                if self.arm in ("naive", "baseline"):
+                    return "Error: consult_memory is disabled in baseline mode.", []
+                mem_id = arguments.get("memory_id", "")
+                res = self.consult_memory(memory_id=mem_id)
+                mem = self.memories.get(mem_id)
+                if mem:
+                    returned_files = list(dict.fromkeys(mem.get("read_files", []) + mem.get("edited_files", [])))
+                return res, returned_files
             elif tool_name == "get_file_history_metadata":
-                if self.arm == "naive":
-                    return "Error: get_file_history_metadata is disabled in naive baseline mode."
-                return self.get_file_history_metadata(filepath=arguments.get("filepath", ""))
+                if self.arm in ("naive", "baseline"):
+                    return "Error: get_file_history_metadata is disabled in baseline mode.", []
+                filepath = arguments.get("filepath", "")
+                res = self.get_file_history_metadata(filepath=filepath)
+                if filepath:
+                    returned_files = [filepath]
+                return res, returned_files
             elif tool_name == "read_past_file_content":
-                if self.arm == "naive":
-                    return "Error: read_past_file_content is disabled in naive baseline mode."
-                return self.read_past_file_content(
-                    filepath=arguments.get("filepath", ""),
-                    memory_id=arguments.get("memory_id", ""),
+                if self.arm in ("naive", "baseline"):
+                    return "Error: read_past_file_content is disabled in baseline mode.", []
+                filepath = arguments.get("filepath", "")
+                mem_id = arguments.get("memory_id", "")
+                res = self.read_past_file_content(
+                    filepath=filepath,
+                    memory_id=mem_id,
                 )
+                if filepath:
+                    returned_files = [filepath]
+                return res, returned_files
             elif tool_name == "view_file":
                 filepath = arguments.get("filepath", "")
+                if filepath:
+                    returned_files = [filepath]
                 codebase = query_context.get("codebase_files", {})
                 if filepath in codebase:
                     content = codebase[filepath]
@@ -270,38 +338,62 @@ class AIVCContinualEnvironment:
                     start_l = max(1, int(arguments.get("start_line", 1)))
                     end_l = min(len(lines), int(arguments.get("end_line", 100)))
                     snippet = "\n".join(f"{i}: {line}" for i, line in enumerate(lines[start_l - 1 : end_l], start=start_l))
-                    return f"[File: {filepath} (Lines {start_l}-{end_l}/{len(lines)})]\n{snippet}"
-                return f"[File: {filepath}]\n// File exists in repo. Relevant symbol definitions and logic located in {filepath}."
+                    return f"[File: {filepath} (Lines {start_l}-{end_l}/{len(lines)})]\n{snippet}", returned_files
+                return f"[File: {filepath}]\n// File exists in repo. Relevant symbol definitions and logic located in {filepath}.", returned_files
             elif tool_name == "grep_search":
                 query = arguments.get("query", "")
                 repo = query_context.get("repo", "repo")
                 matched_files = query_context.get("relevant_files", [])
+                returned_files = list(matched_files) if matched_files else ["core/handler.py"]
                 lines = [f"Grep search results for '{query}' in {repo}:"]
-                for f in matched_files:
+                for f in returned_files:
                     lines.append(f"- {f}: matched definition '{query}'")
-                if not matched_files:
-                    lines.append(f"- core/handler.py: match for '{query}'")
-                return "\n".join(lines)
+                return "\n".join(lines), returned_files
             elif tool_name == "list_dir":
                 directory = arguments.get("directory", ".")
                 repo = query_context.get("repo", "repo")
                 codebase = query_context.get("codebase_files", {})
                 files = list(codebase.keys()) if codebase else ["core/", "handlers/", "utils/", "config.py", "middleware.py"]
-                return f"Directory listing for '{directory}' in {repo}:\n" + "\n".join(f"- {f}" for f in files[:10])
+                returned_files = files[:10]
+                return f"Directory listing for '{directory}' in {repo}:\n" + "\n".join(f"- {f}" for f in files[:10]), returned_files
             elif tool_name == "find_symbol":
                 sym = arguments.get("symbol_name", "")
                 rel_files = query_context.get("relevant_files", [])
                 loc = rel_files[0] if rel_files else "core/dispatcher.py"
-                return f"Symbol '{sym}' found:\n- Definition: {loc}:L42 `def {sym}(*args, **kwargs)`\n- References: {', '.join(rel_files[1:3]) if len(rel_files) > 1 else 'handlers/base.py'}"
+                returned_files = rel_files[:3] if rel_files else ["core/dispatcher.py"]
+                return f"Symbol '{sym}' found:\n- Definition: {loc}:L42 `def {sym}(*args, **kwargs)`\n- References: {', '.join(rel_files[1:3]) if len(rel_files) > 1 else 'handlers/base.py'}", returned_files
             elif tool_name == "submit_answer":
                 ans = arguments.get("answer", "")
                 files = arguments.get("relevant_files", [])
                 exp = arguments.get("explanation", "")
-                return f"✅ Answer submitted with {len(files)} relevant files. Summary: {ans[:80]}..."
+                returned_files = list(files) if isinstance(files, list) else []
+                return f"✅ Answer submitted with {len(returned_files)} relevant files. Summary: {ans[:80]}...", returned_files
             else:
-                return f"Unknown tool action '{tool_name}'."
+                return f"Unknown tool action '{tool_name}'.", []
         except Exception as e:
-            return f"Error executing tool '{tool_name}': {str(e)}"
+            return f"Error executing tool '{tool_name}': {str(e)}", []
+
+
+def append_tool_interaction(
+    interaction_record: Dict[str, Any],
+    interactions_paths: Optional[List[Path]] = None,
+) -> None:
+    """Atomically append a tool interaction record to specified JSONL output files."""
+    if not interactions_paths:
+        return
+    line = json.dumps(interaction_record, ensure_ascii=False) + "\n"
+    for p in interactions_paths:
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(line)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -736,7 +828,7 @@ class AgenticRAGRunner:
     """
     Executes Agentic RAG Continual Learning benchmark with live tool interaction,
     OpenRouter LLM calls, trajectory analysis, safety limits ($0.10 USD / query),
-    and IR evaluation (P@k, R@k, MRR, Tool Call Decay).
+    and IR evaluation (P@k, R@k, NDCG@k, MRR, Tool Call Decay).
     """
 
     def __init__(
@@ -747,8 +839,10 @@ class AgenticRAGRunner:
         max_turns: int = 50,
         max_tokens: int = 4096,
         max_cost_per_query_usd: float = 0.10,
-        dry_run: bool = False,
         fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
+        interactions_paths: Optional[List[Path]] = None,
+        run_id: Optional[str] = None,
+        workspace_dir: Optional[Path] = None,
     ):
         self.arm = arm.lower()
         self.model_name = model_name
@@ -756,10 +850,12 @@ class AgenticRAGRunner:
         self.max_turns = max_turns
         self.max_tokens = max_tokens
         self.max_cost_per_query_usd = max_cost_per_query_usd
-        self.dry_run = dry_run
+        self.interactions_paths = interactions_paths or []
+        self.run_id = run_id
+        self.workspace_dir = workspace_dir
 
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
-        self.env = AIVCContinualEnvironment(arm=self.arm)
+        self.env = AIVCContinualEnvironment(arm=self.arm, run_id=self.run_id, workspace_dir=self.workspace_dir)
 
         models_cfg = load_models_config()
         self.prompt_price_1m, self.completion_price_1m, _ = get_model_pricing(model_name, models_cfg)
@@ -808,180 +904,6 @@ class AgenticRAGRunner:
         except Exception as e:
             print(f"  [API Exception]: {e}")
             return None
-
-    def _simulate_dry_run_turn(
-        self,
-        query: Dict[str, Any],
-        turn: int,
-        recalled_so_far: int,
-    ) -> Dict[str, Any]:
-        """Simulate realistic mock turn responses in dry-run mode."""
-        rel_files = query.get("relevant_files", ["core/handler.py"])
-        q_id = query.get("query_id", "Q-001")
-
-        if self.arm == "aivc":
-            if turn == 1:
-                # Turn 1 in AIVC: recall past memory
-                return {
-                    "usage": {"prompt_tokens": 420, "completion_tokens": 45},
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "I will recall past memory notes to find relevant file mappings.",
-                                "tool_calls": [
-                                    {
-                                        "id": f"call_{turn}_1",
-                                        "function": {
-                                            "name": "recall",
-                                            "arguments": json.dumps({"query": query.get("query", "")[:40]}),
-                                        },
-                                    }
-                                ],
-                            }
-                        }
-                    ],
-                }
-            elif turn == 2 and len(self.env.memories) > 0:
-                # Direct submission using recalled knowledge
-                return {
-                    "usage": {"prompt_tokens": 580, "completion_tokens": 90},
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "Knowledge retrieved from AIVC memory. Submitting answer directly.",
-                                "tool_calls": [
-                                    {
-                                        "id": f"call_{turn}_1",
-                                        "function": {
-                                            "name": "submit_answer",
-                                            "arguments": json.dumps({
-                                                "answer": query.get("ground_truth_answer", "Identified relevant subsystem pipeline."),
-                                                "relevant_files": rel_files,
-                                                "explanation": "Resolved via AIVC memory linkage.",
-                                            }),
-                                        },
-                                    }
-                                ],
-                            }
-                        }
-                    ],
-                }
-            else:
-                # Remember and submit
-                return {
-                    "usage": {"prompt_tokens": 550, "completion_tokens": 80},
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "Saving discoveries to memory and submitting answer.",
-                                "tool_calls": [
-                                    {
-                                        "id": f"call_{turn}_1",
-                                        "function": {
-                                            "name": "remember",
-                                            "arguments": json.dumps({
-                                                "title": f"Subsystem mapping for {q_id}",
-                                                "note": f"Discovered relationships for {q_id}: {rel_files}",
-                                                "read_files": rel_files,
-                                                "edited_files": rel_files[:1],
-                                            }),
-                                        },
-                                    },
-                                    {
-                                        "id": f"call_{turn}_2",
-                                        "function": {
-                                            "name": "submit_answer",
-                                            "arguments": json.dumps({
-                                                "answer": query.get("ground_truth_answer", "Discovered components."),
-                                                "relevant_files": rel_files,
-                                                "explanation": "Identified relevant files via multi-hop analysis.",
-                                            }),
-                                        },
-                                    },
-                                ],
-                            }
-                        }
-                    ],
-                }
-        else:
-            # Naive baseline: requires multiple grep and view_file steps
-            if turn == 1:
-                return {
-                    "usage": {"prompt_tokens": 350, "completion_tokens": 40},
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "Searching codebase with grep...",
-                                "tool_calls": [
-                                    {
-                                        "id": f"call_{turn}_1",
-                                        "function": {
-                                            "name": "grep_search",
-                                            "arguments": json.dumps({"query": "Middleware"}),
-                                        },
-                                    },
-                                    {
-                                        "id": f"call_{turn}_2",
-                                        "function": {
-                                            "name": "list_dir",
-                                            "arguments": json.dumps({"directory": "."}),
-                                        },
-                                    },
-                                ],
-                            }
-                        }
-                    ],
-                }
-            elif turn == 2:
-                return {
-                    "usage": {"prompt_tokens": 520, "completion_tokens": 60},
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "Inspecting file contents...",
-                                "tool_calls": [
-                                    {
-                                        "id": f"call_{turn}_1",
-                                        "function": {
-                                            "name": "view_file",
-                                            "arguments": json.dumps({"filepath": rel_files[0] if rel_files else "core/base.py"}),
-                                        },
-                                    }
-                                ],
-                            }
-                        }
-                    ],
-                }
-            else:
-                return {
-                    "usage": {"prompt_tokens": 610, "completion_tokens": 75},
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": "Submitting answer based on file inspection.",
-                                "tool_calls": [
-                                    {
-                                        "id": f"call_{turn}_1",
-                                        "function": {
-                                            "name": "submit_answer",
-                                            "arguments": json.dumps({
-                                                "answer": query.get("ground_truth_answer", "Solved via grep."),
-                                                "relevant_files": rel_files,
-                                                "explanation": "Derived from inspecting files.",
-                                            }),
-                                        },
-                                    }
-                                ],
-                            }
-                        }
-                    ],
-                }
 
     def run_episode(
         self,
@@ -1035,6 +957,8 @@ class AgenticRAGRunner:
         total_cost = 0.0
         trajectory_steps: List[Dict[str, Any]] = []
         tools_called_list: List[str] = []
+        episode_tool_interactions: List[Dict[str, Any]] = []
+        all_inspected_files: List[str] = []
         recalled_memories_count = 0
         used_memories_count = 0
         resolved = False
@@ -1048,10 +972,7 @@ class AgenticRAGRunner:
 
             print(f"  [TURN {turn:02d}/{self.max_turns:02d}] Calling {self.model_name} (Cost: ${total_cost:.4f})... ", end="", flush=True)
 
-            if self.dry_run:
-                api_response = self._simulate_dry_run_turn(query_item, turn, recalled_memories_count)
-            else:
-                api_response = self._call_openrouter(messages, tools_schema)
+            api_response = self._call_openrouter(messages, tools_schema)
 
             if not api_response or "choices" not in api_response or not api_response["choices"]:
                 print("FAILED (No response)")
@@ -1101,7 +1022,30 @@ class AgenticRAGRunner:
                         submitted_answer = fn_args.get("answer", "")
                         submitted_files = fn_args.get("relevant_files", [])
 
-                    tool_res = self.env.execute_tool(fn_name, fn_args, query_item)
+                    tool_res, returned_files = self.env.execute_tool(fn_name, fn_args, query_item)
+                    for rf in returned_files:
+                        if rf and rf not in all_inspected_files:
+                            all_inspected_files.append(rf)
+
+                    interaction_record = {
+                        "tool_name": fn_name,
+                        "input_arguments": fn_args,
+                        "returned_files": returned_files,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "step_tokens": {
+                            "prompt_tokens": p_tok,
+                            "completion_tokens": c_tok,
+                            "total_tokens": p_tok + c_tok,
+                        },
+                        "benchmark": "agentic_rag",
+                        "query_id": query_id,
+                        "repo": repo,
+                        "arm": self.arm,
+                        "turn": turn,
+                        "model": self.model_name,
+                    }
+                    episode_tool_interactions.append(interaction_record)
+                    append_tool_interaction(interaction_record, self.interactions_paths)
 
                     messages.append({
                         "role": "tool",
@@ -1141,8 +1085,9 @@ class AgenticRAGRunner:
         )
 
         # IR / RAG Retrieval Metrics computation
+        all_retrieved_candidates = list(dict.fromkeys(submitted_files + all_inspected_files))
         ir_metrics = compute_retrieval_metrics(
-            retrieved_files=submitted_files or [t for t in tools_called_list if "." in t],
+            retrieved_files=all_retrieved_candidates or [t for t in tools_called_list if "." in t],
             ground_truth_files=ground_truth_files,
             k_list=(1, 3, 5),
         )
@@ -1164,6 +1109,7 @@ class AgenticRAGRunner:
             "turns_count": len(trajectory_steps),
             "tool_calls_count": curr_tool_calls,
             "tool_calls": tools_called_list,
+            "tool_interactions": episode_tool_interactions,
             "exploration_tool_calls": ep_metrics.exploration_tool_calls,
             "tool_call_decay_ratio": tool_call_decay_ratio,
             "recalled_memories": recalled_memories_count,
@@ -1172,6 +1118,7 @@ class AgenticRAGRunner:
             "mui": ep_metrics.mui,
             "ccsr": ep_metrics.ccsr,
             "retrieval_metrics": ir_metrics,
+            "inspected_files": all_inspected_files,
             "tokens": {
                 "prompt_tokens": total_p_tok,
                 "completion_tokens": total_c_tok,
@@ -1187,7 +1134,7 @@ class AgenticRAGRunner:
         }
 
         print(f"\n--> Result: {status.upper()} | Turns: {len(trajectory_steps)} | Tool Calls: {curr_tool_calls} (Decay: {tool_call_decay_ratio:.2f}) | Cost: ${total_cost:.6f} | Latency: {duration}s")
-        print(f"--> IR Metrics: P@1={ir_metrics.get('precision_at_1', 0.0):.2f} | R@3={ir_metrics.get('recall_at_3', 0.0):.2f} | MRR={ir_metrics.get('mrr', 0.0):.2f} | EOR={ep_metrics.eor:.2f} | MUI={ep_metrics.mui:.2f}")
+        print(f"--> IR Metrics: P@1={ir_metrics.get('precision_at_1', 0.0):.2f} | R@3={ir_metrics.get('recall_at_3', 0.0):.2f} | NDCG@5={ir_metrics.get('ndcg_at_5', 0.0):.2f} | MRR={ir_metrics.get('mrr', 0.0):.2f} | EOR={ep_metrics.eor:.2f} | MUI={ep_metrics.mui:.2f}")
 
         return record
 
@@ -1216,8 +1163,13 @@ def export_agentic_rag_metrics(
 
     avg_p1 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_1", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
     avg_p3 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_3", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
+    avg_p5 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_5", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
     avg_r1 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_1", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
     avg_r3 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_3", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
+    avg_r5 = round(sum(r.get("retrieval_metrics", {}).get("recall_at_5", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
+    avg_ndcg1 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_1", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
+    avg_ndcg3 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_3", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
+    avg_ndcg5 = round(sum(r.get("retrieval_metrics", {}).get("ndcg_at_5", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
     avg_mrr = round(sum(r.get("retrieval_metrics", {}).get("mrr", 0.0) for r in records) / total_queries, 4) if total_queries > 0 else 0.0
 
     total_p_tok = sum(r.get("tokens", {}).get("prompt_tokens", 0) for r in records)
@@ -1229,6 +1181,13 @@ def export_agentic_rag_metrics(
     first_tool_calls = records[0].get("tool_calls_count", 0) if records else 0
     last_tool_calls = records[-1].get("tool_calls_count", 0) if records else 0
     overall_decay_factor = round(last_tool_calls / float(first_tool_calls), 4) if first_tool_calls > 0 else 1.0
+
+    all_tool_calls = [tc for r in records for tc in r.get("tool_calls", [])]
+    tool_counts: Dict[str, int] = {}
+    for tc in all_tool_calls:
+        tool_counts[tc] = tool_counts.get(tc, 0) + 1
+
+    total_interactions = sum(len(r.get("tool_interactions", [])) for r in records)
 
     payload = {
         "benchmark": "Agentic RAG Continual Learning",
@@ -1249,13 +1208,21 @@ def export_agentic_rag_metrics(
                 "final_query_tool_calls": last_tool_calls,
                 "decay_factor": overall_decay_factor,
             },
+            "total_tool_calls": len(all_tool_calls),
+            "total_tool_interactions": total_interactions,
+            "tool_interaction_breakdown": tool_counts,
         },
         "retrieval_metrics": {
             "mean_reciprocal_rank_mrr": avg_mrr,
             "precision_at_1": avg_p1,
             "precision_at_3": avg_p3,
+            "precision_at_5": avg_p5,
             "recall_at_1": avg_r1,
             "recall_at_3": avg_r3,
+            "recall_at_5": avg_r5,
+            "ndcg_at_1": avg_ndcg1,
+            "ndcg_at_3": avg_ndcg3,
+            "ndcg_at_5": avg_ndcg5,
         },
         "resource_consumption": {
             "prompt_tokens": total_p_tok,
@@ -1379,25 +1346,17 @@ def main() -> None:
         except Exception:
             pass
 
-    params = load_params_yaml()
-    profile = params.get("profile", "dry_run")
-    eval_params = params.get("eval", {})
-
-    default_model = eval_params.get("model", "qwen/qwen3.7-flash")
-    default_limit = eval_params.get("limit", 15)
-    default_max_turns = eval_params.get("max_turns", 50)
-    default_max_tokens = eval_params.get("max_tokens", 4096)
-    default_max_cost = eval_params.get("max_cost_per_instance_usd", 0.10)
-
     parser = argparse.ArgumentParser(
         description="Agentic RAG Continual Learning Benchmark Runner for AIVC."
     )
     parser.add_argument(
         "--arm",
+        "--variant",
+        dest="arm",
         type=str,
-        choices=["aivc", "naive"],
+        choices=["aivc", "baseline", "naive"],
         default="aivc",
-        help="Evaluation arm: 'aivc' (continual memory) or 'naive' (stateless baseline). Default: aivc",
+        help="Evaluation arm: 'aivc' (continual memory) or 'baseline'/'naive' (stateless baseline). Default: aivc",
     )
     parser.add_argument(
         "--dataset",
@@ -1410,42 +1369,6 @@ def main() -> None:
         type=str,
         default="test",
         help="Dataset split (default: test)",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=default_limit,
-        help=f"Limit number of query episodes (default from params: {default_limit})",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=default_model,
-        help=f"OpenRouter model identifier (default: {default_model})",
-    )
-    parser.add_argument(
-        "--profile",
-        type=str,
-        default=profile,
-        help=f"Active evaluation profile for paths (default: {profile})",
-    )
-    parser.add_argument(
-        "--max-turns",
-        type=int,
-        default=default_max_turns,
-        help=f"Max turns per query episode (default: {default_max_turns})",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=default_max_tokens,
-        help=f"Max tokens per response (default: {default_max_tokens})",
-    )
-    parser.add_argument(
-        "--max-cost",
-        type=float,
-        default=default_max_cost,
-        help=f"Max safety cutoff in USD per query episode (default: {default_max_cost})",
     )
     parser.add_argument(
         "--checkpoint-file",
@@ -1466,59 +1389,56 @@ def main() -> None:
         help="Custom path to CSV curves file",
     )
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Execute in mock dry-run mode without external API calls",
-    )
-    parser.add_argument(
-        "--reset-checkpoint",
-        action="store_true",
-        help="Purge existing checkpoint file before starting evaluation",
-    )
-    parser.add_argument(
         "--force",
         action="store_true",
         help="Force re-execution of queries already present in checkpoint",
     )
 
-    args = parser.parse_args()
+    # Attach unified evaluation configuration flags
+    add_eval_args(parser)
 
-    # Resolve paths
+    # Parse and resolve hierarchical config
+    parsed_args = parser.parse_args()
+    cfg = load_benchmark_config(args=parsed_args)
+    paths = cfg.get_paths()
+
+    # Resolve paths based on profile & arm
     resolved_paths = resolve_benchmark_paths(
         benchmark_name="agentic_rag",
-        model_name=args.model,
-        arm=args.arm,
-        profile=args.profile,
+        model_name=cfg.model,
+        arm=parsed_args.arm,
+        profile=cfg.profile,
         eval_dir=EVAL_DIR,
     )
 
-    ckpt_path = Path(args.checkpoint_file) if args.checkpoint_file else resolved_paths["checkpoint_path"]
-    metrics_path = Path(args.metrics_file) if args.metrics_file else resolved_paths["metrics_path"]
-    curves_path = Path(args.curves_file) if args.curves_file else resolved_paths["plots_path"]
+    ckpt_path = Path(parsed_args.checkpoint_file) if parsed_args.checkpoint_file else resolved_paths["checkpoint_path"]
+    metrics_path = Path(parsed_args.metrics_file) if parsed_args.metrics_file else resolved_paths["metrics_path"]
+    curves_path = Path(parsed_args.curves_file) if parsed_args.curves_file else resolved_paths["plots_path"]
 
     # Also keep standard general curves & metrics paths for DVC access
     general_curves_path = EVAL_DIR / "plots" / "agentic_rag_curves.csv"
     general_metrics_path = EVAL_DIR / "metrics" / "agentic_rag_metrics.json"
+    arm_curves_path = EVAL_DIR / "plots" / f"agentic_rag_{parsed_args.arm}_curves.csv"
+    arm_metrics_path = EVAL_DIR / "metrics" / f"agentic_rag_{parsed_args.arm}_metrics.json"
 
-    if args.reset_checkpoint and ckpt_path.exists():
+    if cfg.reset_checkpoint and ckpt_path.exists():
         print(f"[RESET] Purging checkpoint file '{ckpt_path}'...")
         ckpt_path.unlink()
 
-    # Load environment / API key
-    env_vars = load_env_file()
-    api_key = os.getenv("OPENROUTER_API_KEY", env_vars.get("OPENROUTER_API_KEY", ""))
+    # Load environment / API key based on provider
+    provider = cfg.model_spec.provider if cfg.model_spec else "openrouter"
+    api_key = os.getenv("TOGETHER_API_KEY", "") if provider == "together" else os.getenv("OPENROUTER_API_KEY", "")
 
     print("=" * 76)
     print("      AIVC AGENTIC RAG CONTINUAL LEARNING BENCHMARK RUNNER")
     print("=" * 76)
-    print(f"Evaluation Arm : {args.arm.upper()}")
-    print(f"Target Model   : {args.model}")
-    print(f"Profile        : {args.profile}")
-    print(f"Query Limit    : {args.limit}")
-    print(f"Max Turns      : {args.max_turns}")
-    print(f"Max Tokens     : {args.max_tokens}")
-    print(f"Cost Cutoff    : ${args.max_cost:.2f} USD / query")
-    print(f"Dry Run Mode   : {args.dry_run}")
+    print(f"Evaluation Arm : {parsed_args.arm.upper()}")
+    print(f"Target Model   : {cfg.model}")
+    print(f"Profile        : {cfg.profile}")
+    print(f"Query Limit    : {cfg.limit}")
+    print(f"Max Turns      : {cfg.max_turns}")
+    print(f"Max Tokens     : {cfg.max_tokens}")
+    print(f"Cost Cutoff    : ${cfg.max_cost_per_instance_usd:.2f} USD / query")
     print(f"Checkpoint File: {ckpt_path}")
     print(f"Metrics Output : {metrics_path}")
     print(f"Curves Output  : {curves_path}")
@@ -1530,20 +1450,35 @@ def main() -> None:
 
     # Load Dataset Queries
     queries, used_dataset_name = load_agentic_rag_dataset(
-        dataset_name=args.dataset if args.dataset else None,
-        split=args.split,
-        limit=args.limit,
+        dataset_name=parsed_args.dataset if parsed_args.dataset else None,
+        split=parsed_args.split,
+        limit=cfg.limit,
     )
+
+    # Configure tool interaction paths
+    profile_metrics_dir = metrics_path.parent
+    profile_interactions = profile_metrics_dir / "tool_interactions.jsonl"
+    bench_interactions = EVAL_DIR / "metrics" / "agentic_rag_tool_interactions.jsonl"
+    general_interactions = EVAL_DIR / "metrics" / "tool_interactions.jsonl"
+    interactions_paths = [profile_interactions, bench_interactions, general_interactions]
+
+    if cfg.reset_checkpoint:
+        for p in interactions_paths:
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
 
     # Instantiate Runner
     runner = AgenticRAGRunner(
-        arm=args.arm,
-        model_name=args.model,
+        arm=parsed_args.arm,
+        model_name=cfg.model,
         api_key=api_key,
-        max_turns=args.max_turns,
-        max_tokens=args.max_tokens,
-        max_cost_per_query_usd=args.max_cost,
-        dry_run=args.dry_run,
+        max_turns=cfg.max_turns,
+        max_tokens=cfg.max_tokens,
+        max_cost_per_query_usd=cfg.max_cost_per_instance_usd,
+        interactions_paths=interactions_paths,
     )
 
     skipped = 0
@@ -1551,7 +1486,7 @@ def main() -> None:
 
     for idx, q_item in enumerate(queries, 1):
         q_id = q_item.get("query_id", f"RAG-CL-{idx:03d}")
-        if ckpt_mgr.is_processed(q_id) and not args.force and not args.reset_checkpoint:
+        if ckpt_mgr.is_processed(q_id) and not parsed_args.force and not cfg.reset_checkpoint:
             print(f"[SKIP] Query '{q_id}' already completed in checkpoint.")
             skipped += 1
             continue
@@ -1570,8 +1505,8 @@ def main() -> None:
         export_agentic_rag_metrics(
             records=all_records,
             metrics_path=metrics_path,
-            arm=args.arm,
-            model_name=args.model,
+            arm=parsed_args.arm,
+            model_name=cfg.model,
             dataset_name=used_dataset_name,
         )
         export_agentic_rag_curves(
@@ -1579,20 +1514,27 @@ def main() -> None:
             curves_path=curves_path,
         )
         # Also mirror to general files for easy DVC access
-        try:
-            export_agentic_rag_metrics(
-                records=all_records,
-                metrics_path=general_metrics_path,
-                arm=args.arm,
-                model_name=args.model,
-                dataset_name=used_dataset_name,
-            )
-            export_agentic_rag_curves(
-                records=all_records,
-                curves_path=general_curves_path,
-            )
-        except Exception:
-            pass
+        for m_p in [general_metrics_path, arm_metrics_path]:
+            try:
+                if m_p != metrics_path:
+                    export_agentic_rag_metrics(
+                        records=all_records,
+                        metrics_path=m_p,
+                        arm=parsed_args.arm,
+                        model_name=cfg.model,
+                        dataset_name=used_dataset_name,
+                    )
+            except Exception:
+                pass
+        for c_p in [general_curves_path, arm_curves_path]:
+            try:
+                if c_p != curves_path:
+                    export_agentic_rag_curves(
+                        records=all_records,
+                        curves_path=c_p,
+                    )
+            except Exception:
+                pass
 
     print("\n" + "=" * 76)
     print("               EVALUATION BENCHMARK COMPLETED")
@@ -1602,6 +1544,10 @@ def main() -> None:
     print(f"Processed This Run    : {processed_now}")
     print(f"Total Checkpoint Rows : {len(all_records)}")
     print("=" * 76)
+
+
+# Backward-compatible alias
+AgenticRAGContinualRunner = AgenticRAGRunner
 
 
 if __name__ == "__main__":

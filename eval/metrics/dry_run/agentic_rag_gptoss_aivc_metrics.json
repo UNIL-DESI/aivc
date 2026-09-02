@@ -1,0 +1,35 @@
+{
+  "benchmark": "Agentic RAG Continual Learning",
+  "arm": "aivc",
+  "model_name": "openai/gpt-oss-20b",
+  "dataset_name": "aivc/swe-explore-continual-rag",
+  "timestamp": "2026-08-17T14:04:07.186641+00:00",
+  "summary": {
+    "total_queries": 2,
+    "resolved_queries": 2,
+    "unresolved_queries": 0,
+    "pass_rate": 1.0,
+    "average_exploration_overhead_ratio_eor": 0.8404,
+    "average_memory_utility_index_mui": 0.1061,
+    "average_cumulative_cost_savings_ratio_ccsr": 0.9473,
+    "tool_call_decay": {
+      "initial_query_tool_calls": 28,
+      "final_query_tool_calls": 33,
+      "decay_factor": 1.1786
+    }
+  },
+  "retrieval_metrics": {
+    "mean_reciprocal_rank_mrr": 1.0,
+    "precision_at_1": 1.0,
+    "precision_at_3": 0.3333,
+    "recall_at_1": 0.3333,
+    "recall_at_3": 0.3333
+  },
+  "resource_consumption": {
+    "prompt_tokens": 2845,
+    "completion_tokens": 7171,
+    "total_tokens": 10016,
+    "total_cost_usd": 0.004872,
+    "baseline_estimated_cost_usd": 0.029
+  }
+}

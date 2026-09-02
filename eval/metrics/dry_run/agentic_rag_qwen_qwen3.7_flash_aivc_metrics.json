@@ -3,33 +3,53 @@
   "arm": "aivc",
   "model_name": "qwen/qwen3.7-flash",
   "dataset_name": "aivc/swe-explore-continual-rag",
-  "timestamp": "2026-08-17T09:11:28.569069+00:00",
+  "timestamp": "2026-08-17T16:36:48.441776+00:00",
   "summary": {
     "total_queries": 15,
-    "resolved_queries": 11,
-    "unresolved_queries": 4,
-    "pass_rate": 0.7333,
-    "average_exploration_overhead_ratio_eor": 0.7798,
-    "average_memory_utility_index_mui": 0.126,
-    "average_cumulative_cost_savings_ratio_ccsr": -3.1337,
+    "resolved_queries": 15,
+    "unresolved_queries": 0,
+    "pass_rate": 1.0,
+    "average_exploration_overhead_ratio_eor": 0.7131,
+    "average_memory_utility_index_mui": 0.159,
+    "average_cumulative_cost_savings_ratio_ccsr": -1.5525,
     "tool_call_decay": {
-      "initial_query_tool_calls": 25,
-      "final_query_tool_calls": 38,
-      "decay_factor": 1.52
+      "initial_query_tool_calls": 42,
+      "final_query_tool_calls": 33,
+      "decay_factor": 0.7857
+    },
+    "total_tool_calls": 412,
+    "total_tool_interactions": 412,
+    "tool_interaction_breakdown": {
+      "recall": 19,
+      "get_recent_memories": 8,
+      "view_file": 112,
+      "find_symbol": 39,
+      "grep_search": 157,
+      "list_dir": 30,
+      "remember": 15,
+      "submit_answer": 15,
+      "consult_memory": 6,
+      "get_file_history_metadata": 8,
+      "read_past_file_content": 3
     }
   },
   "retrieval_metrics": {
-    "mean_reciprocal_rank_mrr": 0.7333,
-    "precision_at_1": 0.7333,
-    "precision_at_3": 0.6,
-    "recall_at_1": 0.2444,
-    "recall_at_3": 0.6
+    "mean_reciprocal_rank_mrr": 1.0,
+    "precision_at_1": 1.0,
+    "precision_at_3": 0.8889,
+    "precision_at_5": 0.56,
+    "recall_at_1": 0.3333,
+    "recall_at_3": 0.8889,
+    "recall_at_5": 0.9333,
+    "ndcg_at_1": 0.0,
+    "ndcg_at_3": 0.0,
+    "ndcg_at_5": 0.0
   },
   "resource_consumption": {
-    "prompt_tokens": 2898448,
-    "completion_tokens": 71441,
-    "total_tokens": 2969889,
-    "total_cost_usd": 0.096242,
+    "prompt_tokens": 1784361,
+    "completion_tokens": 70757,
+    "total_tokens": 1855118,
+    "total_cost_usd": 0.062729,
     "baseline_estimated_cost_usd": 0.211
   }
 }

@@ -1,0 +1,2 @@
+repo_id,phase,step_index,status,pass_rate,prompt_tokens,completion_tokens,total_tokens,cost_usd,cumulative_cost_usd,eor,mui,ccsr,duration_sec
+devbench-python-calculator,software_design,1,PASSED,1.0,1447,3701,5148,0.00251,0.00251,0.0,0.0,0.1633,27.443
