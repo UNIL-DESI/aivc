@@ -1,12 +1,13 @@
 ✅ [Cluster-CI] Dependencies unchanged (cached). Skipping install.
 📊 Analyzing DVC DAG: dvc dag --dot
-📋 Stages to execute sequentially: ['dvc-code-analysis', 'eval_agentic_rag_deepseek_pro_aivc', 'eval_agentic_rag_deepseek_pro_baseline', 'eval_agentic_rag_gemini_flash_aivc', 'eval_agentic_rag_gemini_flash_baseline', 'eval_agentic_rag_muse_glimmer_aivc', 'eval_agentic_rag_muse_glimmer_baseline', 'eval_devbench_deepseek_pro_aivc', 'eval_devbench_deepseek_pro_baseline', 'eval_devbench_gemini_flash_aivc', 'eval_devbench_gemini_flash_baseline', 'eval_devbench_muse_glimmer_aivc', 'eval_devbench_muse_glimmer_baseline', 'eval_swebench_cl_deepseek_pro_aivc', 'eval_swebench_cl_deepseek_pro_baseline', 'eval_swebench_cl_gemini_flash_aivc', 'eval_swebench_cl_gemini_flash_baseline', 'eval_swebench_cl_muse_glimmer_aivc', 'eval_swebench_cl_muse_glimmer_baseline', 'aggregate_metrics']
+📋 Stages to execute sequentially: ['dvc-code-analysis', 'prep_agentic_rag', 'prep_devbench', 'prep_swebench_cl', 'eval_agentic_rag_aivc', 'eval_agentic_rag_baseline', 'eval_devbench_aivc', 'eval_devbench_baseline', 'eval_swebench_cl_aivc', 'eval_swebench_cl_baseline', 'aggregate_metrics']
 
 ==================================================
 🚀 Executing stage: dvc-code-analysis
 ==================================================
 Running stage 'dvc-code-analysis':
 > bash .dvc-viewer/bootstrap.sh && dvc-viewer hash
+Failed to parse /workspace/eval/scripts/prep_benchmark.py: invalid non-printable character U+FEFF (<unknown>, line 1)
 🔍 Scanning dependencies and computing hashes...
    ✅ dvc.yaml is up to date
 Updating lock file 'dvc.lock'
@@ -24,56 +25,131 @@ Use `dvc push` to send your updates to remote storage.
 ==================================================
 🔄 Syncing metrics and plots for completed stage 'dvc-code-analysis'...
 🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
-[cluster-draft/hjamet c69c004] chore(ci): auto-sync dvc.lock [skip ci]
- 1 file changed, 1 insertion(+), 1 deletion(-)
+[main aa32c7a] chore(ci): auto-sync dvc.lock [skip ci]
+ 1 file changed, 3 insertions(+), 3 deletions(-)
 ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
 ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync dvc.lock [skip ci]
-ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin on branch 'cluster-draft/hjamet'...
-✅ [DVC-Git-Helper] All changes pushed successfully to cluster-draft/hjamet.
+ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin on branch 'main'...
+✅ [DVC-Git-Helper] All changes pushed successfully to main.
 
 ==================================================
-🚀 Executing stage: eval_agentic_rag_deepseek_pro_aivc
+🚀 Executing stage: prep_agentic_rag
 ==================================================
-Running stage 'eval_agentic_rag_deepseek_pro_aivc':
-> python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl
-Traceback (most recent call last):
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1586, in <module>
-    main()
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1526, in main
-    ep_record = runner.run_episode(
-                ^^^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1002, in run_episode
-    api_response = self._call_openrouter(messages, tools_schema)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 923, in _call_openrouter
-    return self.client.complete(
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/inference_client.py", line 591, in complete
-    resolved_cfg = self.resolve_provider_config(primary_model, provider_override=provider)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'InferenceClient' object has no attribute 'resolve_provider_config'
+Running stage 'prep_agentic_rag':
+> python eval/scripts/prep_benchmark.py --benchmark agentic_rag
+[PREP] Initializing preparation for benchmark: 'agentic_rag'...
+[PREP] Benchmark 'agentic_rag' verified and ready.
+[PREP] FLAG created: /workspace/eval/setup/agentic_rag_ready.flag
+Updating lock file 'dvc.lock'
+
+To track the changes with git, run:
+
+	git add dvc.lock
+
+To enable auto staging, run:
+
+	dvc config core.autostage true
+Use `dvc push` to send your updates to remote storage.
+==================================================
+✅ Stage prep_agentic_rag completed successfully.
+==================================================
+🔄 Syncing metrics and plots for completed stage 'prep_agentic_rag'...
+🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
+[main 0c1ba37] chore(ci): auto-sync dvc.lock [skip ci]
+ 1 file changed, 16 insertions(+)
+ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
+ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync dvc.lock [skip ci]
+ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin on branch 'main'...
+✅ [DVC-Git-Helper] All changes pushed successfully to main.
+
+==================================================
+🚀 Executing stage: prep_devbench
+==================================================
+Running stage 'prep_devbench':
+> python eval/scripts/prep_benchmark.py --benchmark devbench
+[PREP] Initializing preparation for benchmark: 'devbench'...
+[PREP] Benchmark 'devbench' verified and ready.
+[PREP] FLAG created: /workspace/eval/setup/devbench_ready.flag
+Updating lock file 'dvc.lock'
+
+To track the changes with git, run:
+
+	git add dvc.lock
+
+To enable auto staging, run:
+
+	dvc config core.autostage true
+Use `dvc push` to send your updates to remote storage.
+==================================================
+✅ Stage prep_devbench completed successfully.
+==================================================
+🔄 Syncing metrics and plots for completed stage 'prep_devbench'...
+🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
+[main ea5f1a4] chore(ci): auto-sync dvc.lock [skip ci]
+ 1 file changed, 16 insertions(+)
+ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
+ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync dvc.lock [skip ci]
+ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin on branch 'main'...
+✅ [DVC-Git-Helper] All changes pushed successfully to main.
+
+==================================================
+🚀 Executing stage: prep_swebench_cl
+==================================================
+Running stage 'prep_swebench_cl':
+> python eval/scripts/prep_benchmark.py --benchmark swebench_cl
+[PREP] Initializing preparation for benchmark: 'swebench_cl'...
+[PREP] Benchmark 'swebench_cl' verified and ready.
+[PREP] FLAG created: /workspace/eval/setup/swebench_cl_ready.flag
+Updating lock file 'dvc.lock'
+
+To track the changes with git, run:
+
+	git add dvc.lock
+
+To enable auto staging, run:
+
+	dvc config core.autostage true
+Use `dvc push` to send your updates to remote storage.
+==================================================
+✅ Stage prep_swebench_cl completed successfully.
+==================================================
+🔄 Syncing metrics and plots for completed stage 'prep_swebench_cl'...
+🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
+[main 7929c04] chore(ci): auto-sync dvc.lock [skip ci]
+ 1 file changed, 16 insertions(+)
+ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
+ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync dvc.lock [skip ci]
+ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin on branch 'main'...
+✅ [DVC-Git-Helper] All changes pushed successfully to main.
+
+==================================================
+🚀 Executing stage: eval_agentic_rag_aivc
+==================================================
+Running stage 'eval_agentic_rag_aivc':
+> python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --arm aivc --metrics-file eval/metrics/agentic_rag_aivc_metrics.json --curves-file eval/plots/agentic_rag_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_aivc_checkpoint.jsonl
 ============================================================================
       AIVC AGENTIC RAG CONTINUAL LEARNING BENCHMARK RUNNER
 ============================================================================
 Evaluation Arm : AIVC
-Target Model   : deepseek/deepseek-v4-pro
+Target Model   : google/gemini-3.7-flash
 Profile        : eval
 Query Limit    : 15
 Max Turns      : 50
 Max Tokens     : 4096
 Cost Cutoff    : $0.10 USD / query
-Checkpoint File: eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl
-Metrics Output : eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json
-Curves Output  : eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv
+Checkpoint File: eval/checkpoints/agentic_rag_aivc_checkpoint.jsonl
+Metrics Output : eval/metrics/agentic_rag_aivc_metrics.json
+Curves Output  : eval/plots/agentic_rag_aivc_curves.csv
 ============================================================================
 [CHECKPOINT] Loaded 0 previously processed queries from checkpoint.
 [DATASET] Loaded 15 continual learning multi-hop queries from 'aivc/swe-explore-continual-rag'.
-
-============================================================================
-[EPISODE 01/15] Arm: AIVC | Query: RAG-CL-001 (django/django)
-Query: Trace the HTTP authentication middleware pipeline from request entry down to cryptographic session token hashi...
-============================================================================
-  [TURN 01/50] Calling deepseek/deepseek-v4-pro (Cost: $0.0000)...   [API Exception]: 'InferenceClient' object has no attribute 'resolve_provider_config'
-ERROR: failed to reproduce 'eval_agentic_rag_deepseek_pro_aivc': failed to run: python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl, exited with 1
-❌ Stage eval_agentic_rag_deepseek_pro_aivc failed with code 255
+Traceback (most recent call last):
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1587, in <module>
+    main()
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1493, in main
+    arm_interactions = EVAL_DIR / "metrics" / f"agentic_rag_{arm_name}_tool_interactions.jsonl"
+                                                             ^^^^^^^^
+NameError: name 'arm_name' is not defined
+ERROR: failed to reproduce 'eval_agentic_rag_aivc': failed to run: python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --arm aivc --metrics-file eval/metrics/agentic_rag_aivc_metrics.json --curves-file eval/plots/agentic_rag_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_aivc_checkpoint.jsonl, exited with 1
+❌ Stage eval_agentic_rag_aivc failed with code 255
 💾 Committing and pushing failure state to GitHub...
