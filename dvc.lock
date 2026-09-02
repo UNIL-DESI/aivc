@@ -203,3 +203,19 @@ stages:
       hash: md5
       md5: b781649a365c8e080562d54dc68d7816
       size: 883
+  prep_agentic_rag:
+    cmd: python eval/scripts/prep_benchmark.py --benchmark agentic_rag
+    deps:
+    - path: .dvc-viewer/hashes/prep_agentic_rag.hash
+      hash: md5
+      md5: edd8b43f49c110761c6333abc9c3160e
+      size: 64
+    - path: eval/scripts/prep_benchmark.py
+      hash: md5
+      md5: eff6b3366a4732ee398404e8a19fa156
+      size: 5148
+    outs:
+    - path: eval/setup/agentic_rag_ready.flag
+      hash: md5
+      md5: 228af43ac34e7d2603e2eaf5b1e77333
+      size: 243
