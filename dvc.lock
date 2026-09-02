@@ -235,3 +235,19 @@ stages:
       hash: md5
       md5: 30c48c42b74ada5258bf350ae2ac2255
       size: 212
+  prep_swebench_cl:
+    cmd: python eval/scripts/prep_benchmark.py --benchmark swebench_cl
+    deps:
+    - path: .dvc-viewer/hashes/prep_swebench_cl.hash
+      hash: md5
+      md5: edd8b43f49c110761c6333abc9c3160e
+      size: 64
+    - path: eval/scripts/prep_benchmark.py
+      hash: md5
+      md5: eff6b3366a4732ee398404e8a19fa156
+      size: 5148
+    outs:
+    - path: eval/setup/swebench_cl_ready.flag
+      hash: md5
+      md5: 853fe78e2cc3511fa4b925a17871e03c
+      size: 237
