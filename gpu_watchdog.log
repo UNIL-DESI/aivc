@@ -28,3 +28,6 @@
 [GPU Watchdog] Unified memory detected (nvidia-smi memory.total=[[N/A]]). Monitoring system RAM via /proc/meminfo.
 [GPU Watchdog] Started — Container: cluster-job-f930cb22-2f4d-4c97-9187-a462e3753d25, Soft limit: 8GB, Hard limit: 108GB (90% of 122502MiB), Mode: system-ram
 [GPU Watchdog] Poll interval: 2s, Soft threshold: 2 violations (4s), Hard threshold: IMMEDIATE
+[GPU Watchdog] Unified memory detected (nvidia-smi memory.total=[[N/A]]). Monitoring system RAM via /proc/meminfo.
+[GPU Watchdog] Started — Container: cluster-job-2913a2f5-43b3-4f56-823d-b080380280b8, Soft limit: 8GB, Hard limit: 109GB (90% of 124546MiB), Mode: system-ram
+[GPU Watchdog] Poll interval: 2s, Soft threshold: 2 violations (4s), Hard threshold: IMMEDIATE

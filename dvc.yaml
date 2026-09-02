@@ -4,244 +4,282 @@ stages:
     always_changed: true
     outs:
     - .dvc-viewer/hashes: {cache: false}
-
   # =========================================================================
   # SWE-bench-CL Matrix (3 Models x 2 Arms)
   # =========================================================================
   eval_swebench_cl_gemini_flash_aivc:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model google/gemini-3.7-flash --arm aivc --metrics-file eval/metrics/swebench_cl_gemini_flash_aivc_metrics.json --curves-file eval/plots/swebench_cl_gemini_flash_aivc_curves.csv --checkpoint-file eval/checkpoints/swebench_cl_gemini_flash_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model google/gemini-3.7-flash --arm aivc --metrics-file eval/metrics/swebench_cl_gemini_flash_aivc_metrics.json
+      --curves-file eval/plots/swebench_cl_gemini_flash_aivc_curves.csv --checkpoint-file
+      eval/checkpoints/swebench_cl_gemini_flash_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl.hash]
+    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl_gemini_flash_aivc.hash]
     outs:
     - eval/metrics/swebench_cl_gemini_flash_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/swebench_cl_gemini_flash_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/swebench_cl_gemini_flash_aivc_curves.csv: {cache: false}
-
   eval_swebench_cl_gemini_flash_baseline:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model google/gemini-3.7-flash --arm baseline --metrics-file eval/metrics/swebench_cl_gemini_flash_baseline_metrics.json --curves-file eval/plots/swebench_cl_gemini_flash_baseline_curves.csv --checkpoint-file eval/checkpoints/swebench_cl_gemini_flash_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model google/gemini-3.7-flash --arm baseline --metrics-file eval/metrics/swebench_cl_gemini_flash_baseline_metrics.json
+      --curves-file eval/plots/swebench_cl_gemini_flash_baseline_curves.csv --checkpoint-file
+      eval/checkpoints/swebench_cl_gemini_flash_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl.hash]
+    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl_gemini_flash_baseline.hash]
     outs:
     - eval/metrics/swebench_cl_gemini_flash_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/swebench_cl_gemini_flash_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/swebench_cl_gemini_flash_baseline_curves.csv: {cache: false}
-
   eval_swebench_cl_deepseek_pro_aivc:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/swebench_cl_deepseek_pro_aivc_metrics.json --curves-file eval/plots/swebench_cl_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/swebench_cl_deepseek_pro_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/swebench_cl_deepseek_pro_aivc_metrics.json
+      --curves-file eval/plots/swebench_cl_deepseek_pro_aivc_curves.csv --checkpoint-file
+      eval/checkpoints/swebench_cl_deepseek_pro_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl.hash]
+    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl_deepseek_pro_aivc.hash]
     outs:
     - eval/metrics/swebench_cl_deepseek_pro_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/swebench_cl_deepseek_pro_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/swebench_cl_deepseek_pro_aivc_curves.csv: {cache: false}
-
   eval_swebench_cl_deepseek_pro_baseline:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model deepseek/deepseek-v4-pro --arm baseline --metrics-file eval/metrics/swebench_cl_deepseek_pro_baseline_metrics.json --curves-file eval/plots/swebench_cl_deepseek_pro_baseline_curves.csv --checkpoint-file eval/checkpoints/swebench_cl_deepseek_pro_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model deepseek/deepseek-v4-pro --arm baseline --metrics-file eval/metrics/swebench_cl_deepseek_pro_baseline_metrics.json
+      --curves-file eval/plots/swebench_cl_deepseek_pro_baseline_curves.csv --checkpoint-file
+      eval/checkpoints/swebench_cl_deepseek_pro_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl.hash]
+    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl_deepseek_pro_baseline.hash]
     outs:
     - eval/metrics/swebench_cl_deepseek_pro_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/swebench_cl_deepseek_pro_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/swebench_cl_deepseek_pro_baseline_curves.csv: {cache: false}
-
   eval_swebench_cl_muse_glimmer_aivc:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model meta-models/Muse-Glimmer-30B --arm aivc --metrics-file eval/metrics/swebench_cl_muse_glimmer_aivc_metrics.json --curves-file eval/plots/swebench_cl_muse_glimmer_aivc_curves.csv --checkpoint-file eval/checkpoints/swebench_cl_muse_glimmer_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model meta-models/Muse-Glimmer-30B --arm aivc --metrics-file eval/metrics/swebench_cl_muse_glimmer_aivc_metrics.json
+      --curves-file eval/plots/swebench_cl_muse_glimmer_aivc_curves.csv --checkpoint-file
+      eval/checkpoints/swebench_cl_muse_glimmer_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl.hash]
+    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl_muse_glimmer_aivc.hash]
     outs:
     - eval/metrics/swebench_cl_muse_glimmer_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/swebench_cl_muse_glimmer_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/swebench_cl_muse_glimmer_aivc_curves.csv: {cache: false}
-
   eval_swebench_cl_muse_glimmer_baseline:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model meta-models/Muse-Glimmer-30B --arm baseline --metrics-file eval/metrics/swebench_cl_muse_glimmer_baseline_metrics.json --curves-file eval/plots/swebench_cl_muse_glimmer_baseline_curves.csv --checkpoint-file eval/checkpoints/swebench_cl_muse_glimmer_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/swebench_cl_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model meta-models/Muse-Glimmer-30B --arm baseline --metrics-file eval/metrics/swebench_cl_muse_glimmer_baseline_metrics.json
+      --curves-file eval/plots/swebench_cl_muse_glimmer_baseline_curves.csv --checkpoint-file
+      eval/checkpoints/swebench_cl_muse_glimmer_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl.hash]
+    deps: [eval/benchmarks/swebench_cl_runner.py, .dvc-viewer/hashes/eval_swebench_cl_muse_glimmer_baseline.hash]
     outs:
     - eval/metrics/swebench_cl_muse_glimmer_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/swebench_cl_muse_glimmer_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/swebench_cl_muse_glimmer_baseline_curves.csv: {cache: false}
-
   # =========================================================================
   # DevBench Matrix (3 Models x 2 Arms)
   # =========================================================================
   eval_devbench_gemini_flash_aivc:
-    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model google/gemini-3.7-flash --arm aivc --metrics-path eval/metrics/devbench_gemini_flash_aivc_metrics.json --plots-path eval/plots/devbench_gemini_flash_aivc_curves.csv --checkpoint-path eval/checkpoints/devbench_gemini_flash_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model google/gemini-3.7-flash --arm aivc --metrics-path eval/metrics/devbench_gemini_flash_aivc_metrics.json
+      --plots-path eval/plots/devbench_gemini_flash_aivc_curves.csv --checkpoint-path
+      eval/checkpoints/devbench_gemini_flash_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench.hash]
+    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench_gemini_flash_aivc.hash]
     outs:
     - eval/metrics/devbench_gemini_flash_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/devbench_gemini_flash_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/devbench_gemini_flash_aivc_curves.csv: {cache: false}
-
   eval_devbench_gemini_flash_baseline:
-    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model google/gemini-3.7-flash --arm baseline --metrics-path eval/metrics/devbench_gemini_flash_baseline_metrics.json --plots-path eval/plots/devbench_gemini_flash_baseline_curves.csv --checkpoint-path eval/checkpoints/devbench_gemini_flash_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model google/gemini-3.7-flash --arm baseline --metrics-path eval/metrics/devbench_gemini_flash_baseline_metrics.json
+      --plots-path eval/plots/devbench_gemini_flash_baseline_curves.csv --checkpoint-path
+      eval/checkpoints/devbench_gemini_flash_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench.hash]
+    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench_gemini_flash_baseline.hash]
     outs:
     - eval/metrics/devbench_gemini_flash_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/devbench_gemini_flash_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/devbench_gemini_flash_baseline_curves.csv: {cache: false}
-
   eval_devbench_deepseek_pro_aivc:
-    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model deepseek/deepseek-v4-pro --arm aivc --metrics-path eval/metrics/devbench_deepseek_pro_aivc_metrics.json --plots-path eval/plots/devbench_deepseek_pro_aivc_curves.csv --checkpoint-path eval/checkpoints/devbench_deepseek_pro_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model deepseek/deepseek-v4-pro --arm aivc --metrics-path eval/metrics/devbench_deepseek_pro_aivc_metrics.json
+      --plots-path eval/plots/devbench_deepseek_pro_aivc_curves.csv --checkpoint-path
+      eval/checkpoints/devbench_deepseek_pro_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench.hash]
+    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench_deepseek_pro_aivc.hash]
     outs:
     - eval/metrics/devbench_deepseek_pro_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/devbench_deepseek_pro_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/devbench_deepseek_pro_aivc_curves.csv: {cache: false}
-
   eval_devbench_deepseek_pro_baseline:
-    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model deepseek/deepseek-v4-pro --arm baseline --metrics-path eval/metrics/devbench_deepseek_pro_baseline_metrics.json --plots-path eval/plots/devbench_deepseek_pro_baseline_curves.csv --checkpoint-path eval/checkpoints/devbench_deepseek_pro_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model deepseek/deepseek-v4-pro --arm baseline --metrics-path eval/metrics/devbench_deepseek_pro_baseline_metrics.json
+      --plots-path eval/plots/devbench_deepseek_pro_baseline_curves.csv --checkpoint-path
+      eval/checkpoints/devbench_deepseek_pro_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench.hash]
+    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench_deepseek_pro_baseline.hash]
     outs:
     - eval/metrics/devbench_deepseek_pro_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/devbench_deepseek_pro_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/devbench_deepseek_pro_baseline_curves.csv: {cache: false}
-
   eval_devbench_muse_glimmer_aivc:
-    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model meta-models/Muse-Glimmer-30B --arm aivc --metrics-path eval/metrics/devbench_muse_glimmer_aivc_metrics.json --plots-path eval/plots/devbench_muse_glimmer_aivc_curves.csv --checkpoint-path eval/checkpoints/devbench_muse_glimmer_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model meta-models/Muse-Glimmer-30B --arm aivc --metrics-path eval/metrics/devbench_muse_glimmer_aivc_metrics.json
+      --plots-path eval/plots/devbench_muse_glimmer_aivc_curves.csv --checkpoint-path
+      eval/checkpoints/devbench_muse_glimmer_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench.hash]
+    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench_muse_glimmer_aivc.hash]
     outs:
     - eval/metrics/devbench_muse_glimmer_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/devbench_muse_glimmer_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/devbench_muse_glimmer_aivc_curves.csv: {cache: false}
-
   eval_devbench_muse_glimmer_baseline:
-    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model meta-models/Muse-Glimmer-30B --arm baseline --metrics-path eval/metrics/devbench_muse_glimmer_baseline_metrics.json --plots-path eval/plots/devbench_muse_glimmer_baseline_curves.csv --checkpoint-path eval/checkpoints/devbench_muse_glimmer_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/devbench_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model meta-models/Muse-Glimmer-30B --arm baseline --metrics-path eval/metrics/devbench_muse_glimmer_baseline_metrics.json
+      --plots-path eval/plots/devbench_muse_glimmer_baseline_curves.csv --checkpoint-path
+      eval/checkpoints/devbench_muse_glimmer_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench.hash]
+    deps: [eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench_muse_glimmer_baseline.hash]
     outs:
     - eval/metrics/devbench_muse_glimmer_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/devbench_muse_glimmer_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/devbench_muse_glimmer_baseline_curves.csv: {cache: false}
-
   # =========================================================================
   # Agentic RAG Matrix (3 Models x 2 Arms)
   # =========================================================================
   eval_agentic_rag_gemini_flash_aivc:
-    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model google/gemini-3.7-flash --arm aivc --metrics-file eval/metrics/agentic_rag_gemini_flash_aivc_metrics.json --curves-file eval/plots/agentic_rag_gemini_flash_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_gemini_flash_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model google/gemini-3.7-flash --arm aivc --metrics-file eval/metrics/agentic_rag_gemini_flash_aivc_metrics.json
+      --curves-file eval/plots/agentic_rag_gemini_flash_aivc_curves.csv --checkpoint-file
+      eval/checkpoints/agentic_rag_gemini_flash_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag.hash]
+    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag_gemini_flash_aivc.hash]
     outs:
     - eval/metrics/agentic_rag_gemini_flash_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/agentic_rag_gemini_flash_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/agentic_rag_gemini_flash_aivc_curves.csv: {cache: false}
-
   eval_agentic_rag_gemini_flash_baseline:
-    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model google/gemini-3.7-flash --arm baseline --metrics-file eval/metrics/agentic_rag_gemini_flash_baseline_metrics.json --curves-file eval/plots/agentic_rag_gemini_flash_baseline_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_gemini_flash_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model google/gemini-3.7-flash --arm baseline --metrics-file eval/metrics/agentic_rag_gemini_flash_baseline_metrics.json
+      --curves-file eval/plots/agentic_rag_gemini_flash_baseline_curves.csv --checkpoint-file
+      eval/checkpoints/agentic_rag_gemini_flash_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag.hash]
+    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag_gemini_flash_baseline.hash]
     outs:
     - eval/metrics/agentic_rag_gemini_flash_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/agentic_rag_gemini_flash_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/agentic_rag_gemini_flash_baseline_curves.csv: {cache: false}
-
   eval_agentic_rag_deepseek_pro_aivc:
-    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json
+      --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file
+      eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag.hash]
+    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag_deepseek_pro_aivc.hash]
     outs:
     - eval/metrics/agentic_rag_deepseek_pro_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv: {cache: false}
-
   eval_agentic_rag_deepseek_pro_baseline:
-    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model deepseek/deepseek-v4-pro --arm baseline --metrics-file eval/metrics/agentic_rag_deepseek_pro_baseline_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_baseline_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model deepseek/deepseek-v4-pro --arm baseline --metrics-file eval/metrics/agentic_rag_deepseek_pro_baseline_metrics.json
+      --curves-file eval/plots/agentic_rag_deepseek_pro_baseline_curves.csv --checkpoint-file
+      eval/checkpoints/agentic_rag_deepseek_pro_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag.hash]
+    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag_deepseek_pro_baseline.hash]
     outs:
     - eval/metrics/agentic_rag_deepseek_pro_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/agentic_rag_deepseek_pro_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/agentic_rag_deepseek_pro_baseline_curves.csv: {cache: false}
-
   eval_agentic_rag_muse_glimmer_aivc:
-    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model meta-models/Muse-Glimmer-30B --arm aivc --metrics-file eval/metrics/agentic_rag_muse_glimmer_aivc_metrics.json --curves-file eval/plots/agentic_rag_muse_glimmer_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_muse_glimmer_aivc_checkpoint.jsonl
+    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model meta-models/Muse-Glimmer-30B --arm aivc --metrics-file eval/metrics/agentic_rag_muse_glimmer_aivc_metrics.json
+      --curves-file eval/plots/agentic_rag_muse_glimmer_aivc_curves.csv --checkpoint-file
+      eval/checkpoints/agentic_rag_muse_glimmer_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag.hash]
+    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag_muse_glimmer_aivc.hash]
     outs:
     - eval/metrics/agentic_rag_muse_glimmer_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/agentic_rag_muse_glimmer_aivc_metrics.json: {cache: false}
     plots:
     - eval/plots/agentic_rag_muse_glimmer_aivc_curves.csv: {cache: false}
-
   eval_agentic_rag_muse_glimmer_baseline:
-    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd} --model meta-models/Muse-Glimmer-30B --arm baseline --metrics-file eval/metrics/agentic_rag_muse_glimmer_baseline_metrics.json --curves-file eval/plots/agentic_rag_muse_glimmer_baseline_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_muse_glimmer_baseline_checkpoint.jsonl
+    cmd: python eval/benchmarks/agentic_rag_runner.py --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --model meta-models/Muse-Glimmer-30B --arm baseline --metrics-file eval/metrics/agentic_rag_muse_glimmer_baseline_metrics.json
+      --curves-file eval/plots/agentic_rag_muse_glimmer_baseline_curves.csv --checkpoint-file
+      eval/checkpoints/agentic_rag_muse_glimmer_baseline_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag.hash]
+    deps: [eval/benchmarks/agentic_rag_runner.py, .dvc-viewer/hashes/eval_agentic_rag_muse_glimmer_baseline.hash]
     outs:
     - eval/metrics/agentic_rag_muse_glimmer_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/agentic_rag_muse_glimmer_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/agentic_rag_muse_glimmer_baseline_curves.csv: {cache: false}
-
-  # =========================================================================
-  # Final Metrics Aggregation (18 Runs Consolidation)
-  # =========================================================================
   aggregate_metrics:
     cmd: python eval/scripts/aggregate_metrics.py
-    deps:
-    - eval/scripts/aggregate_metrics.py
-    - .dvc-viewer/hashes/aggregate_metrics.hash
-    - eval/metrics/swebench_cl_gemini_flash_aivc_metrics.json
-    - eval/metrics/swebench_cl_gemini_flash_baseline_metrics.json
-    - eval/metrics/swebench_cl_deepseek_pro_aivc_metrics.json
-    - eval/metrics/swebench_cl_deepseek_pro_baseline_metrics.json
-    - eval/metrics/swebench_cl_muse_glimmer_aivc_metrics.json
-    - eval/metrics/swebench_cl_muse_glimmer_baseline_metrics.json
-    - eval/metrics/devbench_gemini_flash_aivc_metrics.json
-    - eval/metrics/devbench_gemini_flash_baseline_metrics.json
-    - eval/metrics/devbench_deepseek_pro_aivc_metrics.json
-    - eval/metrics/devbench_deepseek_pro_baseline_metrics.json
-    - eval/metrics/devbench_muse_glimmer_aivc_metrics.json
-    - eval/metrics/devbench_muse_glimmer_baseline_metrics.json
-    - eval/metrics/agentic_rag_gemini_flash_aivc_metrics.json
-    - eval/metrics/agentic_rag_gemini_flash_baseline_metrics.json
-    - eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json
-    - eval/metrics/agentic_rag_deepseek_pro_baseline_metrics.json
-    - eval/metrics/agentic_rag_muse_glimmer_aivc_metrics.json
-    - eval/metrics/agentic_rag_muse_glimmer_baseline_metrics.json
+    deps: [eval/scripts/aggregate_metrics.py, .dvc-viewer/hashes/aggregate_metrics.hash,
+      eval/metrics/swebench_cl_gemini_flash_aivc_metrics.json, eval/metrics/swebench_cl_gemini_flash_baseline_metrics.json,
+      eval/metrics/swebench_cl_deepseek_pro_aivc_metrics.json, eval/metrics/swebench_cl_deepseek_pro_baseline_metrics.json,
+      eval/metrics/swebench_cl_muse_glimmer_aivc_metrics.json, eval/metrics/swebench_cl_muse_glimmer_baseline_metrics.json,
+      eval/metrics/devbench_gemini_flash_aivc_metrics.json, eval/metrics/devbench_gemini_flash_baseline_metrics.json,
+      eval/metrics/devbench_deepseek_pro_aivc_metrics.json, eval/metrics/devbench_deepseek_pro_baseline_metrics.json,
+      eval/metrics/devbench_muse_glimmer_aivc_metrics.json, eval/metrics/devbench_muse_glimmer_baseline_metrics.json,
+      eval/metrics/agentic_rag_gemini_flash_aivc_metrics.json, eval/metrics/agentic_rag_gemini_flash_baseline_metrics.json,
+      eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json, eval/metrics/agentic_rag_deepseek_pro_baseline_metrics.json,
+      eval/metrics/agentic_rag_muse_glimmer_aivc_metrics.json, eval/metrics/agentic_rag_muse_glimmer_baseline_metrics.json]
     outs:
     - eval/metrics/tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/summary_metrics.json: {cache: false}
     plots:
     - eval/plots/comparative_summary.csv: {cache: false}
-
