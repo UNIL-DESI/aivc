@@ -632,6 +632,7 @@ class DevBenchRunner:
         interactions_paths: Optional[List[Path]] = None,
         run_id: Optional[str] = None,
         workspace_dir: Optional[Path] = None,
+        dry_run: bool = False,
     ):
         self.arm = arm.lower()
         self.model_name = model_name
@@ -645,6 +646,7 @@ class DevBenchRunner:
         self.interactions_paths = interactions_paths or []
         self.run_id = run_id
         self.workspace_dir = workspace_dir
+        self.dry_run = dry_run
 
         # System prompt and tool schemas dynamically configured for active arm
         self.system_prompt = get_aivc_system_prompt(benchmark_type="devbench", arm=self.arm)
@@ -876,7 +878,7 @@ class DevBenchRunner:
         retries: int = 5,
     ) -> Optional[Dict[str, Any]]:
         """Send chat completion request with tools schema using InferenceClient, or simulate only if dry_run is explicitly True."""
-        if self.dry_run:
+        if getattr(self, "dry_run", False):
             return self._simulate_dry_run_turn(repo=repo or {}, phase=phase, turn=turn)
 
         try:
