@@ -132,7 +132,7 @@ stages:
     outs:
     - path: .dvc-viewer/hashes
       hash: md5
-      md5: c53c126c79bd1b74bb93c2318187b393.dir
+      md5: cf7eba77e75bbc9ab16679f3a0f19e68.dir
       size: 3568
       nfiles: 20
   eval_agentic_rag:
@@ -327,3 +327,79 @@ stages:
       hash: md5
       md5: 54ebec5854297890529fbe609fb85863
       size: 3332
+  eval_devbench_aivc:
+    cmd: python eval/benchmarks/devbench_runner.py --limit 15 --max-turns 50 
+      --max-tokens 4096 --max-cost 0.1 --arm aivc --metrics-path 
+      eval/metrics/devbench_aivc_metrics.json --plots-path 
+      eval/plots/devbench_aivc_curves.csv --checkpoint-path 
+      eval/checkpoints/devbench_aivc_checkpoint.jsonl
+    deps:
+    - path: .dvc-viewer/hashes/eval_devbench_aivc.hash
+      hash: md5
+      md5: 507a53772289a6672a85357e39e74f9f
+      size: 64
+    - path: eval/benchmarks/devbench_runner.py
+      hash: md5
+      md5: 7aa5faafea2b7990604eab6d632a09ea
+      size: 66380
+    - path: eval/setup/devbench_ready.flag
+      hash: md5
+      md5: 9dc1f0c5591da9995b70b14fdeee618c
+      size: 212
+    params:
+      params.yaml:
+        eval.limit: 15
+        eval.max_cost_per_instance_usd: 0.1
+        eval.max_tokens: 4096
+        eval.max_turns: 50
+    outs:
+    - path: eval/metrics/devbench_aivc_metrics.json
+      hash: md5
+      md5: 424b0ac7a5940a96d2d39b765e1f1adc
+      size: 261281
+    - path: eval/metrics/devbench_aivc_tool_interactions.jsonl
+      hash: md5
+      md5: 0cac93a04da0075131292e77db48a65e
+      size: 182960
+    - path: eval/plots/devbench_aivc_curves.csv
+      hash: md5
+      md5: 70d609e2233658bbd0470bac6d862154
+      size: 1976
+  eval_devbench_baseline:
+    cmd: python eval/benchmarks/devbench_runner.py --limit 15 --max-turns 50 
+      --max-tokens 4096 --max-cost 0.1 --arm baseline --metrics-path 
+      eval/metrics/devbench_baseline_metrics.json --plots-path 
+      eval/plots/devbench_baseline_curves.csv --checkpoint-path 
+      eval/checkpoints/devbench_baseline_checkpoint.jsonl
+    deps:
+    - path: .dvc-viewer/hashes/eval_devbench_baseline.hash
+      hash: md5
+      md5: 507a53772289a6672a85357e39e74f9f
+      size: 64
+    - path: eval/benchmarks/devbench_runner.py
+      hash: md5
+      md5: 7aa5faafea2b7990604eab6d632a09ea
+      size: 66380
+    - path: eval/setup/devbench_ready.flag
+      hash: md5
+      md5: 9dc1f0c5591da9995b70b14fdeee618c
+      size: 212
+    params:
+      params.yaml:
+        eval.limit: 15
+        eval.max_cost_per_instance_usd: 0.1
+        eval.max_tokens: 4096
+        eval.max_turns: 50
+    outs:
+    - path: eval/metrics/devbench_baseline_metrics.json
+      hash: md5
+      md5: 7cfcbe880dbfb135c4c82f72c63e0b58
+      size: 173057
+    - path: eval/metrics/devbench_baseline_tool_interactions.jsonl
+      hash: md5
+      md5: ffe5c2ec8cbc60837fbf64b1ecfcb578
+      size: 118062
+    - path: eval/plots/devbench_baseline_curves.csv
+      hash: md5
+      md5: 02291dabd2d5456d99ef42bce1d8ed9e
+      size: 1957

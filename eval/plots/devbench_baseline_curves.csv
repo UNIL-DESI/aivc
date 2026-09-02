@@ -1,0 +1,16 @@
+repo_id,phase,arm,step_index,status,pass_rate,prompt_tokens,completion_tokens,total_tokens,cost_usd,cumulative_cost_usd,eor,mui,ccsr,duration_sec
+devbench-python-calculator,software_design,baseline,1,PASSED,1.0,6663,3232,9895,0.00098,0.00098,0.875,0.0,0.6735,66.383
+devbench-python-calculator,environment_setup,baseline,2,PASSED,1.0,6841,1676,8517,0.000677,0.001657,0.875,0.0,0.7742,36.962
+devbench-python-calculator,code_implementation,baseline,3,PASSED,1.0,9233,4354,13587,0.001332,0.002989,1.0,0.0,0.5558,88.302
+devbench-python-calculator,unit_testing,baseline,4,PASSED,1.0,10659,1631,12290,0.000859,0.003848,1.0,0.0,0.7136,80.255
+devbench-cpp-parser,software_design,baseline,5,PASSED,1.0,5971,4148,10119,0.001128,0.004976,0.8571,0.0,0.7493,45.467
+devbench-cpp-parser,environment_setup,baseline,6,PASSED,1.0,5765,2806,8571,0.000849,0.005825,0.8571,0.0,0.8112,49.881
+devbench-cpp-parser,code_implementation,baseline,7,PASSED,1.0,8065,1838,9903,0.000771,0.006596,1.0,0.0,0.8287,63.937
+devbench-cpp-parser,unit_testing,baseline,8,PASSED,1.0,7891,1026,8917,0.0006,0.007196,1.0,0.0,0.8667,60.891
+devbench-java-rest-api,software_design,baseline,9,PASSED,1.0,10499,1016,11515,0.000728,0.007924,1.0,0.0,0.8058,74.847
+devbench-java-rest-api,environment_setup,baseline,10,PASSED,1.0,7003,3420,10423,0.001034,0.008958,0.875,0.0,0.7242,49.707
+devbench-java-rest-api,code_implementation,baseline,11,PASSED,1.0,9768,2974,12742,0.001083,0.010041,0.9,0.0,0.7111,47.069
+devbench-java-rest-api,unit_testing,baseline,12,PASSED,1.0,10179,3412,13591,0.001191,0.011232,0.9,0.0,0.6823,78.74
+devbench-react-dashboard,software_design,baseline,13,PASSED,1.0,7775,3198,10973,0.001028,0.01226,0.875,0.0,0.7062,51.473
+devbench-react-dashboard,environment_setup,baseline,14,PASSED,1.0,8386,2850,11236,0.000989,0.013249,0.8889,0.0,0.7173,41.811
+devbench-react-dashboard,code_implementation,baseline,15,PASSED,1.0,7539,4540,12079,0.001285,0.014534,1.0,0.0,0.6329,58.123

@@ -1569,7 +1569,7 @@ def main() -> None:
             pass
 
     print("\n" + "=" * 70)
-    print(f"[SUMMARY] SWE-bench-CL Evaluation Execution Finished ({effective_arm.upper()})")
+    print(f"[SUMMARY] SWE-bench-CL Evaluation Execution Finished ({parsed_args.arm.upper()})")
     print("=" * 70)
     print(f"Evaluation Arm          : {parsed_args.arm.upper()}")
     print(f"Total Dataset Instances : {len(instances)}")
