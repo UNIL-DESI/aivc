@@ -9,13 +9,27 @@ Running stage 'dvc-code-analysis':
 > bash .dvc-viewer/bootstrap.sh && dvc-viewer hash
 🔍 Scanning dependencies and computing hashes...
    ✅ dvc.yaml is up to date
+Updating lock file 'dvc.lock'
+
+To track the changes with git, run:
+
+	git add dvc.lock
+
+To enable auto staging, run:
+
+	dvc config core.autostage true
 Use `dvc push` to send your updates to remote storage.
 ==================================================
 ✅ Stage dvc-code-analysis completed successfully.
 ==================================================
 🔄 Syncing metrics and plots for completed stage 'dvc-code-analysis'...
 🚀 [Cluster-CI Shim] Intercepting uv run, executing natively: python3 /cluster-ci/src/runner/dvc_git_helper.py sync
-ℹ️  [DVC-Git-Helper] No new metrics changes to commit. Skipping push.
+[cluster-draft/hjamet f753f0c] chore(ci): auto-sync dvc.lock [skip ci]
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ℹ️  [DVC-Git-Helper] Staged modified dvc.lock for synchronization
+ℹ️  [DVC-Git-Helper] Committing changes with message: chore(ci): auto-sync dvc.lock [skip ci]
+ℹ️  [DVC-Git-Helper] Pushing all accumulated local commits to origin on branch 'cluster-draft/hjamet'...
+✅ [DVC-Git-Helper] All changes pushed successfully to cluster-draft/hjamet.
 
 ==================================================
 🚀 Executing stage: eval_agentic_rag_deepseek_pro_aivc
@@ -39,15 +53,18 @@ Curves Output  : eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv
 [CHECKPOINT] Loaded 0 previously processed queries from checkpoint.
 [DATASET] Loaded 15 continual learning multi-hop queries from 'aivc/swe-explore-continual-rag'.
 Traceback (most recent call last):
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1574, in <module>
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1584, in <module>
     main()
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1494, in main
-    runner = AgenticRAGRunner(
-             ^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 864, in __init__
-    self.env = AIVCContinualEnvironment(arm=self.arm, run_id=self.run_id, workspace_dir=self.workspace_dir)
-    ^^^^^^^^
-AttributeError: property 'env' of 'AgenticRAGRunner' object has no setter
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1524, in main
+    ep_record = runner.run_episode(
+                ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 944, in run_episode
+    env = self.get_env_for_repo(repo)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 888, in get_env_for_repo
+    self.repo_envs[repo] = AIVCContinualEnvironment(arm=self.arm, repo=repo)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: AIVCContinualEnvironment.__init__() got an unexpected keyword argument 'repo'
 ERROR: failed to reproduce 'eval_agentic_rag_deepseek_pro_aivc': failed to run: python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl, exited with 1
 ❌ Stage eval_agentic_rag_deepseek_pro_aivc failed with code 255
 💾 Committing and pushing failure state to GitHub...

@@ -116,10 +116,12 @@ class AIVCContinualEnvironment:
     def __init__(
         self,
         arm: str = "aivc",
+        repo: Optional[str] = None,
         run_id: Optional[str] = None,
         workspace_dir: Optional[Path] = None,
     ):
         self.arm = arm.lower()
+        self.repo = repo or "default"
         self.run_id = run_id or uuid.uuid4().hex[:8]
         self.workspace_dir = workspace_dir or (EVAL_DIR / "scratch" / f"aivc_rag_{self.run_id}")
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -885,7 +887,7 @@ class AgenticRAGRunner:
     def get_env_for_repo(self, repo: str) -> AIVCContinualEnvironment:
         """Get or create a dedicated, hermetically isolated AIVC memory environment for a repository."""
         if repo not in self.repo_envs:
-            self.repo_envs[repo] = AIVCContinualEnvironment(arm=self.arm, repo=repo)
+            self.repo_envs[repo] = AIVCContinualEnvironment(arm=self.arm, repo=repo, run_id=self.run_id, workspace_dir=self.workspace_dir)
         return self.repo_envs[repo]
 
     @property
