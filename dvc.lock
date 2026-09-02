@@ -132,9 +132,9 @@ stages:
     outs:
     - path: .dvc-viewer/hashes
       hash: md5
-      md5: 43e4680feea1534f393b301b00d08539.dir
-      size: 6853
-      nfiles: 38
+      md5: 4dd962d07a93c7a2b1ca109649a5e855.dir
+      size: 3568
+      nfiles: 20
   eval_agentic_rag:
     cmd: python eval/benchmarks/agentic_rag_runner.py --limit 30 --max-turns 50 
       --max-tokens 4096 --max-cost 0.1 --model qwen/qwen3.7-flash
