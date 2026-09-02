@@ -39,6 +39,9 @@ if str(REPO_ROOT) not in sys.path:
 if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
 
+# Enforce deterministic 100% local execution (no background sync/network calls)
+os.environ.setdefault("AIVC_DISABLE_SYNC", "1")
+
 # Import TrajectoryAnalyzer & metrics from eval.metrics
 from metrics.trajectory_analyzer import (
     TrajectoryAnalyzer,
@@ -73,6 +76,7 @@ except ImportError:
 # Import unified configuration, prompt template, and tool schemas from eval.config
 from config import (
     InferenceClient,
+    WORKSPACE_TOOLS_SCHEMA,
     add_eval_args,
     get_aivc_system_prompt,
     get_benchmark_tools_schema,
@@ -80,9 +84,29 @@ from config import (
     load_models_registry,
     sanitize_messages,
 )
+import copy
 
-AIVC_SYSTEM_PROMPT = get_aivc_system_prompt(benchmark_type="swebench_cl")
+AIVC_SWEBENCH_SYSTEM_PROMPT = get_aivc_system_prompt(benchmark_type="swebench_cl")
+AIVC_SYSTEM_PROMPT = AIVC_SWEBENCH_SYSTEM_PROMPT
 AIVC_BENCHMARK_TOOLS_SCHEMA = get_benchmark_tools_schema(include_workspace=True, benchmark_type="swebench_cl")
+
+NAIVE_SWEBENCH_SYSTEM_PROMPT = """# Autonomous Software Engineering Agent (Stateless Baseline)
+
+You are an expert autonomous software engineer solving issue resolution tasks across repositories.
+You operate in a **stateless, ephemeral environment** with zero persistent memory between tasks.
+
+## Tool Arsenal:
+- `view_file(file_path: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file in the workspace.
+- `grep_search(query: str, search_path: str = ".")`: Search for text patterns across the repository.
+- `list_dir(directory: str = ".")`: List files and subdirectories.
+- `submit_patch(patch: str, explanation: str)`: Submit the final git patch and complete the task.
+
+## Mandatory Execution Protocol:
+1. Explore the repository using `grep_search`, `list_dir`, and `view_file` to locate and understand the bug.
+2. Formulate and submit the unified git diff fix via `submit_patch`.
+"""
+
+NAIVE_BENCHMARK_TOOLS_SCHEMA = copy.deepcopy(WORKSPACE_TOOLS_SCHEMA)
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +175,13 @@ class AIVCEnvironment:
     def file_snapshots(self) -> Dict[str, List[Dict[str, Any]]]:
         return self.repo_stores.get(self.current_repo, {}).get("file_snapshots", {})
 
+    def reset_if_stateless(self) -> None:
+        """For naive baseline arm, clear memories between episodes."""
+        if self.arm in ("naive", "baseline"):
+            self.memories.clear()
+            self.file_snapshots.clear()
+            self._memory_counter = 0
+
     def remember(
         self,
         title: str,
@@ -167,11 +198,13 @@ class AIVCEnvironment:
         store["counter"] += 1
         mem_id = f"mem-{store['counter']:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
+        effective_repo = repo or self.repo
 
         record = {
             "id": mem_id,
             "title": title,
             "note": note,
+            "repo": effective_repo,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
             "repo": target_repo,
@@ -185,6 +218,7 @@ class AIVCEnvironment:
                 store["file_snapshots"][f] = []
             store["file_snapshots"][f].append({
                 "memory_id": mem_id,
+                "repo": effective_repo,
                 "timestamp": now_str,
                 "note_ref": title,
             })
@@ -213,7 +247,7 @@ class AIVCEnvironment:
         scored_results.sort(key=lambda x: x[0], reverse=True)
         top = scored_results[:limit] if scored_results else [(0, m) for m in list(mems.values())[-limit:]]
 
-        lines = [f"Found {len(top)} relevant memories:"]
+        lines = [f"Found {len(top)} relevant memories for [{effective_repo}]:"]
         for _, m in top:
             snippet = m["note"][:160].replace("\n", " ") + "..."
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}): {snippet}")
@@ -225,9 +259,9 @@ class AIVCEnvironment:
         all_mems.reverse()
         slice_mems = all_mems[offset: offset + limit]
         if not slice_mems:
-            return "No memories found in range."
+            return f"No memories found for repository '{effective_repo}' in range."
 
-        lines = [f"Recent memories (offset={offset}, limit={limit}):"]
+        lines = [f"Recent memories for [{effective_repo}] (offset={offset}, limit={limit}):"]
         for m in slice_mems:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]})")
         return "\n".join(lines)
@@ -237,14 +271,17 @@ class AIVCEnvironment:
         mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
-        return f"# {mem['title']}\n**Created**: {mem['timestamp']}\n**Read Files**: {mem['read_files']}\n**Edited Files**: {mem['edited_files']}\n\n{mem['note']}"
+        effective_repo = repo or self.repo
+        if mem.get("repo") and mem.get("repo") != effective_repo:
+            return f"Memory ID '{memory_id}' belongs to repository '{mem.get('repo')}' (access denied for '{effective_repo}')."
+        return f"# {mem['title']}\n**Repository**: {mem.get('repo', effective_repo)}\n**Created**: {mem['timestamp']}\n**Read Files**: {mem['read_files']}\n**Edited Files**: {mem['edited_files']}\n\n{mem['note']}"
 
     def get_file_history_metadata(self, filepath: str, repo: Optional[str] = None) -> str:
         target_repo = repo or self.current_repo
         hist = self.repo_stores.get(target_repo, {}).get("file_snapshots", {}).get(filepath, [])
         if not hist:
-            return f"No AIVC version history for file '{filepath}'."
-        lines = [f"Version history for '{filepath}':"]
+            return f"No AIVC version history for file '{filepath}' in repository '{effective_repo}'."
+        lines = [f"Version history for '{filepath}' in [{effective_repo}]:"]
         for h in hist:
             lines.append(f"- Memory [{h['memory_id']}] at {h['timestamp']}: {h['note_ref']}")
         return "\n".join(lines)
@@ -254,7 +291,10 @@ class AIVCEnvironment:
         mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
-        return f"// Snapshot of {filepath} associated with {memory_id} ({mem['title']})\n// Memory context:\n{mem['note'][:300]}"
+        effective_repo = repo or self.repo
+        if mem.get("repo") and mem.get("repo") != effective_repo:
+            return f"Memory ID '{memory_id}' belongs to repository '{mem.get('repo')}' (access denied for '{effective_repo}')."
+        return f"// Snapshot of {filepath} in [{effective_repo}] associated with {memory_id} ({mem['title']})\n// Memory context:\n{mem['note'][:300]}"
 
     def recall_with_records(self, query: str, limit: int = 5, repo: Optional[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
         target_repo = repo or self.current_repo
@@ -658,6 +698,7 @@ class SWEBenchCLRunner:
         self,
         arm: str = "aivc",
         model_name: str = "qwen/qwen3.7-flash",
+        arm: str = "aivc",
         api_key: str = "",
         max_turns: int = 50,
         max_tokens: int = 4096,
@@ -671,6 +712,7 @@ class SWEBenchCLRunner:
     ):
         self.arm = arm.lower()
         self.model_name = model_name
+        self.arm = arm.lower()
         self.api_key = api_key
         self.max_turns = max_turns
         self.max_tokens = max_tokens
@@ -701,6 +743,17 @@ class SWEBenchCLRunner:
         self.prompt_price_per_1m = prompt_price_per_1m if prompt_price_per_1m is not None else 0.03
         self.completion_price_per_1m = completion_price_per_1m if completion_price_per_1m is not None else 0.13
 
+    def get_env_for_repo(self, repo: str) -> AIVCEnvironment:
+        """Get or create a dedicated, hermetically isolated AIVC memory environment for a repository."""
+        if repo not in self.repo_envs:
+            self.repo_envs[repo] = AIVCEnvironment(repo=repo, arm=self.arm)
+        return self.repo_envs[repo]
+
+    @property
+    def aivc_env(self) -> AIVCEnvironment:
+        """Default/fallback environment property."""
+        return self.get_env_for_repo("default")
+
     def _calculate_step_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_cost = (prompt_tokens / 1_000_000.0) * self.prompt_price_per_1m
         c_cost = (completion_tokens / 1_000_000.0) * self.completion_price_per_1m
@@ -710,13 +763,181 @@ class SWEBenchCLRunner:
         """Sanitize message history to prevent OpenRouter/provider JSON argument parsing errors."""
         return sanitize_messages(messages)
 
+    def _simulate_dry_run_turn(
+        self,
+        instance: Dict[str, Any],
+        turn: int,
+    ) -> Dict[str, Any]:
+        """Simulate realistic turn responses in dry-run mode."""
+        repo = instance.get("repo", "django/django")
+        inst_id = instance.get("instance_id", "instance-001")
+        problem = instance.get("problem_statement", "")[:60].replace('"', "'")
+
+        if self.arm == "aivc":
+            if turn == 1:
+                return {
+                    "usage": {"prompt_tokens": 420, "completion_tokens": 55},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Investigating issue in {repo}. Searching AIVC memory for relevant historical patches and context.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "recall",
+                                            "arguments": json.dumps({"query": f"{repo} {problem}"}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            elif turn == 2:
+                return {
+                    "usage": {"prompt_tokens": 550, "completion_tokens": 90},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Inspecting target source file in {repo}.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "view_file",
+                                            "arguments": json.dumps({"filepath": "core/handlers.py"}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            else:
+                return {
+                    "usage": {"prompt_tokens": 680, "completion_tokens": 120},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Fix confirmed. Recording resolution to AIVC memory and submitting final patch.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "remember",
+                                            "arguments": json.dumps({
+                                                "title": f"Resolved {inst_id} in {repo}",
+                                                "note": f"Fixed exception handling and edge case in {repo} for issue: {problem}",
+                                                "read_files": ["core/handlers.py"],
+                                                "edited_files": ["core/handlers.py"],
+                                            }),
+                                        },
+                                    },
+                                    {
+                                        "id": f"call_{turn}_2",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "submit_patch",
+                                            "arguments": json.dumps({
+                                                "patch": f"--- a/core/handlers.py\n+++ b/core/handlers.py\n@@ -10,3 +10,4 @@\n+    # Resolved issue {inst_id}\n",
+                                                "explanation": f"Fixed bug in {repo} core handler for {inst_id}",
+                                            }),
+                                        },
+                                    },
+                                ],
+                            }
+                        }
+                    ],
+                }
+        else:
+            # Naive baseline (stateless exploration with grep and file viewing)
+            if turn == 1:
+                return {
+                    "usage": {"prompt_tokens": 380, "completion_tokens": 40},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Searching codebase with grep for relevant symbols in {repo}.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "grep_search",
+                                            "arguments": json.dumps({"query": "Handler"}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            elif turn == 2:
+                return {
+                    "usage": {"prompt_tokens": 580, "completion_tokens": 70},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Reading candidate source file in {repo}.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "view_file",
+                                            "arguments": json.dumps({"filepath": "core/handlers.py"}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            else:
+                return {
+                    "usage": {"prompt_tokens": 720, "completion_tokens": 110},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Formulating fix and submitting patch for {inst_id}.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "submit_patch",
+                                            "arguments": json.dumps({
+                                                "patch": f"--- a/core/handlers.py\n+++ b/core/handlers.py\n@@ -10,3 +10,4 @@\n+    # Resolved issue {inst_id}\n",
+                                                "explanation": f"Fixed bug in {repo} core handler for {inst_id}",
+                                            }),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+
     def _call_openrouter_api(
         self,
         messages: List[Dict[str, Any]],
+        instance: Optional[Dict[str, Any]] = None,
+        turn: int = 1,
         retries: int = 5,
     ) -> Optional[Dict[str, Any]]:
         """Send chat completion request to LLM provider (OpenRouter or Together AI) using InferenceClient."""
         try:
+            tools = AIVC_BENCHMARK_TOOLS_SCHEMA if self.arm == "aivc" else NAIVE_BENCHMARK_TOOLS_SCHEMA
             return self.client.complete(
                 messages=messages,
                 tools=self.tools_schema,
@@ -749,6 +970,9 @@ class SWEBenchCLRunner:
         problem_statement = instance.get("problem_statement", "")
         hints_text = instance.get("hints_text", "")
 
+        # Reset memory state if running in naive stateless baseline mode
+        aivc_env.reset_if_stateless()
+
         print(f"\n" + "=" * 70)
         print(f"[EPISODE {episode_index}] Arm: {self.arm.upper()} | Instance: {instance_id} ({repo})")
         print(f"Problem Preview: {problem_statement[:120]}...")
@@ -774,6 +998,25 @@ class SWEBenchCLRunner:
             )
 
         # Initialize conversation messages
+        system_prompt = AIVC_SWEBENCH_SYSTEM_PROMPT if self.arm == "aivc" else NAIVE_SWEBENCH_SYSTEM_PROMPT
+        if self.arm == "aivc":
+            user_instruction = (
+                f"Repository: {repo}\n"
+                f"Instance ID: {instance_id}\n\n"
+                f"Task: Investigate and resolve the following issue:\n{problem_statement}\n\n"
+                f"Hints:\n{hints_text}\n\n"
+                f"Remember: Call `recall` first to search long-term memory for relevant past context. "
+                f"Use `remember` to record insights and call `submit_patch` when your fix is ready."
+            )
+        else:
+            user_instruction = (
+                f"Repository: {repo}\n"
+                f"Instance ID: {instance_id}\n\n"
+                f"Task: Investigate and resolve the following issue:\n{problem_statement}\n\n"
+                f"Hints:\n{hints_text}\n\n"
+                f"Stateless Instruction: Explore the repository using grep and file viewing tools, then call `submit_patch` with the fix."
+            )
+
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_instruction},
@@ -803,7 +1046,7 @@ class SWEBenchCLRunner:
 
             print(f"  [TURN {turn:02d}/{self.max_turns:02d}] Calling {self.model_name} (Cost so far: ${total_instance_cost:.4f})... ", end="", flush=True)
 
-            api_response = self._call_openrouter_api(messages)
+            api_response = self._call_openrouter_api(messages, instance=instance, turn=turn)
             if not api_response or "choices" not in api_response or not api_response["choices"]:
                 print("FAILED (No response)")
                 break
@@ -842,9 +1085,9 @@ class SWEBenchCLRunner:
                     turn_tool_names.append(fn_name)
                     tools_called_list.append(fn_name)
 
-                    if fn_name == "recall" or fn_name == "get_recent_memories":
+                    if fn_name in ("recall", "get_recent_memories"):
                         turn_recalled += 1
-                    elif fn_name == "consult_memory" or fn_name == "read_past_file_content":
+                    elif fn_name in ("consult_memory", "read_past_file_content"):
                         turn_used += 1
 
                     if fn_name == "submit_patch":
@@ -1012,6 +1255,7 @@ def export_metrics(
 
     metrics_payload = {
         "benchmark": "SWE-bench-CL Continual Learning",
+        "arm": arm,
         "dataset_name": dataset_name,
         "model_name": model_name,
         "arm": arm,
@@ -1121,6 +1365,17 @@ def export_plots_curves(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(
         description="SWE-bench-CL Continual Learning Benchmark Runner for AIVC."
     )
@@ -1244,6 +1499,7 @@ def main() -> None:
     runner = SWEBenchCLRunner(
         arm=parsed_args.arm,
         model_name=cfg.model,
+        arm=effective_arm,
         api_key=api_key,
         max_turns=cfg.max_turns,
         max_tokens=cfg.max_tokens,
@@ -1303,7 +1559,7 @@ def main() -> None:
             pass
 
     print("\n" + "=" * 70)
-    print("[SUMMARY] SWE-bench-CL Evaluation Execution Finished")
+    print(f"[SUMMARY] SWE-bench-CL Evaluation Execution Finished ({effective_arm.upper()})")
     print("=" * 70)
     print(f"Evaluation Arm          : {parsed_args.arm.upper()}")
     print(f"Total Dataset Instances : {len(instances)}")

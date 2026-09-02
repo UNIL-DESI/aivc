@@ -71,12 +71,6 @@ To retrieve memory, follow this structured funnel:
 4. **`get_file_history_metadata`** — to see the chronological commit/memory history of a specific file.
 5. **`read_past_file_content`** — to inspect the actual historical content or diff of a file at a past memory.
 
-## Remote Memories & Sync Policy
-
-AIVC synchronizes ONLY memory metadata (titles, notes) between machines. 
-File contents (blobs) are recorded locally. If a memory was created on another machine,
-historical file content snapshots may not be locally available for `read_past_file_content`.
-
 ## Tool Reference
 
 | Tool | Purpose |
@@ -198,11 +192,6 @@ AIVC_CORE_TOOLS_SCHEMA: List[Dict[str, Any]] = [
                         "description": "Optional glob pattern (e.g. 'src/*.py') to restrict search to touched files.",
                         "default": "",
                     },
-                    "only_local": {
-                        "type": "boolean",
-                        "description": "If True, only search memories created on this machine.",
-                        "default": False,
-                    },
                 },
                 "required": ["query"],
             },
@@ -228,11 +217,6 @@ AIVC_CORE_TOOLS_SCHEMA: List[Dict[str, Any]] = [
                         "type": "integer",
                         "description": "Number of memories to skip from the most recent (default 0).",
                         "default": 0,
-                    },
-                    "only_local": {
-                        "type": "boolean",
-                        "description": "If True, only show memories created on this machine.",
-                        "default": False,
                     },
                 },
             },

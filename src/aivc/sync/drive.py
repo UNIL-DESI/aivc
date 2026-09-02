@@ -23,9 +23,11 @@ class NativeDriveSyncManager:
     """Manages push/pull of memory metadata to Google Drive natively."""
 
     def __init__(self, storage_root: Path):
+        import os
         self.storage_root = storage_root
         self.config = get_aivc_config().get("sync", {})
-        self.enabled = self.config.get("enabled", False)
+        disable_sync = os.environ.get("AIVC_DISABLE_SYNC", "").lower() in ("1", "true", "yes")
+        self.enabled = (not disable_sync) and self.config.get("enabled", False)
         # Blob sync is disabled by default in Phase 29+ to avoid security/storage leaks
         self.sync_blobs = self.config.get("sync_blobs", False)
         self.machine_id = get_machine_id()

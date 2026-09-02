@@ -39,6 +39,9 @@ if str(REPO_ROOT) not in sys.path:
 if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
 
+# Enforce deterministic 100% local execution (no background sync/network calls)
+os.environ.setdefault("AIVC_DISABLE_SYNC", "1")
+
 # Import TrajectoryAnalyzer metrics if available
 from metrics.trajectory_analyzer import (
     TrajectoryAnalyzer,
@@ -79,6 +82,8 @@ EXPLORATION_TOOLS = {
 # Import unified configuration, prompt template, and tool schemas from eval.config
 from config import (
     InferenceClient,
+    WORKSPACE_TOOLS_SCHEMA,
+    DEVBENCH_DELIVERABLE_TOOL_SCHEMA,
     add_eval_args,
     get_aivc_system_prompt,
     get_benchmark_tools_schema,
@@ -86,6 +91,30 @@ from config import (
     load_models_registry,
     sanitize_messages,
 )
+import copy
+
+AIVC_DEVBENCH_SYSTEM_PROMPT = get_aivc_system_prompt(benchmark_type="devbench")
+AIVC_DEVBENCH_TOOLS_SCHEMA = get_benchmark_tools_schema(include_workspace=True, benchmark_type="devbench")
+
+NAIVE_DEVBENCH_SYSTEM_PROMPT = """# Autonomous Software Engineer (Stateless Baseline SDLC)
+
+You are an expert autonomous software engineer working through the Software Development Life Cycle (SDLC).
+You operate in a **stateless, ephemeral environment** with zero persistent memory between phases and tasks.
+
+## Tool Arsenal:
+- `view_file(filepath: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file.
+- `grep_search(query: str, search_path: str = ".")`: Search pattern across codebase.
+- `list_dir(directory: str = ".")`: List contents of a directory.
+- `submit_phase_deliverable(deliverable: str, notes: str)`: Submit the final deliverable for the current SDLC phase.
+
+## Protocol Rules:
+1. Inspect files and directories using `view_file`, `grep_search`, and `list_dir`.
+2. Call `submit_phase_deliverable` when the phase goal is achieved.
+"""
+
+NAIVE_DEVBENCH_TOOLS_SCHEMA = [
+    copy.deepcopy(t) for t in WORKSPACE_TOOLS_SCHEMA if t["function"]["name"] != "submit_patch"
+] + [copy.deepcopy(DEVBENCH_DELIVERABLE_TOOL_SCHEMA)]
 
 
 # ---------------------------------------------------------------------------
@@ -298,11 +327,13 @@ class DevBenchAIVCEnvironment:
         store["counter"] += 1
         mem_id = f"dev-mem-{store['counter']:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
+        effective_repo = repo_id or self.repo_id
 
         record = {
             "id": mem_id,
             "title": title,
             "note": note,
+            "repo_id": effective_repo,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
             "repo_id": target_repo,
@@ -315,6 +346,7 @@ class DevBenchAIVCEnvironment:
                 store["file_snapshots"][f] = []
             store["file_snapshots"][f].append({
                 "memory_id": mem_id,
+                "repo_id": effective_repo,
                 "timestamp": now_str,
                 "note_ref": title,
             })
@@ -358,7 +390,7 @@ class DevBenchAIVCEnvironment:
         if not slice_mems:
             return "No memories found in range.", []
 
-        lines = [f"Recent SDLC memories:"]
+        lines = [f"Recent SDLC memories for [{effective_repo}] (offset={offset}, limit={limit}):"]
         for m in slice_mems:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]})")
         return "\n".join(lines), slice_mems
@@ -368,14 +400,17 @@ class DevBenchAIVCEnvironment:
         mem = self.repo_stores.get(target_repo, {}).get("memories", {}).get(memory_id)
         if not mem:
             return f"Memory ID '{memory_id}' not found."
-        return f"# {mem['title']}\n**Created**: {mem['timestamp']}\n**Read Files**: {mem['read_files']}\n**Edited Files**: {mem['edited_files']}\n\n{mem['note']}"
+        effective_repo = repo_id or self.repo_id
+        if mem.get("repo_id") and mem.get("repo_id") != effective_repo:
+            return f"Memory ID '{memory_id}' belongs to repository '{mem.get('repo_id')}' (access denied for '{effective_repo}')."
+        return f"# {mem['title']}\n**Repository**: {mem.get('repo_id', effective_repo)}\n**Created**: {mem['timestamp']}\n**Read Files**: {mem['read_files']}\n**Edited Files**: {mem['edited_files']}\n\n{mem['note']}"
 
     def get_file_history_metadata(self, filepath: str, repo_id: Optional[str] = None) -> str:
         target_repo = repo_id or self.current_repo_id
         hist = self.repo_stores.get(target_repo, {}).get("file_snapshots", {}).get(filepath, [])
         if not hist:
-            return f"No AIVC version history for file '{filepath}'."
-        lines = [f"Version history for '{filepath}':"]
+            return f"No AIVC version history for file '{filepath}' in repository '{effective_repo}'."
+        lines = [f"Version history for '{filepath}' in [{effective_repo}]:"]
         for h in hist:
             lines.append(f"- Memory [{h['memory_id']}] at {h['timestamp']}: {h['note_ref']}")
         return "\n".join(lines)
@@ -578,6 +613,7 @@ class DevBenchRunner:
         self,
         arm: str = "aivc",
         model_name: str = "qwen/qwen3.7-flash",
+        arm: str = "aivc",
         checkpoint_path: Optional[Path] = None,
         metrics_path: Optional[Path] = None,
         plots_path: Optional[Path] = None,
@@ -594,6 +630,7 @@ class DevBenchRunner:
     ):
         self.arm = arm.lower()
         self.model_name = model_name
+        self.arm = arm.lower()
         self.api_key = api_key
         self.max_turns = max_turns
         self.max_tokens = max_tokens
@@ -631,6 +668,17 @@ class DevBenchRunner:
             app_title=f"AIVC DevBench Runner ({self.arm.upper()})",
         )
 
+    def get_env_for_repo(self, repo_id: str) -> DevBenchAIVCEnvironment:
+        """Get or create a dedicated, hermetically isolated AIVC memory environment for a repository."""
+        if repo_id not in self.repo_envs:
+            self.repo_envs[repo_id] = DevBenchAIVCEnvironment(repo_id=repo_id, arm=self.arm)
+        return self.repo_envs[repo_id]
+
+    @property
+    def aivc_env(self) -> DevBenchAIVCEnvironment:
+        """Default/fallback environment property."""
+        return self.get_env_for_repo("default")
+
     def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_cost = (prompt_tokens / 1_000_000.0) * self.prompt_price_per_1m
         c_cost = (completion_tokens / 1_000_000.0) * self.completion_price_per_1m
@@ -640,10 +688,182 @@ class DevBenchRunner:
         """Sanitize message history to prevent OpenRouter/provider JSON argument parsing errors."""
         return sanitize_messages(messages)
 
-    def _call_openrouter_api(self, messages: List[Dict[str, Any]], retries: int = 5) -> Optional[Dict[str, Any]]:
-        """Send chat completion request to OpenRouter with tools schema using InferenceClient."""
-        if not self.api_key:
-            raise ValueError("OPENROUTER_API_KEY is not set or empty. Real execution requires a valid API key.")
+    def _simulate_dry_run_turn(
+        self,
+        repo: Dict[str, Any],
+        phase: str,
+        turn: int,
+    ) -> Dict[str, Any]:
+        """Simulate realistic turn responses in dry-run mode."""
+        repo_id = repo.get("repo_id", "devbench-repo")
+        prompt = repo.get("phases", {}).get(phase, {}).get("prompt", "")[:60].replace('"', "'")
+
+        if self.arm == "aivc":
+            if turn == 1:
+                return {
+                    "usage": {"prompt_tokens": 400, "completion_tokens": 50},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Starting SDLC phase '{phase}' for {repo_id}. Recalling architectural context from AIVC.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "recall",
+                                            "arguments": json.dumps({"query": f"{repo_id} {phase} architecture"}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            elif turn == 2:
+                return {
+                    "usage": {"prompt_tokens": 520, "completion_tokens": 85},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Inspecting repository files for phase {phase}.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "view_file",
+                                            "arguments": json.dumps({"filepath": f"src/{phase}.py"}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            else:
+                return {
+                    "usage": {"prompt_tokens": 640, "completion_tokens": 110},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Phase '{phase}' completed. Recording deliverables to AIVC memory.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "remember",
+                                            "arguments": json.dumps({
+                                                "title": f"SDLC Phase {phase} Completed for {repo_id}",
+                                                "note": f"Delivered specification and modules for {phase}: {prompt}",
+                                                "read_files": [f"src/{phase}.py"],
+                                                "edited_files": [f"src/{phase}.py"],
+                                            }),
+                                        },
+                                    },
+                                    {
+                                        "id": f"call_{turn}_2",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "submit_phase_deliverable",
+                                            "arguments": json.dumps({
+                                                "deliverable": f"# Deliverable for {phase} in {repo_id}\nImplemented according to specification.",
+                                                "notes": f"Phase {phase} verified.",
+                                            }),
+                                        },
+                                    },
+                                ],
+                            }
+                        }
+                    ],
+                }
+        else:
+            # Naive baseline (stateless exploration with directory listing and file viewing)
+            if turn == 1:
+                return {
+                    "usage": {"prompt_tokens": 360, "completion_tokens": 40},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Exploring directory structure for {repo_id} in phase '{phase}'.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "list_dir",
+                                            "arguments": json.dumps({"directory": "."}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            elif turn == 2:
+                return {
+                    "usage": {"prompt_tokens": 540, "completion_tokens": 75},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Reading template files for phase {phase}.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "view_file",
+                                            "arguments": json.dumps({"filepath": f"src/{phase}.py"}),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            else:
+                return {
+                    "usage": {"prompt_tokens": 660, "completion_tokens": 95},
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": f"Completing phase '{phase}' deliverable.",
+                                "tool_calls": [
+                                    {
+                                        "id": f"call_{turn}_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "submit_phase_deliverable",
+                                            "arguments": json.dumps({
+                                                "deliverable": f"# Deliverable for {phase} in {repo_id}\nImplemented according to specification.",
+                                                "notes": f"Phase {phase} verified.",
+                                            }),
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+
+    def _call_openrouter_api(
+        self,
+        messages: List[Dict[str, Any]],
+        repo: Optional[Dict[str, Any]] = None,
+        phase: str = "",
+        turn: int = 1,
+        retries: int = 5,
+    ) -> Optional[Dict[str, Any]]:
+        """Send chat completion request with tools schema using InferenceClient, or simulate only if dry_run is explicitly True."""
+        if self.dry_run:
+            return self._simulate_dry_run_turn(repo=repo or {}, phase=phase, turn=turn)
 
         try:
             return self.client.complete(
@@ -656,6 +876,7 @@ class DevBenchRunner:
         except Exception as e:
             print(f"  [API Exception]: {e}")
             return None
+
 
     def execute_phase(
         self,
@@ -675,6 +896,9 @@ class DevBenchRunner:
         phase_config = repo["phases"][phase]
         prompt = phase_config["prompt"]
         initial_files = phase_config.get("initial_files", [])
+
+        # Reset memory state if running in naive stateless baseline mode
+        aivc_env.reset_if_stateless()
 
         start_time = time.time()
 
@@ -725,7 +949,7 @@ class DevBenchRunner:
 
             print(f"  [TURN {turn:02d}/{self.max_turns:02d}] Calling {self.model_name} (Cost so far: ${total_phase_cost:.4f})... ", end="", flush=True)
 
-            api_response = self._call_openrouter_api(messages)
+            api_response = self._call_openrouter_api(messages, repo=repo, phase=phase, turn=turn)
             if not api_response or "choices" not in api_response or not api_response["choices"]:
                 print("FAILED (No response)")
                 break
@@ -764,9 +988,9 @@ class DevBenchRunner:
                     turn_tools.append(fn_name)
                     tools_called_list.append(fn_name)
 
-                    if fn_name == "recall" or fn_name == "get_recent_memories":
+                    if fn_name in ("recall", "get_recent_memories"):
                         turn_recalled += 1
-                    elif fn_name == "consult_memory" or fn_name == "read_past_file_content":
+                    elif fn_name in ("consult_memory", "read_past_file_content"):
                         turn_used += 1
 
                     if fn_name == "submit_phase_deliverable":
@@ -854,6 +1078,7 @@ class DevBenchRunner:
         record = {
             "phase_index": phase_index,
             "repo_id": repo_id,
+            "arm": self.arm,
             "domain": repo["domain"],
             "phase": phase,
             "arm": self.arm,
@@ -1007,6 +1232,7 @@ class DevBenchRunner:
 
         metrics_json = {
             "benchmark_name": "DevBench",
+            "arm": self.arm,
             "model_name": self.model_name,
             "arm": self.arm,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1049,14 +1275,15 @@ class DevBenchRunner:
 
         print(f"\n[Export] Saved DevBench metrics to: {self.metrics_path}")
 
-        # Mirror to general metrics for DVC
-        general_metrics = EVAL_DIR / "metrics" / "devbench_metrics.json"
-        if self.metrics_path != general_metrics:
-            try:
-                with open(general_metrics, "w", encoding="utf-8") as f:
-                    json.dump(metrics_json, f, indent=2, ensure_ascii=False)
-            except Exception:
-                pass
+        # Mirror to general metrics for DVC if arm is aivc
+        if self.arm == "aivc":
+            general_metrics = EVAL_DIR / "metrics" / "devbench_metrics.json"
+            if self.metrics_path != general_metrics:
+                try:
+                    with open(general_metrics, "w", encoding="utf-8") as f:
+                        json.dump(metrics_json, f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
 
         return metrics_json
 
@@ -1115,14 +1342,15 @@ class DevBenchRunner:
 
         print(f"[Export] Saved DevBench plot curves to: {self.plots_path}")
 
-        # Mirror to general plots for DVC
-        general_plots = EVAL_DIR / "plots" / "devbench_curves.csv"
-        if self.plots_path != general_plots:
-            try:
-                import shutil
-                shutil.copyfile(self.plots_path, general_plots)
-            except Exception:
-                pass
+        # Mirror to general plots for DVC if arm is aivc
+        if self.arm == "aivc":
+            general_plots = EVAL_DIR / "plots" / "devbench_curves.csv"
+            if self.plots_path != general_plots:
+                try:
+                    import shutil
+                    shutil.copyfile(self.plots_path, general_plots)
+                except Exception:
+                    pass
 
 
 def main() -> None:
@@ -1200,6 +1428,7 @@ def main() -> None:
     runner = DevBenchRunner(
         arm=parsed_args.arm,
         model_name=cfg.model,
+        arm=effective_arm,
         checkpoint_path=checkpoint_path,
         metrics_path=metrics_path,
         plots_path=plots_path,

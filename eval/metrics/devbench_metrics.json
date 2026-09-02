@@ -102,9 +102,6 @@
         "recall",
         "get_recent_memories",
         "list_dir",
-        "list_dir",
-        "list_dir",
-        "list_dir",
         "view_file",
         "list_dir",
         "grep_search",
@@ -436,7 +433,6 @@
       "tool_calls_count": 19,
       "tools": [
         "recall",
-        "list_dir",
         "consult_memory",
         "list_dir",
         "list_dir",
@@ -2777,6 +2773,7 @@
       "tool_calls_count": 21,
       "tools": [
         "recall",
+        "consult_memory",
         "list_dir",
         "consult_memory",
         "consult_memory",

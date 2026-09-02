@@ -1,0 +1,5 @@
+repo_id,phase,arm,step_index,status,pass_rate,prompt_tokens,completion_tokens,total_tokens,cost_usd,cumulative_cost_usd,eor,mui,ccsr,duration_sec
+devbench-python-calculator,software_design,naive,1,PASSED,1.0,1560,210,1770,7.4e-05,7.4e-05,0.6667,0.0,0.9753,0.0
+devbench-python-calculator,environment_setup,naive,2,PASSED,1.0,1560,210,1770,7.4e-05,0.000148,0.6667,0.0,0.9753,0.0
+devbench-python-calculator,code_implementation,naive,3,PASSED,1.0,1560,210,1770,7.4e-05,0.000222,0.6667,0.0,0.9753,0.0
+devbench-python-calculator,unit_testing,naive,4,PASSED,1.0,1560,210,1770,7.4e-05,0.000296,0.6667,0.0,0.9753,0.001

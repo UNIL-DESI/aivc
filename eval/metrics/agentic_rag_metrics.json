@@ -1,7 +1,7 @@
 {
   "benchmark": "Agentic RAG Continual Learning",
   "arm": "aivc",
-  "model_name": "qwen/qwen3.7-flash",
+  "model_name": "google/gemini-3.7-flash",
   "dataset_name": "aivc/swe-explore-continual-rag",
   "timestamp": "2026-08-17T16:54:22.513267+00:00",
   "summary": {

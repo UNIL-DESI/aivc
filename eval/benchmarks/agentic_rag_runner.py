@@ -44,6 +44,9 @@ for p in [str(REPO_ROOT), str(EVAL_DIR), str(BENCHMARK_DIR)]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
+# Enforce deterministic 100% local execution (no background sync/network calls)
+os.environ.setdefault("AIVC_DISABLE_SYNC", "1")
+
 # Centralized imports from eval suite
 from config import (
     InferenceClient,
@@ -159,11 +162,13 @@ class AIVCContinualEnvironment:
         self._memory_counter += 1
         mem_id = f"mem-{self._memory_counter:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
+        effective_repo = repo or self.repo
 
         record = {
             "id": mem_id,
             "title": title,
             "note": note,
+            "repo": effective_repo,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
             "repo": repo or "default",
@@ -181,6 +186,7 @@ class AIVCContinualEnvironment:
                 self.file_snapshots[f] = []
             self.file_snapshots[f].append({
                 "memory_id": mem_id,
+                "repo": effective_repo,
                 "timestamp": now_str,
                 "note_ref": title,
             })
@@ -189,7 +195,7 @@ class AIVCContinualEnvironment:
             if f not in self.file_snapshots:
                 self.file_snapshots[f] = []
 
-        return f"✅ Memory recorded [{mem_id}] '{title}'. Mapped {len(read_files or [])} read, {len(edited_files or [])} edited/dependent files."
+        return f"✅ Memory recorded [{mem_id}] '{title}' in [{effective_repo}]. Mapped {len(read_files or [])} read, {len(edited_files or [])} edited/dependent files."
 
     def recall_with_records(self, query: str, limit: int = 5, repo: Optional[str] = None) -> Tuple[str, List[Dict[str, Any]]]:
         candidate_memories = self.memories
@@ -203,14 +209,14 @@ class AIVCContinualEnvironment:
         query_terms = [t.lower() for t in query.split() if len(t) > 2]
         scored_results = []
 
-        for mem_id, mem in self.memories.items():
+        for mem in target_memories:
             text = f"{mem['title']} {mem['note']} {' '.join(mem['read_files'])} {' '.join(mem['edited_files'])}".lower()
             score = sum(2 if q in mem['title'].lower() else 1 for q in query_terms if q in text)
             if score > 0 or not query_terms:
                 scored_results.append((score, mem))
 
         scored_results.sort(key=lambda x: x[0], reverse=True)
-        top = scored_results[:limit] if scored_results else [(0, m) for m in list(self.memories.values())[-limit:]]
+        top = scored_results[:limit] if scored_results else [(0, m) for m in target_memories[-limit:]]
 
         top_mems = [m for _, m in top]
         lines = [f"Found {len(top)} relevant AIVC memories for '{query}':"]
@@ -227,7 +233,7 @@ class AIVCContinualEnvironment:
         if not slice_mems:
             return "No memories found in range.", []
 
-        lines = [f"Recent AIVC memories (offset={offset}, limit={limit}):"]
+        lines = [f"Recent AIVC memories in [{effective_repo}] (offset={offset}, limit={limit}):"]
         for m in slice_mems:
             lines.append(f"- [{m['id']}] {m['title']} ({m['timestamp'][:10]}) -> {len(m.get('read_files', []))} files tracked")
         return "\n".join(lines), slice_mems
@@ -871,8 +877,19 @@ class AgenticRAGRunner:
             base_delay=1.5,
             max_delay=30.0,
             timeout=60.0,
-            app_title=f"AIVC Agentic RAG Continual Learning ({self.arm.upper()})",
+            app_title="AIVC Continual Learning Agentic RAG Runner",
         )
+
+    def get_env_for_repo(self, repo: str) -> AIVCContinualEnvironment:
+        """Get or create a dedicated, hermetically isolated AIVC memory environment for a repository."""
+        if repo not in self.repo_envs:
+            self.repo_envs[repo] = AIVCContinualEnvironment(arm=self.arm, repo=repo)
+        return self.repo_envs[repo]
+
+    @property
+    def env(self) -> AIVCContinualEnvironment:
+        """Default/fallback environment property."""
+        return self.get_env_for_repo("default")
 
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         p_c = (prompt_tokens / 1_000_000.0) * self.prompt_price_1m
@@ -889,10 +906,7 @@ class AgenticRAGRunner:
         tools_schema: List[Dict[str, Any]],
         retries: int = 5,
     ) -> Optional[Dict[str, Any]]:
-        """Call OpenRouter API with tool schemas and exponential retry backoff using InferenceClient."""
-        if not self.api_key:
-            raise ValueError("OPENROUTER_API_KEY is not set or empty. Valid API key required for live execution.")
-
+        """Call LLM API (OpenRouter or Together AI) with tool schemas and exponential retry backoff using InferenceClient."""
         try:
             return self.client.complete(
                 messages=messages,
@@ -903,7 +917,7 @@ class AgenticRAGRunner:
             )
         except Exception as e:
             print(f"  [API Exception]: {e}")
-            return None
+            raise
 
     def run_episode(
         self,
@@ -917,12 +931,13 @@ class AgenticRAGRunner:
         start_time = time.time()
         query_id = query_item.get("query_id", f"RAG-CL-{episode_index:03d}")
         repo = query_item.get("repo", "unknown_repo")
+        env = self.get_env_for_repo(repo)
         query_text = query_item.get("query", "")
         ground_truth_files = query_item.get("relevant_files", [])
         baseline_cost_est = query_item.get("baseline_est_cost", 0.015)
 
         # In naive mode, reset any memory state between queries
-        self.env.reset_if_stateless()
+        env.reset_if_stateless()
 
         print("\n" + "=" * 76)
         print(f"[EPISODE {episode_index:02d}/{total_episodes:02d}] Arm: {self.arm.upper()} | Query: {query_id} ({repo})")
@@ -1342,7 +1357,12 @@ def export_agentic_rag_curves(
 def main() -> None:
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         try:
-            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
 

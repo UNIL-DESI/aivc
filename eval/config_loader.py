@@ -38,10 +38,35 @@ DEFAULT_MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "completion_price_per_1m": 6.00,
         "context_window": 256000,
     },
+    "google/gemini-3.7-flash": {
+        "prompt_price_per_1m": 0.05,
+        "completion_price_per_1m": 0.20,
+        "context_window": 1000000,
+    },
     "google/gemini-3.6-flash": {
         "prompt_price_per_1m": 0.05,
         "completion_price_per_1m": 0.20,
         "context_window": 1000000,
+    },
+    "meta-llama/llama-3.3-70b-instruct": {
+        "prompt_price_per_1m": 0.88,
+        "completion_price_per_1m": 0.88,
+        "context_window": 128000,
+    },
+    "qwen/qwen-2.5-72b-instruct": {
+        "prompt_price_per_1m": 0.35,
+        "completion_price_per_1m": 0.40,
+        "context_window": 128000,
+    },
+    "meta-llama/llama-3.1-8b-instruct": {
+        "prompt_price_per_1m": 0.18,
+        "completion_price_per_1m": 0.18,
+        "context_window": 128000,
+    },
+    "qwen/qwen-2.5-7b-instruct": {
+        "prompt_price_per_1m": 0.15,
+        "completion_price_per_1m": 0.15,
+        "context_window": 128000,
     },
     "anthropic/claude-sonnet-5": {
         "prompt_price_per_1m": 3.00,

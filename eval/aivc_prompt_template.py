@@ -25,12 +25,12 @@ You will receive a sequential stream of technical queries ($q_1, q_2, \dots, q_T
 
 ## Tool Arsenal:
 ### 1. AIVC Persistent Memory Actions:
-- `recall(query: str, limit: int = 5)`: Perform semantic and keyword search across all memory notes accumulated from current and past queries.
+- `recall(query: str, top_n: int = 5)`: Perform semantic and keyword search across all memory notes accumulated from current and past queries.
 - `consult_memory(memory_id: str)`: Retrieve full contents and file associations of a specific memory note.
 - `get_recent_memories(limit: int = 10, offset: int = 0)`: View recent memory logs in reverse chronological order.
-- `get_file_history_metadata(filepath: str)`: Check tracked version history and notes associated with a given file.
-- `read_past_file_content(filepath: str, memory_id: str)`: Retrieve file snapshot content associated with a past memory checkpoint.
-- `remember(title: str, note: str, read_files: list, edited_files: list)`: Save key discoveries, architectural insights, and mapped file dependencies into long-term memory.
+- `get_file_history_metadata(file_path: str)`: Check tracked version history and notes associated with a given file.
+- `read_past_file_content(file_path: str, memory_id: str, diff_against: str = "current")`: Retrieve file snapshot content or diff associated with a past memory checkpoint.
+- `remember(title: str, note: str, read_files: list = [], edited_files: list = [])`: Save key discoveries, architectural insights, and mapped file dependencies into long-term memory.
 
 ### 2. Codebase Exploration Actions:
 - `view_file(filepath: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file.
@@ -167,8 +167,8 @@ AIVC_MEMORY_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "title": {"type": "string", "description": "Concise descriptive title of the memory note"},
                     "note": {"type": "string", "description": "Detailed markdown note capturing architectural facts, discovered relationships, and code insights"},
-                    "read_files": {"type": "array", "items": {"type": "string"}, "description": "List of files consulted during investigation"},
-                    "edited_files": {"type": "array", "items": {"type": "string"}, "description": "List of files modified or referenced as core dependencies"},
+                    "read_files": {"type": "array", "items": {"type": "string"}, "description": "List of files consulted during investigation", "default": []},
+                    "edited_files": {"type": "array", "items": {"type": "string"}, "description": "List of files modified or referenced as core dependencies", "default": []},
                 },
                 "required": ["title", "note"],
             },
@@ -183,7 +183,7 @@ AIVC_MEMORY_TOOLS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Natural language or technical query"},
-                    "limit": {"type": "integer", "default": 5, "description": "Maximum number of memory items to return"},
+                    "top_n": {"type": "integer", "default": 5, "description": "Maximum number of memory items to return (default 5, max 20)"},
                 },
                 "required": ["query"],
             },
@@ -225,9 +225,9 @@ AIVC_MEMORY_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filepath": {"type": "string", "description": "Relative path of file"},
+                    "file_path": {"type": "string", "description": "Relative or absolute path of file"},
                 },
-                "required": ["filepath"],
+                "required": ["file_path"],
             },
         },
     },
@@ -239,10 +239,16 @@ AIVC_MEMORY_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "filepath": {"type": "string", "description": "Relative path of file"},
+                    "file_path": {"type": "string", "description": "Relative or absolute path of file"},
                     "memory_id": {"type": "string", "description": "Memory snapshot ID"},
+                    "diff_against": {
+                        "type": "string",
+                        "enum": ["current", "parent", "none"],
+                        "description": "Comparison mode: 'current' (diff vs local disk), 'parent' (diff vs parent memory), 'none' (raw content).",
+                        "default": "current",
+                    },
                 },
-                "required": ["filepath", "memory_id"],
+                "required": ["file_path", "memory_id"],
             },
         },
     },
