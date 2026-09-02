@@ -1488,6 +1488,7 @@ def main() -> None:
     )
 
     # Configure tool interaction paths
+    arm_name = parsed_args.arm.lower()
     profile_metrics_dir = metrics_path.parent
     profile_interactions = profile_metrics_dir / "tool_interactions.jsonl"
     arm_interactions = EVAL_DIR / "metrics" / f"agentic_rag_{arm_name}_tool_interactions.jsonl"

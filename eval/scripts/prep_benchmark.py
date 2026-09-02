@@ -1,4 +1,4 @@
-﻿"""
+"""
 Benchmark Environment Setup and Preparation Module for AIVC.
 
 Prepares and validates benchmark environment, dependencies, dataset caches,

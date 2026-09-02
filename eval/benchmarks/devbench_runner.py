@@ -1437,7 +1437,7 @@ def main() -> None:
                     pass
 
     runner = DevBenchRunner(
-        arm=effective_arm,
+        arm=parsed_args.arm,
         model_name=cfg.model,
         checkpoint_path=checkpoint_path,
         metrics_path=metrics_path,
