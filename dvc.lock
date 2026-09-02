@@ -219,3 +219,19 @@ stages:
       hash: md5
       md5: 228af43ac34e7d2603e2eaf5b1e77333
       size: 243
+  prep_devbench:
+    cmd: python eval/scripts/prep_benchmark.py --benchmark devbench
+    deps:
+    - path: .dvc-viewer/hashes/prep_devbench.hash
+      hash: md5
+      md5: edd8b43f49c110761c6333abc9c3160e
+      size: 64
+    - path: eval/scripts/prep_benchmark.py
+      hash: md5
+      md5: eff6b3366a4732ee398404e8a19fa156
+      size: 5148
+    outs:
+    - path: eval/setup/devbench_ready.flag
+      hash: md5
+      md5: 30c48c42b74ada5258bf350ae2ac2255
+      size: 212
