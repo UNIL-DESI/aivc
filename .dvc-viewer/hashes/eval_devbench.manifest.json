@@ -1,9 +1,0 @@
-{
-  "aggregate_hash": "3e8e94d8c8be91f9e448f41be0a989316bc1e49b359fd8ee365d105b588d7b4c",
-  "file_hashes": {
-    "eval/benchmarks/devbench_runner.py": "6884cc2be1fd14dabb79fd1cd04853f7309c1f5ca73e24d5df6380b8eeece093"
-  },
-  "import_graph": {
-    "eval/benchmarks/devbench_runner.py": []
-  }
-}

@@ -22,24 +22,32 @@ Use `dvc push` to send your updates to remote storage.
 ==================================================
 Running stage 'eval_agentic_rag_deepseek_pro_aivc':
 > python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl
+============================================================================
+      AIVC AGENTIC RAG CONTINUAL LEARNING BENCHMARK RUNNER
+============================================================================
+Evaluation Arm : AIVC
+Target Model   : deepseek/deepseek-v4-pro
+Profile        : eval
+Query Limit    : 15
+Max Turns      : 50
+Max Tokens     : 4096
+Cost Cutoff    : $0.10 USD / query
+Checkpoint File: eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl
+Metrics Output : eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json
+Curves Output  : eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv
+============================================================================
+[CHECKPOINT] Loaded 0 previously processed queries from checkpoint.
+[DATASET] Loaded 15 continual learning multi-hop queries from 'aivc/swe-explore-continual-rag'.
 Traceback (most recent call last):
   File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1574, in <module>
     main()
-  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1422, in main
-    cfg = load_benchmark_config(args=parsed_args)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/config/config_loader.py", line 578, in load_benchmark_config
-    return resolve_config_from_args(args, config_dir=config_dir)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/config/config_loader.py", line 545, in resolve_config_from_args
-    return resolve_config(
-           ^^^^^^^^^^^^^^^
-  File "/workspace/eval/config/config_loader.py", line 375, in resolve_config
-    profile_data = load_profile_yaml(selected_profile, base_cfg_dir)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/workspace/eval/config/config_loader.py", line 333, in load_profile_yaml
-    raise FileNotFoundError(f"Evaluation profile '{profile_name}' not found at: {profile_path}")
-FileNotFoundError: Evaluation profile 'eval' not found at: /workspace/eval/config/profiles/eval.yaml
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 1494, in main
+    runner = AgenticRAGRunner(
+             ^^^^^^^^^^^^^^^^^
+  File "/workspace/eval/benchmarks/agentic_rag_runner.py", line 864, in __init__
+    self.env = AIVCContinualEnvironment(arm=self.arm, run_id=self.run_id, workspace_dir=self.workspace_dir)
+    ^^^^^^^^
+AttributeError: property 'env' of 'AgenticRAGRunner' object has no setter
 ERROR: failed to reproduce 'eval_agentic_rag_deepseek_pro_aivc': failed to run: python eval/benchmarks/agentic_rag_runner.py --limit 15 --max-turns 50 --max-tokens 4096 --max-cost 0.1 --model deepseek/deepseek-v4-pro --arm aivc --metrics-file eval/metrics/agentic_rag_deepseek_pro_aivc_metrics.json --curves-file eval/plots/agentic_rag_deepseek_pro_aivc_curves.csv --checkpoint-file eval/checkpoints/agentic_rag_deepseek_pro_aivc_checkpoint.jsonl, exited with 1
 ❌ Stage eval_agentic_rag_deepseek_pro_aivc failed with code 255
 💾 Committing and pushing failure state to GitHub...

@@ -1,9 +1,0 @@
-{
-  "aggregate_hash": "d5be7751cc0c688223c6e48868d1a71d11827de27d84f255ca027ff001d46019",
-  "file_hashes": {
-    "eval/scripts/aggregate_metrics.py": "4d2a20362ce3a69dadaea3510d404f9dce0717398357fad23b53bf3fef6e80eb"
-  },
-  "import_graph": {
-    "eval/scripts/aggregate_metrics.py": []
-  }
-}

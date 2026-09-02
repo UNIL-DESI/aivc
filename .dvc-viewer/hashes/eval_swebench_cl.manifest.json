@@ -1,9 +1,0 @@
-{
-  "aggregate_hash": "99bb93c675df561d8be959eb6fa6795e16c8048717a9cb14d8c2812ea69ff7fb",
-  "file_hashes": {
-    "eval/benchmarks/swebench_cl_runner.py": "140615daace23c42a0fb479473a9b44e6f3e4608cc87ec332106096dd1806cb6"
-  },
-  "import_graph": {
-    "eval/benchmarks/swebench_cl_runner.py": []
-  }
-}
