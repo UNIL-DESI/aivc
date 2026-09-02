@@ -121,9 +121,13 @@ class AIVCEnvironment:
 
     def __init__(
         self,
+        repo: Optional[str] = None,
+        arm: str = "aivc",
         run_id: Optional[str] = None,
         workspace_dir: Optional[Path] = None,
     ):
+        self.arm = arm.lower()
+        self.current_repo: str = repo or "default"
         self.run_id = run_id or uuid.uuid4().hex[:8]
         self.workspace_dir = workspace_dir or (EVAL_DIR / "scratch" / f"aivc_swebench_{self.run_id}")
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -132,10 +136,9 @@ class AIVCEnvironment:
         os.environ["AIVC_STORAGE_ROOT"] = str(self.workspace_dir)
         os.environ["AIVC_WORKSPACE_DIR"] = str(self.workspace_dir)
 
-        self.current_repo: str = "default"
         # Per-repo memory partition: {repo: {"memories": {}, "file_snapshots": {}, "counter": 0}}
         self.repo_stores: Dict[str, Dict[str, Any]] = {}
-        self.set_repo("default")
+        self.set_repo(self.current_repo)
 
     def set_repo(self, repo: str) -> None:
         """Switch active repository scope."""

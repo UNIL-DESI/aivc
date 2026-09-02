@@ -1490,9 +1490,10 @@ def main() -> None:
     # Configure tool interaction paths
     profile_metrics_dir = metrics_path.parent
     profile_interactions = profile_metrics_dir / "tool_interactions.jsonl"
+    arm_interactions = EVAL_DIR / "metrics" / f"agentic_rag_{arm_name}_tool_interactions.jsonl"
     bench_interactions = EVAL_DIR / "metrics" / "agentic_rag_tool_interactions.jsonl"
     general_interactions = EVAL_DIR / "metrics" / "tool_interactions.jsonl"
-    interactions_paths = [profile_interactions, bench_interactions, general_interactions]
+    interactions_paths = [profile_interactions, arm_interactions, bench_interactions, general_interactions]
 
     if cfg.reset_checkpoint:
         for p in interactions_paths:

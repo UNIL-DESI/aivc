@@ -62,3 +62,6 @@ refcounts.json
 
 # Cluster-CI run logs
 .cluster-ci-logs/
+# Eval generated setup flags
+eval/setup/*.flag
+eval/scratch/

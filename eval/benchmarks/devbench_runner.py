@@ -257,9 +257,13 @@ class DevBenchAIVCEnvironment:
 
     def __init__(
         self,
+        repo_id: Optional[str] = None,
+        arm: str = "aivc",
         run_id: Optional[str] = None,
         workspace_dir: Optional[Path] = None,
     ):
+        self.arm = arm.lower()
+        self.current_repo_id: str = repo_id or "default"
         self.run_id = run_id or uuid.uuid4().hex[:8]
         self.workspace_dir = workspace_dir or (EVAL_DIR / "scratch" / f"aivc_devbench_{self.run_id}")
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -268,10 +272,9 @@ class DevBenchAIVCEnvironment:
         os.environ["AIVC_STORAGE_ROOT"] = str(self.workspace_dir)
         os.environ["AIVC_WORKSPACE_DIR"] = str(self.workspace_dir)
 
-        self.current_repo_id: str = "default"
         # Per-repo memory partition: {repo_id: {"memories": {}, "file_snapshots": {}, "counter": 0}}
         self.repo_stores: Dict[str, Dict[str, Any]] = {}
-        self.set_repo("default")
+        self.set_repo(self.current_repo_id)
 
     def set_repo(self, repo_id: str) -> None:
         """Switch active repository scope."""
@@ -1379,9 +1382,9 @@ def main() -> None:
         default="aivc",
         help="Evaluation arm: 'aivc' (with persistent memory transfer) or 'baseline'/'naive' (cold-start per phase). Default: aivc",
     )
-    parser.add_argument("--checkpoint-path", type=str, default="", help="Custom JSONL checkpoint path")
-    parser.add_argument("--metrics-path", type=str, default="", help="Custom metrics JSON export path")
-    parser.add_argument("--plots-path", type=str, default="", help="Custom plots CSV export path")
+    parser.add_argument("--checkpoint-path", "--checkpoint-file", dest="checkpoint_path", type=str, default="", help="Custom JSONL checkpoint path")
+    parser.add_argument("--metrics-path", "--metrics-file", dest="metrics_path", type=str, default="", help="Custom metrics JSON export path")
+    parser.add_argument("--plots-path", "--curves-file", dest="plots_path", type=str, default="", help="Custom plots CSV export path")
 
     # Add unified evaluation configuration flags
     add_eval_args(parser)
