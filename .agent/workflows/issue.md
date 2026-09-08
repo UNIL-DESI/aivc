@@ -17,7 +17,7 @@ description: Artisan implémenteur. Prend la première issue, l'implémente, pro
 4. Ajoute le label `in-progress` sur GitHub. Mets la Roadmap à `🔄 En cours`.
 
 ## 2. 🧠 Contexte & Plan
-1. **AIVC** : `get_recent_memories`, `recall` (≥3 queries), `consult_file`.
+1. **AIVC** : `recall` (≥1 query si besoin de contexte), `consult_memory`, `get_file_history_metadata`.
 2. Produis un court `implementation_plan.md` avec un encart `> [!IMPORTANT]` expliquant l'objectif en français.
 
 ## 3. 🛠️ Implémentation

@@ -89,13 +89,11 @@ preserve context beyond a single conversation.
   making a decision, discovering something, encountering an error, or any checkpoint.
 - **If you did something worth remembering, commit it NOW.**
 
-### 2. Start Every Session with Context Recovery
-Before doing ANY work, you MUST reconstruct your working context:
-1. Call \`get_recent_memories\` to see what was done recently.
-2. Perform **at least 5 \`recall\` calls** with varied queries to explore
-   relevant past memories (e.g. the current topic, related files, similar problems).
-3. Use \`consult_memory\` on the most relevant results to read the full details.
-4. Use \`consult_file\` to understand the history of files you will modify.
+### 2. Targeted Context Recovery with Recall
+When context recovery is needed:
+1. Call \`recall\` (≥1 query) to explore relevant past memories if context or prior decisions are needed.
+2. Use \`consult_memory\` on the most relevant results to read the full details.
+3. Use \`get_file_history_metadata\` on files you will modify if historical changes are relevant.
 
 ### 3. Explore Before You Act
 - **Never attempt a modification that was already done in the past.** Search your

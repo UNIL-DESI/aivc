@@ -76,7 +76,7 @@ that were modified or created for the task.
 
 ## CRITICAL RULE — COLD-START FALLBACK
 
-**If `recall` or `get_recent_memories` returns no memories (empty memory / cold start), immediately stop memory queries and switch directly to codebase exploration (`view_file`, `grep_search`, `list_dir`). Call `remember` as you make progress to populate memory.**
+**If `recall` returns no memories (empty memory / cold start), immediately stop memory queries and switch directly to codebase exploration (`view_file`, `grep_search`, `list_dir`). Call `remember` as you make progress to populate memory.**
 
 ## Recall Funnel
 
@@ -84,7 +84,7 @@ To retrieve memory, follow this funnel:
 
 1. **`recall`** — for semantic search by meaning (idea, topic, solution).
    → Returns memory titles/dates/IDs + snippets. NEVER the full note.
-2. **`get_recent_memories`** — for recalling recent history chronologically.
+2. **`get_recent_memories`** — for recalling recent history chronologically (optional).
 3. **`consult_memory`** — to read the full note of a specific memory.
    → Call this AFTER identifying a relevant memory.
 4. **`get_file_history_metadata`** — to see the chronological commit/memory history of a specific file.
@@ -96,7 +96,7 @@ To retrieve memory, follow this funnel:
 |------|---------|
 | `remember` | Save a memory checkpoint. Must be called whenever progress is made tied to read_files or edited_files. |
 | `recall` | Semantic search over all past memory notes. Must be called whenever user mentions anything fuzzy or unfamiliar. |
-| `get_recent_memories` | Recent memory log (paginable). |
+| `get_recent_memories` | Recent memory log (paginable, optional). |
 | `consult_memory` | Read a specific memory note in full. |
 | `get_file_history_metadata` | Get the AIVC history of a specific file. |
 | `read_past_file_content` | Read the content of a file as it was at a specific past memory. |

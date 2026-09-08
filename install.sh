@@ -198,7 +198,7 @@ AIVC_BLOCK="${MARKER_START}
 ## Rules
 
 1. **Remember often.** Call \`remember\` after every meaningful step (sub-task done, file created/modified, decision made, error resolved, checkpoint reached). Notes must be **detailed**: what, why, errors, decisions, observations, next steps. A one-liner is a failure.
-2. **Start sessions with context recovery.** Before any work: \`get_recent_memories\` → \`recall\` (≥1 query) → \`consult_memory\` on relevant hits → \`get_file_history_metadata\` on files you'll modify.
+2. **Targeted context recovery.** When relevant context is needed, use \`recall\` (≥1 query) to query memory before acting. If the target file or task is already fully known, do not run redundant memory searches.
 3. **Explore before you act.** Search memory first — never redo past work. Your memory contains solutions, patterns, and lessons.
 4. **Mention files you work on.** Always pass the files you consulted in \`read_files\` and the files you modified in \`edited_files\` when calling \`remember\`. This is how AIVC tracks file associations — there is no separate tracking tool.
 5. **Write for your future self.** Memory notes are handover memos — include reasoning, context, and recommendations as if briefing a colleague with zero context.
