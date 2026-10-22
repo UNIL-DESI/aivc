@@ -204,7 +204,6 @@ class AIVCEnvironment:
         store["counter"] += 1
         mem_id = f"mem-{store['counter']:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
-        effective_repo = repo or self.repo
         effective_note = journal or note
 
         record = {
@@ -214,7 +213,7 @@ class AIVCEnvironment:
             "journal": effective_note,
             "user_items": user_items or [],
             "urls": urls or [],
-            "repo": effective_repo,
+            "repo": target_repo,
             "read_files": read_files or [],
             "edited_files": edited_files or [],
             "timestamp": now_str,
@@ -227,7 +226,7 @@ class AIVCEnvironment:
                 store["file_snapshots"][f] = []
             store["file_snapshots"][f].append({
                 "memory_id": mem_id,
-                "repo": effective_repo,
+                "repo": target_repo,
                 "timestamp": now_str,
                 "note_ref": title,
             })
