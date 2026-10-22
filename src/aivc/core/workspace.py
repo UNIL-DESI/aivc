@@ -304,7 +304,7 @@ class Workspace:
             for idx, item in enumerate(user_items, 1):
                 norm_user_items.append(
                     {
-                        "id": item.get("id") or f"{memory_id[:4]}-{idx}",
+                        "id": item.get("id") or f"{memory_id[:6]}-{idx}",
                         "task": str(item.get("task", "")).strip(),
                         "details": str(item.get("details", "")).strip(),
                         "done": bool(item.get("done", False)),
