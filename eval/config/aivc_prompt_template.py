@@ -64,7 +64,7 @@ that were modified or created for the task.
 
 ## CRITICAL RULE — COLD-START FALLBACK
 
-**If `recall` or `get_recent_memories` returns no memories (empty memory / cold start), immediately stop memory queries and switch directly to codebase exploration (`view_file`, `grep_search`, `list_dir`). Call `remember` as you make progress to populate memory.**
+**If `recall` returns no memories (empty memory / cold start), immediately stop memory queries and switch directly to codebase exploration (`view_file`, `grep_search`, `list_dir`). Call `remember` as you make progress to populate memory.**
 
 ## Recall Funnel
 
@@ -72,22 +72,22 @@ To retrieve memory, follow this structured funnel:
 
 1. **`recall`** — for semantic search by meaning (idea, topic, solution).
    → Returns memory titles/dates/IDs + snippets. NEVER the full note.
-2. **`get_recent_memories`** — for recalling recent history chronologically.
-3. **`consult_memory`** — to read the full note of a specific memory.
+2. **`consult_memory`** — to read the full note and journal of a specific memory.
    → Call this AFTER identifying a relevant memory.
-4. **`get_file_history_metadata`** — to see the chronological commit/memory history of a specific file.
-5. **`read_past_file_content`** — to inspect the actual historical content or diff of a file at a past memory.
+3. **`get_file_history`** — to see the chronological memory lineage and open tasks of a specific file.
+4. **`restore_file`** — to restore the latest complete version of a tracked file from the mirror.
+5. **`complete_user_items`** — to mark resolved action items as completed.
 
 ## Tool Reference
 
 | Tool | Purpose |
 |------|---------|
-| `remember` | Save a memory checkpoint. Must be called whenever progress is made tied to read_files or edited_files. |
-| `recall` | Semantic search over all past memory notes. Must be called whenever user mentions anything fuzzy or unfamiliar. |
-| `get_recent_memories` | Recent memory log (paginable). |
-| `consult_memory` | Read a specific memory note in full. |
-| `get_file_history_metadata` | Get the AIVC history of a specific file. |
-| `read_past_file_content` | Read the content of a file as it was at a specific past memory. |
+| `remember` | Save a structured memory checkpoint (title, journal, user_items) tied to read_files, edited_files, urls. |
+| `recall` | Semantic and lexical search over all past memory notes. |
+| `consult_memory` | Read a specific memory note and journal in full. |
+| `get_file_history` | Get the chronological memory lineage and user items of a specific file. |
+| `complete_user_items` | Mark one or more pending user action items as completed. |
+| `restore_file` | Restore the latest version of a tracked file to the workspace. |
 """
 
 
@@ -101,12 +101,12 @@ You are an expert autonomous software engineer solving benchmark engineering tas
 You are equipped with **AIVC (AI Version Control)**, a persistent long-term memory system that retains knowledge across episodes.
 
 ## Core Memory Tools (AIVC):
-1. `remember(title: str, note: str, read_files: list[str] = [], edited_files: list[str] = [])`: Save a dense Post-It memory checkpoint (Contexte, Décision, Impact) with tracked file associations.
+1. `remember(title: str, journal: str, user_items: list[dict] = [], read_files: list[str] = [], edited_files: list[str] = [], urls: list[str] = [])`: Save a structured memory checkpoint (journal, user_items) with tracked file associations.
 2. `recall(query: str, top_n: int = 5)`: Semantic search over past memory notes across current and previous episodes.
-3. `get_recent_memories(limit: int = 10, offset: int = 0)`: Inspect recent memory history chronologically.
-4. `consult_memory(memory_id: str)`: Read the full markdown note of a specific memory.
-5. `get_file_history_metadata(file_path: str)`: Retrieve commit history for a file.
-6. `read_past_file_content(file_path: str, memory_id: str, diff_against: str = "current")`: Retrieve past file version or diff.
+3. `consult_memory(memory_id: str)`: Read the full markdown note of a specific memory.
+4. `get_file_history(file_path: str)`: Retrieve commit history and memory lineage for a file.
+5. `complete_user_items(item_ids: list[str])`: Mark completed action items by their IDs.
+6. `restore_file(file_path: str, target_path: str = None)`: Restore the latest complete version of a tracked file from the mirror.
 
 ## Workspace & Execution Tools:
 7. `view_file(file_path: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file in the workspace.
@@ -116,8 +116,8 @@ You are equipped with **AIVC (AI Version Control)**, a persistent long-term memo
 
 ## Mandatory Execution Protocol:
 - **Recall First**: At the start of every task, call `recall` to retrieve past solutions, architectural patterns, and bug fixes from previous episodes.
-- **Recall Funnel**: `recall` -> `consult_memory` (if relevant) -> `get_file_history_metadata` (if investigating a modified file).
-- **Remember Progress**: Whenever you identify a root cause or develop a working fix, call `remember` with a dense Post-It note (Contexte, Décision, Impact) and specify `read_files` and `edited_files`.
+- **Recall Funnel**: `recall` -> `consult_memory` (if relevant) -> `get_file_history` (if investigating a modified file).
+- **Remember Progress**: Whenever you identify a root cause or develop a working fix, call `remember` with a dense journal note and specify `read_files` and `edited_files`.
 - **Final Submission**: When your patch is ready and tested, call `submit_patch` with the unified diff.
 """
 
@@ -131,19 +131,31 @@ AIVC_CORE_TOOLS_SCHEMA: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "remember",
-            "description": "Save memory checkpoint formatted as a dense Post-It note with tracked read and edited file associations.",
+            "description": "Records a structured 3-part memory (title, journal, user_items) associated with edited_files, read_files, and urls.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Short title of the memory note."},
-                    "note": {
+                    "journal": {
                         "type": "string",
-                        "description": "Dense markdown Post-It note (2-3 bullet points: Contexte, Logique/Décision, Impact). Do not repeat file paths inside note.",
+                        "description": "Technical journal of hypotheses, findings, decisions, and discarded dead-ends.",
+                    },
+                    "user_items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "task": {"type": "string"},
+                                "details": {"type": "string"},
+                            },
+                        },
+                        "description": "Actionable user tasks or items.",
                     },
                     "read_files": {"type": "array", "items": {"type": "string"}, "description": "Files consulted."},
                     "edited_files": {"type": "array", "items": {"type": "string"}, "description": "Files modified."},
+                    "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs or external links consulted."},
                 },
-                "required": ["title", "note"],
+                "required": ["title", "journal"],
             },
         },
     },
@@ -165,22 +177,8 @@ AIVC_CORE_TOOLS_SCHEMA: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "get_recent_memories",
-            "description": "Retrieve recent memories in reverse chronological order.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {"type": "integer", "description": "Max memories (default 10)."},
-                    "offset": {"type": "integer", "description": "Offset from latest (default 0)."},
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "consult_memory",
-            "description": "Retrieve full markdown content and metadata of a memory by ID.",
+            "description": "Retrieve full markdown content, journal, and metadata of a memory by ID.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -193,12 +191,15 @@ AIVC_CORE_TOOLS_SCHEMA: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "get_file_history_metadata",
-            "description": "Get version history and memory notes for a tracked file.",
+            "name": "get_file_history",
+            "description": "Retrieve the chronological lineage of all memories that modified or consulted a specific file path.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Relative or absolute path of file."},
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the file to inspect chronological memory lineage.",
+                    },
                 },
                 "required": ["file_path"],
             },
@@ -207,20 +208,39 @@ AIVC_CORE_TOOLS_SCHEMA: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "read_past_file_content",
-            "description": "Read file snapshot content or diff for a past memory checkpoint.",
+            "name": "complete_user_items",
+            "description": "Mark one or more pending user_items as completed (done=True) by their short IDs.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Path of file."},
-                    "memory_id": {"type": "string", "description": "Memory snapshot ID."},
-                    "diff_against": {
-                        "type": "string",
-                        "enum": ["current", "parent", "none"],
-                        "description": "Diff target mode: current, parent, or none.",
+                    "item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of user_item short IDs to mark as completed (done=True).",
                     },
                 },
-                "required": ["file_path", "memory_id"],
+                "required": ["item_ids"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "restore_file",
+            "description": "Restore the latest complete version of a tracked file from the latest version snapshot.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path of the tracked file to restore from the latest version snapshot.",
+                    },
+                    "target_path": {
+                        "type": "string",
+                        "description": "Optional destination path.",
+                    },
+                },
+                "required": ["file_path"],
             },
         },
     },
@@ -332,12 +352,12 @@ You are an expert autonomous software engineer working through the Software Deve
 You have access to persistent AIVC long-term memory to coordinate architecture, environment configuration, code changes, and test suites across SDLC phases.
 
 ## Core AIVC Memory Tools:
-1. `remember(title: str, note: str, read_files: list, edited_files: list)`: Save dense Post-It memory checkpoint (Contexte, Décision, Impact) and file snapshots.
-2. `recall(query: str, limit: int = 5)`: Semantic search over past memory notes across this and previous phases.
-3. `get_recent_memories(limit: int = 10, offset: int = 0)`: Get recent memory logs chronologically.
-4. `consult_memory(memory_id: str)`: Read a specific memory note in full.
-5. `get_file_history_metadata(filepath: str)`: Get version history metadata for a file.
-6. `read_past_file_content(filepath: str, memory_id: str)`: Read past file snapshot.
+1. `remember(title: str, journal: str, user_items: list[dict] = [], read_files: list[str] = [], edited_files: list[str] = [], urls: list[str] = [])`: Save structured memory checkpoint (journal, user_items) and file snapshots.
+2. `recall(query: str, top_n: int = 5)`: Semantic search over past memory notes across this and previous phases.
+3. `consult_memory(memory_id: str)`: Read a specific memory note and journal in full.
+4. `get_file_history(file_path: str)`: Get version history and memory lineage for a file.
+5. `complete_user_items(item_ids: list[str])`: Mark completed action items by their IDs.
+6. `restore_file(file_path: str, target_path: str = None)`: Restore past file snapshot or latest version.
 
 ## Additional Workspace Tools:
 7. `view_file(filepath: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file.
@@ -347,7 +367,7 @@ You have access to persistent AIVC long-term memory to coordinate architecture, 
 
 ## Protocol Rules:
 - At each new SDLC phase, call `recall` to consult previous phases' design decisions and file contracts.
-- Always call `remember` after drafting or implementing code/config (format note as dense Post-It: Contexte, Décision, Impact).
+- Always call `remember` after drafting or implementing code/config (format journal with hypotheses, decisions, impact).
 - Call `submit_phase_deliverable` when the phase goal is achieved.
 """
 
@@ -437,12 +457,12 @@ You are an expert autonomous software engineer evaluating software evolution acr
 You have access to persistent AIVC long-term memory to retain context, track architectural evolutions, trace refactorings, and maintain cross-commit knowledge across the repository history.
 
 ## Core AIVC Memory Tools:
-1. `remember(title: str, note: str, read_files: list = [], edited_files: list = [])`: Save dense Post-It memory checkpoint (Contexte, Décision, Impact) and file snapshots at key commit milestones.
+1. `remember(title: str, journal: str, user_items: list[dict] = [], read_files: list[str] = [], edited_files: list[str] = [], urls: list[str] = [])`: Save structured memory checkpoint (journal, user_items) and file snapshots at key commit milestones.
 2. `recall(query: str, top_n: int = 5)`: Semantic search over past commit chronicles, refactorings, and bug resolutions.
-3. `get_recent_memories(limit: int = 10, offset: int = 0)`: Inspect historical commit chronicle logs chronologically.
-4. `consult_memory(memory_id: str)`: Read full analysis and context of a specific historical checkpoint.
-5. `get_file_history_metadata(file_path: str)`: Trace commit evolution and historical changes for a specific file.
-6. `read_past_file_content(file_path: str, memory_id: str, diff_against: str = "current")`: Retrieve past file state or diff.
+3. `consult_memory(memory_id: str)`: Read full analysis and context of a specific historical checkpoint.
+4. `get_file_history(file_path: str)`: Trace commit evolution and historical changes for a specific file.
+5. `complete_user_items(item_ids: list[str])`: Mark completed action items by their IDs.
+6. `restore_file(file_path: str, target_path: str = None)`: Restore file version or inspect history.
 
 ## Workspace & Submission Tools:
 7. `view_file(file_path: str, start_line: int = 1, end_line: int = 100)`: Read lines from a file in the workspace.
@@ -451,8 +471,8 @@ You have access to persistent AIVC long-term memory to retain context, track arc
 10. `submit_commit(commit_message: str, patch: str, explanation: str)`: Submit the synthesized commit and final patch for the current chronicle step.
 
 ## Protocol Rules:
-- At each new commit chronicle step, call `recall` and `get_file_history_metadata` to reconstruct context from earlier commits.
-- Call `remember` whenever you identify crucial architectural decisions, bug roots, or refactoring patterns (format note as dense Post-It: Contexte, Décision, Impact).
+- At each new commit chronicle step, call `recall` and `get_file_history` to reconstruct context from earlier commits.
+- Call `remember` whenever you identify crucial architectural decisions, bug roots, or refactoring patterns.
 - Submit the validated patch and commit message via `submit_commit` (or `submit_patch`).
 """
 
