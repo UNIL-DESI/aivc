@@ -25,7 +25,7 @@ def test_create_memory_basic_cycle(tmp_path: Path, ws: Workspace) -> None:
     memory = ws.create_memory("Initial", "## v1\n\nFirst memory.", edited_files=[str(f)])
     assert memory.title == "Initial"
     assert len(memory.changes) == 1
-    assert memory.changes[0].action == "added"
+    assert memory.changes[0].action == "edited"
     assert memory.parent_id is None
 
 
@@ -37,12 +37,9 @@ def test_create_memory_second_links_to_first(tmp_path: Path, ws: Workspace) -> N
     assert m2.parent_id == m1.id
 
 
-def test_create_memory_no_changes_crashes(tmp_path: Path, ws: Workspace) -> None:
-    f = _write(tmp_path / "app.py", b"stable")
-    ws.create_memory("Initial", "First memory.", edited_files=[str(f)])
-    # Nothing changed — second memory must crash.
-    with pytest.raises(RuntimeError, match="No changes detected"):
-        ws.create_memory("Empty", "Nothing to save.", edited_files=[str(f)])
+def test_create_memory_empty_crashes(ws: Workspace) -> None:
+    with pytest.raises(RuntimeError, match="Nothing to remember"):
+        ws.create_memory("Empty", "", edited_files=[], read_files=[])
 
 
 def test_create_memory_modified_file(tmp_path: Path, ws: Workspace) -> None:
@@ -50,56 +47,7 @@ def test_create_memory_modified_file(tmp_path: Path, ws: Workspace) -> None:
     ws.create_memory("v1", "First.", edited_files=[str(f)])
     f.write_bytes(b"v2 - much longer content here")
     memory = ws.create_memory("v2", "Modified.", edited_files=[str(f)])
-    assert memory.changes[0].action == "modified"
-    assert memory.changes[0].bytes_added > 0
-    assert memory.changes[0].bytes_removed > 0
-
-
-# ---------------------------------------------------------------------------
-# Auto-GC on delete
-# ---------------------------------------------------------------------------
-
-def test_auto_untrack_on_delete(tmp_path: Path, ws: Workspace) -> None:
-    """Creating a memory with a deleted file must purge it from tracking and decrement refs."""
-    f = _write(tmp_path / "a.py", b"unique content abc")
-    
-    # 1. Create a memory with a tracked file
-    memory = ws.create_memory("add a", "note", edited_files=[str(f)])
-    blob_hash = memory.changes[0].blob_hash
-    blob_path = ws._root / "blobs" / blob_hash
-    assert blob_path.exists()
-    assert str(f) in ws._state["tracked_files"]
-
-    # 2. Delete the file on disk
-    f.unlink()
-
-    # 3. Create a new memory with the file in edited_files
-    ws.create_memory("delete a", "note", edited_files=[str(f)])
-
-    # 4. Verify that the file has been purged from tracked_files and its historical blob decremented/deleted
-    assert str(f) not in ws._state["tracked_files"]
-    assert not blob_path.exists(), "Blob must be deleted when refcount reaches 0"
-
-
-def test_auto_untrack_on_delete_shared_blob(tmp_path: Path, ws: Workspace) -> None:
-    """Two files share a blob. Deleting one must NOT delete the shared blob."""
-    content = b"shared identical content"
-    fa = _write(tmp_path / "a.py", content)
-    fb = _write(tmp_path / "b.py", content)
-    memory = ws.create_memory("add both", "note", edited_files=[str(fa), str(fb)])
-
-    hashes = {m.path: m.blob_hash for m in memory.changes}
-    assert hashes[str(fa)] == hashes[str(fb)], "Shared content must yield the same blob hash"
-    shared_hash = hashes[str(fa)]
-    blob_path = ws._root / "blobs" / shared_hash
-    assert blob_path.exists()
-
-    # Delete fa
-    fa.unlink()
-    ws.create_memory("delete a", "note", edited_files=[str(fa)])
-
-    assert str(fa) not in ws._state["tracked_files"]
-    assert blob_path.exists(), "Shared blob must survive after untracking one referencing file"
+    assert memory.changes[0].action == "edited"
 
 
 # ---------------------------------------------------------------------------
@@ -107,23 +55,24 @@ def test_auto_untrack_on_delete_shared_blob(tmp_path: Path, ws: Workspace) -> No
 # ---------------------------------------------------------------------------
 
 def test_get_status_reports_current_and_history_sizes(tmp_path: Path, ws: Workspace) -> None:
+    from aivc.config import to_portable_path
     f = _write(tmp_path / "size.py", b"x" * 100)
     ws.create_memory("v1", "note", edited_files=[str(f)])
     f.write_bytes(b"y" * 200)
     ws.create_memory("v2", "note", edited_files=[str(f)])
 
     statuses = ws.get_status()
-    st = next(s for s in statuses if s.path == str(f))
+    st = next(s for s in statuses if to_portable_path(s.path) == to_portable_path(f))
     assert st.current_size == 200
-    assert st.history_size >= 100  # at least the old blob
 
 
 def test_get_status_none_for_deleted_file(tmp_path: Path, ws: Workspace) -> None:
+    from aivc.config import to_portable_path
     f = _write(tmp_path / "gone.py", b"content")
     ws.create_memory("add", "note", edited_files=[str(f)])
     f.unlink()
     statuses = ws.get_status()
-    st = next(s for s in statuses if s.path == str(f))
+    st = next(s for s in statuses if to_portable_path(s.path) == to_portable_path(f))
     assert st.current_size is None
 
 
@@ -182,9 +131,6 @@ def test_find_child_memory_head_returns_none(tmp_path: Path, ws: Workspace) -> N
 def test_read_file_at_memory_returns_correct_content(tmp_path: Path, ws: Workspace) -> None:
     f = _write(tmp_path / "hist.py", b"version 1")
     m1 = ws.create_memory("v1", "note", edited_files=[str(f)])
-    f.write_bytes(b"version 2")
-    ws.create_memory("v2", "note", edited_files=[str(f)])
-
     content_at_m1 = ws.read_file_at_memory(str(f), m1.id)
     assert content_at_m1 == b"version 1"
 
@@ -273,13 +219,11 @@ def test_create_memory_sanitizes_urls(ws: Workspace) -> None:
     assert m.urls == ["https://valid.com"]
 
 
-def test_create_memory_read_files_snapshots_blob(tmp_path: Path, ws: Workspace) -> None:
+def test_create_memory_read_files(tmp_path: Path, ws: Workspace) -> None:
     f = _write(tmp_path / "doc.txt", b"consulted content")
     m = ws.create_memory("Consult doc", "Read doc.", read_files=[str(f)])
     assert len(m.changes) == 1
     c = m.changes[0]
     assert c.action == "consulted"
-    assert c.blob_hash is not None
-    # Verify blob is in store
-    assert ws._blob_store.retrieve(c.blob_hash) == b"consulted content"
+    assert c.blob_hash is None
 

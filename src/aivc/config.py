@@ -102,3 +102,67 @@ def get_storage_root(allow_fallback: bool = False) -> Path:
         return fallback_path
             
     return Path(path_str)
+
+
+def to_portable_path(path_str: str | Path) -> str:
+    """Normalize a local filesystem path across different machines/OSes.
+
+    Converts Windows/macOS/Linux user home directory paths to '~/...'.
+    """
+    import re
+    if isinstance(path_str, Path):
+        s = path_str.as_posix()
+    else:
+        s = str(path_str).strip().replace("\\", "/")
+
+    if s.startswith("~/"):
+        return s
+    if s == "~":
+        return "~"
+
+    patterns = [
+        r"^[A-Za-z]:/Users/[^/]+/(.*)$",
+        r"^/Users/[^/]+/(.*)$",
+        r"^/home/[^/]+/(.*)$",
+    ]
+    for pattern in patterns:
+        m = re.match(pattern, s, re.IGNORECASE)
+        if m:
+            return f"~/{m.group(1)}"
+
+    exact_patterns = [
+        r"^[A-Za-z]:/Users/[^/]+/?$",
+        r"^/Users/[^/]+/?$",
+        r"^/home/[^/]+/?$",
+    ]
+    for pattern in exact_patterns:
+        if re.match(pattern, s, re.IGNORECASE):
+            return "~"
+
+    try:
+        resolved = Path(path_str).resolve()
+        try:
+            home = get_home_dir().resolve()
+            rel = resolved.relative_to(home)
+            return f"~/{rel.as_posix()}"
+        except (ValueError, RuntimeError):
+            res_s = resolved.as_posix()
+            for pattern in patterns:
+                m = re.match(pattern, res_s, re.IGNORECASE)
+                if m:
+                    return f"~/{m.group(1)}"
+            return res_s
+    except Exception:
+        return s
+
+
+def from_portable_path(path_str: str | Path) -> Path:
+    """Convert a portable path ('~/...') or foreign machine path to a local Path."""
+    portable = to_portable_path(path_str)
+    home = get_home_dir()
+    if portable.startswith("~/"):
+        return home / portable[2:]
+    if portable == "~":
+        return home
+    return Path(portable)
+

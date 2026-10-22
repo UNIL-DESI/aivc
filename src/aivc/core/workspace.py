@@ -12,15 +12,17 @@ import glob as _glob
 import json
 import os
 import sys
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from aivc.core.blob_store import BlobStore
-from aivc.core.memory import Memory, FileChange, memory_from_dict, memory_to_dict
+from aivc.core.memory import Memory, FileChange, memory_from_dict, memory_to_dict, _compose_note
 from aivc.core.diff import compute_diff
 from aivc.core.index import CoreIndex
-from aivc.config import get_machine_id
+from aivc.config import get_machine_id, to_portable_path, from_portable_path
 
 
 @dataclass
@@ -260,157 +262,219 @@ class Workspace:
         self._reload_state_if_needed()
         return list(self._state["tracked_files"].keys())
 
-    def create_memory(
+    def remember(
         self,
         title: str,
-        note: str,
-        read_files: list[str] | None = None,
+        journal: str = "",
+        user_items: list[dict[str, Any]] | None = None,
         edited_files: list[str] | None = None,
+        read_files: list[str] | None = None,
+        urls: list[str] | None = None,
+        note: str | None = None,
         machine_id: str = "",
         consulted_files: list[str] | None = None,
-        urls: list[str] | None = None,
     ) -> Memory:
-        """Detect changes in tracked files and create a new memory.
+        """Create a new memory in 3-part format (title, journal, user_items) without local diffs/blobs.
 
         Args:
-            title: Short title for the memory.
-            note: Detailed Markdown note (the LLM's 'memory').
-            read_files: Optional list of file paths that were consulted
-                        but not modified.
-            edited_files: Optional list of file paths that were modified/created.
+            title: Short title summarising the achievement.
+            journal: Agent thoughts and activity log.
+            user_items: User-facing task items [{id, task, details, done}].
+            edited_files: List of file paths modified or created.
+            read_files: List of file paths consulted.
+            urls: Optional list of URLs.
+            note: Backward-compatibility parameter mapping to journal.
             machine_id: ID of the machine where the memory was created.
-            consulted_files: Legacy parameter, mapped to read_files.
-            urls: Optional list of web URLs associated with this memory.
-
-        Returns:
-            The newly created Memory.
-
-        Raises:
-            ValueError: If any paths in read_files or edited_files are directories
-                        or untracked non-existent files.
-            RuntimeError: If no changes are detected, no files were read/edited, and no URLs provided.
+            consulted_files: Legacy parameter mapping to read_files.
         """
         self._reload_state_if_needed()
 
-        actual_urls = [u.strip() for u in (urls or []) if isinstance(u, str) and u.strip()]
+        if not journal and note:
+            journal = note
 
-        # Normalize and merge consulted_files into read_files
+        actual_urls = [u.strip() for u in (urls or []) if isinstance(u, str) and u.strip()]
         actual_read_files = list(read_files) if read_files is not None else []
         if consulted_files:
             actual_read_files.extend(consulted_files)
-
         actual_edited_files = list(edited_files) if edited_files is not None else []
+
+        memory_id = str(uuid.uuid4())
+        norm_user_items = []
+        if user_items:
+            for idx, item in enumerate(user_items, 1):
+                norm_user_items.append(
+                    {
+                        "id": item.get("id") or f"{memory_id[:4]}-{idx}",
+                        "task": str(item.get("task", "")).strip(),
+                        "details": str(item.get("details", "")).strip(),
+                        "done": bool(item.get("done", False)),
+                    }
+                )
 
         # Strict validation
         for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
             for path_str in files_list:
                 p = Path(path_str)
-                abs_path = str(p.resolve())
+                portable_path = to_portable_path(path_str)
 
                 # Check for directories
                 if p.is_dir():
                     raise ValueError(f"Validation error in {list_name}: '{path_str}' is a directory.")
 
                 # Check for untracked non-existent files
-                if not p.is_file() and abs_path not in self._state["tracked_files"]:
+                if not p.is_file() and portable_path not in self._state["tracked_files"]:
                     raise ValueError(f"Validation error in {list_name}: '{path_str}' is an untracked non-existent file.")
 
-        # Auto-track existing untracked files in edited_files BEFORE compute_diff
+        changes = []
+        seen_paths = set()
+
+        # edited_files -> FileChange(path=portable_path, action="edited" or "deleted")
         for path_str in actual_edited_files:
             p = Path(path_str)
-            abs_path = str(p.resolve())
-            if p.is_file() and abs_path not in self._state["tracked_files"]:
-                self._state["tracked_files"][abs_path] = {"hash": None, "mtime": None, "size": None}
-
-        with self._blob_store.batch():
-            # Targeted diff: only diff files in actual_edited_files
-            abs_edited_files = {str(Path(path_str).resolve()) for path_str in actual_edited_files}
-            subset_tracked = {
-                k: v for k, v in self._state["tracked_files"].items()
-                if k in abs_edited_files
-            }
-            changes = compute_diff(subset_tracked, self._blob_store)
-
-            # Auto-track existing untracked files in read_files AFTER compute_diff
-            for path_str in actual_read_files:
-                p = Path(path_str)
-                abs_path = str(p.resolve())
-                if p.is_file() and abs_path not in self._state["tracked_files"]:
-                    self._state["tracked_files"][abs_path] = {"hash": None, "mtime": None, "size": None}
-
-            # Handle consulted files (read_files / consulted_files)
-            consulted_changes = []
-            seen_read_paths = set()
-            for path_str in actual_read_files:
-                abs_path = str(Path(path_str).resolve())
-                if abs_path in seen_read_paths:
-                    continue
-                seen_read_paths.add(abs_path)
-
-                # Check if it was already modified/added/deleted in the diff.
-                if any(c.path == abs_path for c in changes):
-                    continue
-
-                # Compute and store blob snapshot in _blob_store if file exists on disk
-                p = Path(abs_path)
-                blob_hash = None
-                if p.is_file():
-                    blob_hash = self._blob_store.store(p.read_bytes())
-                else:
-                    tracked_info = self._state["tracked_files"].get(abs_path)
-                    if tracked_info:
-                        blob_hash = tracked_info.get("hash")
-
-                consulted_changes.append(
+            portable_path = to_portable_path(path_str)
+            action = "deleted" if (not p.is_file() and portable_path in self._state["tracked_files"]) else "edited"
+            if portable_path not in seen_paths:
+                seen_paths.add(portable_path)
+                changes.append(
                     FileChange(
-                        path=abs_path,
-                        action="consulted",
-                        blob_hash=blob_hash,
+                        path=portable_path,
+                        action=action,
+                        blob_hash=None,
                         bytes_added=0,
                         bytes_removed=0,
                     )
                 )
 
-            all_changes = changes + consulted_changes
+        # read_files -> FileChange(path=portable_path, action="consulted")
+        for path_str in actual_read_files:
+            portable_path = to_portable_path(path_str)
+            if portable_path not in seen_paths:
+                seen_paths.add(portable_path)
+                changes.append(
+                    FileChange(
+                        path=portable_path,
+                        action="consulted",
+                        blob_hash=None,
+                        bytes_added=0,
+                        bytes_removed=0,
+                    )
+                )
 
-        # Automate GC and untrack on file deletion
-        deleted_paths = [c.path for c in changes if c.action == "deleted"]
-        for path in deleted_paths:
-            self._purge_file_history(path)
-            self._state["tracked_files"].pop(path, None)
-
-        if not all_changes and not actual_urls:
+        if not changes and not actual_urls and not norm_user_items and not (journal and journal.strip()):
             raise RuntimeError(
                 "No changes detected in tracked files, no files consulted, and no URLs provided. "
                 "Nothing to remember."
             )
 
-        memory = Memory.create(
+        full_note = _compose_note(journal, norm_user_items, fallback_note=journal or note or "")
+        if not full_note.strip():
+            full_note = title
+
+        memory = Memory(
+            id=memory_id,
+            timestamp=datetime.now(timezone.utc).isoformat(),
             title=title,
-            note=note,
-            parent_id=self._state["head_commit_id"],
-            changes=all_changes,
+            note=full_note,
+            parent_id=self._state.get("head_commit_id"),
+            changes=changes,
             machine_id=machine_id,
             urls=actual_urls,
+            user_items=norm_user_items,
+            journal=journal or (note if not norm_user_items else ""),
         )
+
         self._save_memory(memory)
         self._index.add_memory(memory)
 
-        # Update tracked_files with the new hashes and metadata.
-        for change in all_changes:
-            if change.action != "deleted" and change.blob_hash is not None and Path(change.path).is_file():
-                # Store new hash and capture current disk metadata
-                p = Path(change.path)
-                stat = p.stat()
-                self._state["tracked_files"][change.path] = {
-                    "hash": change.blob_hash,
-                    "mtime": stat.st_mtime,
-                    "size": stat.st_size
-                }
+        for c in changes:
+            if c.action == "deleted":
+                self._state["tracked_files"].pop(c.path, None)
+            else:
+                self._state["tracked_files"][c.path] = {"hash": None, "mtime": None, "size": None}
 
         self._state["head_commit_id"] = memory.id
         self._save_state()
         return memory
+
+    def create_memory(
+        self,
+        title: str,
+        note: str = "",
+        read_files: list[str] | None = None,
+        edited_files: list[str] | None = None,
+        machine_id: str = "",
+        consulted_files: list[str] | None = None,
+        urls: list[str] | None = None,
+        user_items: list[dict[str, Any]] | None = None,
+        journal: str = "",
+    ) -> Memory:
+        """Alias for remember for backwards compatibility."""
+        return self.remember(
+            title=title,
+            journal=journal or note,
+            user_items=user_items,
+            edited_files=edited_files,
+            read_files=read_files,
+            urls=urls,
+            note=note,
+            machine_id=machine_id,
+            consulted_files=consulted_files,
+        )
+
+    def complete_user_items(self, item_ids: list[str]) -> list[str]:
+        """Search across all memories for user_items matching item_ids, mark done=True, re-save.
+
+        Returns:
+            List of item IDs effectively marked done.
+        """
+        self._reload_state_if_needed()
+        target_ids = set(item_ids)
+        marked_done = []
+
+        for p in self._commits_dir.glob("*.json"):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            user_items = data.get("user_items", [])
+            modified = False
+            for item in user_items:
+                if item.get("id") in target_ids and not item.get("done", False):
+                    item["done"] = True
+                    marked_done.append(item["id"])
+                    modified = True
+
+            if modified:
+                data["user_items"] = user_items
+                data["note"] = _compose_note(
+                    data.get("journal", ""),
+                    user_items,
+                    fallback_note=data.get("note", ""),
+                )
+                p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+        return marked_done
+
+    def get_file_history(self, file_path: str) -> list[Memory]:
+        """Return chronological list of memories touching file_path (portable match)."""
+        self._reload_state_if_needed()
+        target_portable = to_portable_path(file_path)
+        matching_memories = []
+
+        memory_ids = self._index.get_memories_touching_file(file_path)
+        for mid in memory_ids:
+            try:
+                mem = self._load_memory(mid)
+                for ch in mem.changes:
+                    if to_portable_path(ch.path) == target_portable:
+                        matching_memories.append(mem)
+                        break
+            except KeyError:
+                continue
+
+        matching_memories.sort(key=lambda m: m.timestamp, reverse=True)
+        return matching_memories
 
     def get_tracked_files_metadata(self) -> dict[str, dict]:
         """Return the current metadata (mtime, size) for all tracked files from state.
@@ -433,8 +497,8 @@ class Workspace:
         all_hashes = self._index.get_all_blob_hashes_by_file()
         blob_size_cache = {}
         
-        for abs_path in self._state["tracked_files"]:
-            p = Path(abs_path)
+        for tracked_path in self._state["tracked_files"]:
+            p = from_portable_path(tracked_path)
             
             # Current size: check disk for correctness (deleted file detection)
             current_size = None
@@ -446,7 +510,7 @@ class Workspace:
 
             # History size: use bulk index map
             history_size = 0
-            hashes = all_hashes.get(abs_path, set())
+            hashes = all_hashes.get(tracked_path, set())
             for h in hashes:
                 if h not in blob_size_cache:
                     try:
@@ -458,7 +522,7 @@ class Workspace:
 
             statuses.append(
                 FileStatus(
-                    path=abs_path,
+                    path=tracked_path,
                     current_size=current_size,
                     history_size=history_size,
                 )
@@ -524,16 +588,20 @@ class Workspace:
         Raises:
             KeyError: if the memory or file is not found in history.
         """
-        # Walk the chain from the target memory backwards.
+        target_portable = to_portable_path(file_path)
         current_id: str | None = memory_id
         while current_id is not None:
             memory = self._load_memory(current_id)
             for change in memory.changes:
-                if change.path == file_path:
+                if to_portable_path(change.path) == target_portable:
                     if change.action == "deleted":
                         raise KeyError(f"File {file_path!r} was deleted at memory {current_id!r}.")
                     if change.blob_hash is not None:
                         return self._blob_store.retrieve(change.blob_hash)
+                    # If blob is None, fallback to local file on disk
+                    local_p = from_portable_path(target_portable)
+                    if local_p.exists():
+                        return local_p.read_bytes()
             current_id = memory.parent_id
 
         raise KeyError(

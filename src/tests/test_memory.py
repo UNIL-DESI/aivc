@@ -40,16 +40,6 @@ def test_file_change_invalid_action_crashes() -> None:
         FileChange(path="f.py", action="RENAMED", blob_hash="abc", bytes_added=0, bytes_removed=0)
 
 
-def test_file_change_deleted_must_have_no_blob_hash() -> None:
-    with pytest.raises(ValueError, match="blob_hash=None"):
-        FileChange(path="f.py", action="deleted", blob_hash="abc", bytes_added=0, bytes_removed=0)
-
-
-def test_file_change_added_must_have_blob_hash() -> None:
-    with pytest.raises(ValueError, match="must have a blob_hash"):
-        FileChange(path="f.py", action="added", blob_hash=None, bytes_added=50, bytes_removed=0)
-
-
 def test_file_change_size_delta() -> None:
     fc = make_file_change(bytes_added=200, bytes_removed=150)
     assert fc.size_delta == 50
@@ -87,28 +77,32 @@ def test_memory_empty_note_crashes() -> None:
 # ---------------------------------------------------------------------------
 
 def test_memory_roundtrip() -> None:
-    original = make_memory()
-    restored = memory_from_dict(memory_to_dict(original))
+    original = make_memory(user_items=[{"id": "test-1", "task": "Do thing", "details": "now", "done": False}], journal="Doing work")
+    d = memory_to_dict(original)
+    assert "user_items" in d
+    assert "journal" in d
+    restored = memory_from_dict(d)
     assert restored.id == original.id
     assert restored.title == original.title
-    assert restored.note == original.note
     assert restored.parent_id == original.parent_id
     assert len(restored.changes) == len(original.changes)
     assert restored.changes[0].path == original.changes[0].path
-    assert restored.changes[0].bytes_added == original.changes[0].bytes_added
+    assert restored.changes[0].action == original.changes[0].action
+    assert restored.user_items == original.user_items
+    assert restored.journal == original.journal
 
 
 def test_memory_from_dict_crashes_on_missing_field() -> None:
     d = memory_to_dict(make_memory())
-    del d["note"]
+    del d["title"]
     with pytest.raises(ValueError, match="missing fields"):
         memory_from_dict(d)
 
 
 def test_memory_from_dict_crashes_on_missing_change_field() -> None:
     d = memory_to_dict(make_memory())
-    del d["changes"][0]["bytes_added"]
-    with pytest.raises(ValueError, match="missing fields"):
+    del d["changes"][0]["path"]
+    with pytest.raises(ValueError, match="missing path or action"):
         memory_from_dict(d)
 
 

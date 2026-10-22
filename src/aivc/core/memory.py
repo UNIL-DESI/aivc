@@ -18,34 +18,26 @@ class FileChange:
     """Represents the state change of a single tracked file in a memory."""
 
     path: str
-    """Relative path of the file."""
+    """Relative or portable path of the file."""
 
     action: str
-    """One of 'added', 'modified', 'deleted'."""
+    """One of 'added', 'modified', 'deleted', 'consulted', 'edited'."""
 
-    blob_hash: str | None
-    """SHA-256 hash of the new blob. None when action is 'deleted'."""
+    blob_hash: str | None = None
+    """SHA-256 hash of the blob, or None (no blobs stored in new memories)."""
 
-    bytes_added: int
-    """Size of the new blob in bytes. 0 when action is 'deleted'."""
+    bytes_added: int = 0
+    """Size of the new blob in bytes."""
 
-    bytes_removed: int
-    """Size of the previous blob in bytes. 0 when action is 'added'."""
+    bytes_removed: int = 0
+    """Size of the previous blob in bytes."""
 
     def __post_init__(self) -> None:
-        _VALID_ACTIONS = {"added", "modified", "deleted", "consulted"}
+        _VALID_ACTIONS = {"added", "modified", "deleted", "consulted", "edited"}
         if self.action not in _VALID_ACTIONS:
             raise ValueError(
                 f"Invalid FileChange action {self.action!r}. "
                 f"Must be one of {_VALID_ACTIONS}."
-            )
-        if self.action in ("deleted",) and self.blob_hash is not None:
-            raise ValueError(
-                f"FileChange with action={self.action!r} must have blob_hash=None."
-            )
-        if self.action in ("added", "modified") and self.blob_hash is None:
-            raise ValueError(
-                f"FileChange with action={self.action!r} must have a blob_hash."
             )
 
     @property
@@ -56,6 +48,30 @@ class FileChange:
     def format_impact(self) -> str:
         """Human-readable size impact, e.g. '+1.2 KB / -512 B'."""
         return f"+{_format_bytes(self.bytes_added)} / -{_format_bytes(self.bytes_removed)}"
+
+
+def _compose_note(journal: str, user_items: list[dict[str, Any]] | None, fallback_note: str = "") -> str:
+    """Compose the full note text combining journal and user_items for search/indexing."""
+    parts = []
+    if journal and journal.strip():
+        parts.append(journal.strip())
+    if user_items:
+        items_lines = []
+        for item in user_items:
+            task = item.get("task", "").strip()
+            details = item.get("details", "").strip()
+            item_id = item.get("id", "").strip()
+            id_prefix = f"[{item_id}] " if item_id else ""
+            status = "[x]" if item.get("done") else "[ ]"
+            line = f"- {status} {id_prefix}{task}"
+            if details:
+                line += f" : {details}"
+            items_lines.append(line)
+        if items_lines:
+            parts.append("## Actions Utilisateur\n" + "\n".join(items_lines))
+    if parts:
+        return "\n\n".join(parts)
+    return fallback_note
 
 
 @dataclass
@@ -72,7 +88,7 @@ class Memory:
     """Short title summarising the achievement."""
 
     note: str
-    """Detailed Markdown note — the full 'memory' to be vectorised later."""
+    """Detailed Markdown note — the full 'memory' to be vectorised."""
 
     parent_id: str | None
     """ID of the parent memory, or None for the initial memory."""
@@ -86,30 +102,55 @@ class Memory:
     urls: list[str] = field(default_factory=list)
     """List of URLs associated with this memory."""
 
+    user_items: list[dict[str, Any]] = field(default_factory=list)
+    """List of user-facing task items [{id, task, details, done}]."""
+
+    journal: str = ""
+    """Agent thoughts and activity log."""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise to dict."""
+        return memory_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Memory":
+        """Deserialise from dict."""
+        return memory_from_dict(data)
+
     @classmethod
     def create(
         cls,
         title: str,
-        note: str,
-        parent_id: str | None,
-        changes: list[FileChange],
+        note: str = "",
+        parent_id: str | None = None,
+        changes: list[FileChange] | None = None,
         machine_id: str = "",
         urls: list[str] | None = None,
+        user_items: list[dict[str, Any]] | None = None,
+        journal: str = "",
     ) -> "Memory":
         """Factory: create a new Memory with a fresh UUID and current UTC timestamp."""
         if not title.strip():
             raise ValueError("Memory title cannot be empty.")
-        if not note.strip():
+
+        actual_user_items = list(user_items) if user_items else []
+        actual_journal = journal.strip() if journal else ""
+
+        full_note = _compose_note(actual_journal, actual_user_items, fallback_note=note)
+        if not full_note.strip():
             raise ValueError("Memory note cannot be empty.")
+
         return cls(
             id=str(uuid.uuid4()),
             timestamp=datetime.now(timezone.utc).isoformat(),
             title=title,
-            note=note,
+            note=full_note,
             parent_id=parent_id,
-            changes=changes,
+            changes=changes or [],
             machine_id=machine_id,
             urls=list(urls) if urls else [],
+            user_items=actual_user_items,
+            journal=actual_journal or (note if not actual_user_items else ""),
         )
 
 
@@ -123,6 +164,8 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
         "id": memory.id,
         "timestamp": memory.timestamp,
         "title": memory.title,
+        "journal": memory.journal,
+        "user_items": memory.user_items,
         "note": memory.note,
         "parent_id": memory.parent_id,
         "machine_id": memory.machine_id,
@@ -131,9 +174,6 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
             {
                 "path": c.path,
                 "action": c.action,
-                "blob_hash": c.blob_hash,
-                "bytes_added": c.bytes_added,
-                "bytes_removed": c.bytes_removed,
             }
             for c in memory.changes
         ],
@@ -142,7 +182,7 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
 
 def memory_from_dict(data: dict[str, Any]) -> Memory:
     """Deserialise a Memory from a dict. Crashes on any missing or invalid field."""
-    _required = {"id", "timestamp", "title", "note", "parent_id", "changes"}
+    _required = {"id", "timestamp", "title", "parent_id", "changes"}
     _missing = _required - data.keys()
     if _missing:
         raise ValueError(
@@ -150,22 +190,25 @@ def memory_from_dict(data: dict[str, Any]) -> Memory:
             f"Got keys: {set(data.keys())}."
         )
 
+    user_items = data.get("user_items", [])
+    journal = data.get("journal") or data.get("note", "")
+    note = data.get("note", "")
+    full_note = _compose_note(journal, user_items, fallback_note=note)
+
     raw_changes: list[dict[str, Any]] = data["changes"]
     changes = []
     for i, rc in enumerate(raw_changes):
-        _change_required = {"path", "action", "blob_hash", "bytes_added", "bytes_removed"}
-        _missing_change = _change_required - rc.keys()
-        if _missing_change:
+        if "path" not in rc or "action" not in rc:
             raise ValueError(
-                f"Cannot deserialise FileChange[{i}] — missing fields: {_missing_change}."
+                f"Cannot deserialise FileChange[{i}] — missing path or action in {rc}."
             )
         changes.append(
             FileChange(
                 path=rc["path"],
                 action=rc["action"],
-                blob_hash=rc["blob_hash"],
-                bytes_added=rc["bytes_added"],
-                bytes_removed=rc["bytes_removed"],
+                blob_hash=rc.get("blob_hash"),
+                bytes_added=rc.get("bytes_added", 0),
+                bytes_removed=rc.get("bytes_removed", 0),
             )
         )
 
@@ -173,10 +216,12 @@ def memory_from_dict(data: dict[str, Any]) -> Memory:
         id=data["id"],
         timestamp=data["timestamp"],
         title=data["title"],
-        note=data["note"],
+        note=full_note,
         parent_id=data["parent_id"],
         machine_id=data.get("machine_id", ""),  # Default to empty for legacy
         urls=data.get("urls", []),
+        user_items=user_items,
+        journal=journal,
         changes=changes,
     )
 

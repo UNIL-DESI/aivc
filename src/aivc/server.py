@@ -26,6 +26,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -33,75 +34,10 @@ from mcp.server.fastmcp import FastMCP
 # System prompt — injected into every LLM context using this server
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT = """
-# AIVC — AI Version Control (Long-Term Memory)
-
-You have access to a persistent, versioned memory system called AIVC.
-AIVC is your long-term memory. Use it actively — it is the only way to preserve
-context beyond a single conversation.
-
-## Core Concept
-
-AIVC stores **memories**: a short title + a detailed Markdown note you write yourself.
-Every memory also automatically snapshots any tracked files that were modified.
-Memories are indexed semantically, so you can retrieve them by meaning later.
-
-## CRITICAL RULE — REMEMBER OFTEN
-
-**You MUST call `remember` whenever progress is made (completed major edit, understood concept/architecture, or user confirmed fact) tied to `read_files` or `edited_files`.**
-
-A memory is required after:
-- Progress is made on a task or major edit completed.
-- Understanding a concept, architecture, or key finding.
-- User confirmed a fact or decision.
-- Any identifiable "checkpoint" in your reasoning.
-
-Format the note as a dense **Post-It** (2-3 telegraphic bullet points):
-- `📌 **[Contexte]** : ...` (trigger / objective)
-- `📌 **[Logique/Décision]** : ...` (core mechanism / rationale)
-- `📌 **[Impact]** : ...` (consequence / invariant / next steps)
-
-Do NOT repeat file paths inside the note (they belong in `read_files` and `edited_files`).
-
-### Read and Edited Files
-
-When you create a memory, specify `read_files` and `edited_files`.
-`read_files` are files you have read and that were **truly useful** to you to
-accomplish your task, but that you did not modify. `edited_files` are files
-that were modified or created for the task.
-
-## CRITICAL RULE — RECALL FIRST
-
-**You MUST call `recall` whenever user mentions anything fuzzy, an unfamiliar project, concept or context. Never make assumptions—always call `recall` first to retrieve context.**
-
-## CRITICAL RULE — COLD-START FALLBACK
-
-**If `recall` returns no memories (empty memory / cold start), immediately stop memory queries and switch directly to codebase exploration (`view_file`, `grep_search`, `list_dir`). Call `remember` as you make progress to populate memory.**
-
-## Recall Funnel
-
-To retrieve memory, follow this funnel:
-
-1. **`recall`** — for semantic search by meaning (idea, topic, solution).
-   → Returns memory titles/dates/IDs + snippets. NEVER the full note.
-2. **`get_recent_memories`** — for recalling recent history chronologically (optional).
-3. **`consult_memory`** — to read the full note of a specific memory.
-   → Call this AFTER identifying a relevant memory.
-4. **`get_file_history_metadata`** — to see the chronological commit/memory history of a specific file.
-5. **`read_past_file_content`** — to inspect the actual historical content or diff of a file at a past memory.
-
-## Tool Reference
-
-| Tool | Purpose |
-|------|---------|
-| `remember` | Save a memory checkpoint. Must be called whenever progress is made tied to read_files or edited_files. |
-| `recall` | Semantic search over all past memory notes. Must be called whenever user mentions anything fuzzy or unfamiliar. |
-| `get_recent_memories` | Recent memory log (paginable, optional). |
-| `consult_memory` | Read a specific memory note in full. |
-| `get_file_history_metadata` | Get the AIVC history of a specific file. |
-| `read_past_file_content` | Read the content of a file as it was at a specific past memory. |
-
-"""
+_SYSTEM_PROMPT = """AIVC est le système de mémoire versionnée persistante pour agents LLM.
+Il enregistre des souvenirs structurés (titre, journal, tâches utilisateur, fichiers modifiés et consultés).
+La mémoire est indexée sémantiquement pour permettre la recherche par le sens via recall.
+Les outils permettent de consulter les souvenirs passés, l'historique des fichiers et de restaurer des fichiers."""
 
 # ---------------------------------------------------------------------------
 # Bootstrap — engine initialisation
@@ -115,7 +51,7 @@ _storage_root = get_storage_root()
 # SQLite graph; the heavy ML components remain lazy until first use).
 from aivc.semantic.engine import SemanticEngine  # noqa: E402
 from aivc.sync.background import BackgroundSyncer
-from aivc.config import get_machine_id
+from aivc.config import get_machine_id, to_portable_path
 import threading
 
 _engine: SemanticEngine | None = None
@@ -262,60 +198,14 @@ def _format_bytes(n: int) -> str:
 def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_id=None) -> str:
     """Render tracked file changes as a clear hierarchical tree."""
     if not changes:
-        return "  (no tracked files changed)"
-    
+        return "  (no tracked files recorded)"
+
     paths = []
     extras = {}
-    
-    # Check if this memory is remote (created on another machine)
-    is_remote = machine_id and machine_id != _local_machine_id
 
     for c in changes:
         paths.append(c.path)
-        extra_parts = [f"[{c.action}]"]
-        if c.action != "consulted":
-            if memory_id and not is_remote:
-                added = 0
-                deleted = 0
-                try:
-                    current_lines = []
-                    if c.action != "deleted":
-                        current_bytes = _get_engine().read_file_at_memory(c.path, memory_id)
-                        current_text = current_bytes.decode('utf-8', errors='replace')
-                        current_lines = current_text.splitlines()
-                    
-                    has_parent = False
-                    if parent_id and c.action != "added":
-                        try:
-                            parent_bytes = _get_engine().read_file_at_memory(c.path, parent_id)
-                            parent_text = parent_bytes.decode('utf-8', errors='replace')
-                            parent_lines = parent_text.splitlines()
-                            has_parent = True
-                        except Exception as e:
-                            logger.warning("Could not read parent file %s at memory %s for diff: %s", c.path, parent_id, e)
-                            
-                    if has_parent or c.action == "deleted":
-                        parent_lines_to_diff = parent_lines if has_parent else []
-                        diff = list(difflib.unified_diff(parent_lines_to_diff, current_lines, lineterm=''))
-                        for line in diff:
-                            if line.startswith('+') and not line.startswith('+++'):
-                                added += 1
-                            elif line.startswith('-') and not line.startswith('---'):
-                                deleted += 1
-                    else:
-                        added = len(current_lines)
-                        deleted = 0
-                    extra_parts.append(f"(+{added} -{deleted})")
-                except Exception as e:
-                    logger.warning("Could not read file %s at memory %s for diff stats: %s", c.path, memory_id, e)
-            extra_parts.append(f"({c.format_impact()})")
-        
-        if machine_id and machine_id != _local_machine_id:
-            local_match = _get_engine().find_local_equivalent(c.path, c.blob_hash)
-            if local_match:
-                extra_parts.append(f"(probablement `{local_match}` localement)")
-                
-        extras[c.path] = " " + " ".join(extra_parts)
+        extras[c.path] = f" [{c.action}]"
 
     return _render_file_tree(paths, extras, indent_prefix="  ")
 
@@ -328,36 +218,28 @@ def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_
 @mcp.tool()
 async def remember(
     title: str,
-    note: str,
-    read_files: list[str] | None = None,
+    journal: str,
+    user_items: list[dict[str, Any]] | None = None,
     edited_files: list[str] | None = None,
+    read_files: list[str] | None = None,
     urls: list[str] | None = None,
 ) -> str:
-    """Save a memory checkpoint.
-
-    Format note as 2-3 dense Post-It bullets (📌 **[Contexte]** : ..., 📌 **[Logique/Décision]** : ..., 📌 **[Impact]** : ...). Do not repeat file paths inside note.
-
-    Args:
-        title: Short descriptive title.
-        note: Markdown Post-It (2-3 bullets: Contexte, Décision, Impact).
-        read_files: Key consulted files without modifications.
-        edited_files: Files modified or created.
-        urls: Consulted URLs/links.
-    """
+    """Enregistre un souvenir structuré avec journal, tâches utilisateur et fichiers."""
     import asyncio
     from pathlib import Path
 
     actual_read_files = read_files or []
     actual_edited_files = edited_files or []
     actual_urls = urls or []
+    actual_user_items = user_items or []
 
     engine = _get_engine()
 
-    # Run the heavy vector encoding and DB insertion synchronously and wait for it
     memory = await asyncio.to_thread(
-        engine.create_memory,
-        title,
-        note,
+        engine.remember,
+        title=title,
+        journal=journal,
+        user_items=actual_user_items,
         read_files=actual_read_files,
         edited_files=actual_edited_files,
         urls=actual_urls,
@@ -373,28 +255,26 @@ async def remember(
 
     changes_summary_str = _format_changes_compressed(memory.changes, memory.machine_id, memory.id, memory.parent_id)
 
+    items_summary = ""
+    if memory.user_items:
+        items_lines = [f"  - [{'x' if it.get('done') else ' '}] [{it.get('id')}] {it.get('task')}" for it in memory.user_items]
+        items_summary = "\n\nActions Utilisateur :\n" + "\n".join(items_lines)
+
     return (
         f"✅ Memory successfully created.\n"
         f"ID        : {memory.id}\n"
         f"Title     : {memory.title}\n"
         f"Files Recorded:\n{changes_summary_str}"
+        f"{items_summary}"
     )
 
 
 @mcp.tool()
-async def recall(query: str, top_n: int = 5, filter_glob: str = "") -> str:
-    """Search past memories semantically. Returns metadata and snippet (call consult_memory for full note).
-
-    Args:
-        query: Search query (topic, idea, question).
-        top_n: Max results (default 5, max 20).
-        filter_glob: Optional glob pattern to filter by file path.
-    """
+async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: bool = False) -> str:
+    """Recherche sémantiquement les souvenirs passés par pertinence."""
     import asyncio
     top_n = min(top_n, 20)
-    
-    # Force import/load of the heavy CrossEncoder on the main thread to prevent Windows DLL deadlocks.
-    # This runs only on the very first recall call and takes a few seconds, but is completely safe.
+
     import os
     disable_cross = os.environ.get("AIVC_DISABLE_CROSS_ENCODER", "False").lower() == "true"
     engine = _get_engine()
@@ -407,19 +287,16 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "") -> str:
             import sys
             print(f"[aivc] Failed to eagerly load CrossEncoder on main thread: {e}", file=sys.stderr)
 
-    # Check if indexing is in progress
     indexing_queue_size = engine.get_index_queue_size()
     warning_header = ""
     if indexing_queue_size > 0:
         warning_header = f"⚠️  Note: {indexing_queue_size} recent memory(ies) are still being indexed and may be missing from search results.\n\n"
 
-    # Run the heavy semantic search query in a background thread to keep the event loop responsive
     results = await asyncio.to_thread(engine.search, query, top_n=top_n, filter_glob=filter_glob)
 
     if not results:
         return warning_header + _format_cold_start_payload()
 
-    # Build memory list
     memory_lines = []
     for i, r in enumerate(results, 1):
         m_id = getattr(r, 'machine_id', "")
@@ -431,7 +308,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "") -> str:
             f"{indented_snippet}"
         )
 
-    # Aggregate file paths across top results (most frequently mentioned)
     file_counter: Counter[str] = Counter()
     for r in results:
         file_counter.update(r.file_paths)
@@ -441,14 +317,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "") -> str:
     for fp, count in file_counter.most_common(10):
         paths.append(fp)
         extra_parts = [f"(in {count}/{len(results)} results)"]
-
-        # If results are remote, try to find local hints
-        is_remote = any(getattr(r, 'machine_id', "") != _local_machine_id for r in results)
-        if is_remote:
-            local_match = _get_engine().find_local_equivalent(fp)
-            if local_match:
-                extra_parts.append(f"(probablement `{local_match}` localement)")
-
         extras[fp] = " " + " ".join(extra_parts)
 
     output = warning_header + "## Matching Memories\n\n"
@@ -457,8 +325,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "") -> str:
     if paths:
         output += "\n\n## Most Relevant Files\n"
         output += _render_file_tree(paths, extras, indent_prefix="  ")
-    else:
-        output += "\n\n(No file associations found for these memories.)"
 
     output += "\n\n💡 Use `consult_memory(memory_id)` to read a full note."
     return output
@@ -466,14 +332,9 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "") -> str:
 
 @mcp.tool()
 def consult_memory(memory_id: str) -> str:
-    """Read full note and file diffs for a memory ID.
-
-    Args:
-        memory_id: Memory UUID.
-    """
+    """Affiche les détails, le journal, les tâches utilisateur et les fichiers d'un souvenir."""
     memory = _get_engine().get_memory(memory_id)
 
-    # Context (Prev/Next)
     prev_str = ""
     if memory.parent_id:
         try:
@@ -490,14 +351,24 @@ def consult_memory(memory_id: str) -> str:
     except Exception:
         pass
 
-    context_block = ""
-    if prev_str or next_str:
-        context_block = f"{prev_str}{next_str}"
+    context_block = f"{prev_str}{next_str}" if (prev_str or next_str) else ""
 
-    # Restructure changes summary: separate modified and consulted files
+    items_block = ""
+    if getattr(memory, "user_items", None):
+        item_lines = []
+        for it in memory.user_items:
+            status = "[x]" if it.get("done") else "[ ]"
+            it_id = it.get("id", "")
+            task = it.get("task", "")
+            details = it.get("details", "")
+            line = f"- {status} `[{it_id}]` {task}"
+            if details:
+                line += f"\n    *Détails :* {details}"
+            item_lines.append(line)
+        items_block = "## Actions Utilisateur (user_items)\n\n" + "\n".join(item_lines) + "\n\n"
+
     changes_sections = []
-    
-    modified_changes = [c for c in memory.changes if c.action != "consulted"]
+    modified_changes = [c for c in memory.changes if c.action in ("edited", "modified", "added", "deleted")]
     if modified_changes:
         modified_tree = _format_changes_compressed(
             modified_changes, memory.machine_id, memory.id, memory.parent_id
@@ -505,7 +376,7 @@ def consult_memory(memory_id: str) -> str:
         changes_sections.append(f"### Fichiers modifiés\n{modified_tree}")
     else:
         changes_sections.append("### Fichiers modifiés\n  (aucun)")
-        
+
     consulted_changes = [c for c in memory.changes if c.action == "consulted"]
     if consulted_changes:
         consulted_tree = _format_changes_compressed(
@@ -517,11 +388,7 @@ def consult_memory(memory_id: str) -> str:
 
     changes_summary_str = "\n\n".join(changes_sections)
 
-    machine_line = ""
-    remote_warning = ""
-    if memory.machine_id and memory.machine_id != _local_machine_id:
-        machine_line = f"**Machine**   : {memory.machine_id} (Distant)\n"
-        remote_warning = "> [!WARNING]\n> This memory was created on a remote machine. Historical file contents may not be available.\n\n"
+    machine_line = f"**Machine**   : {memory.machine_id}\n" if memory.machine_id else ""
 
     urls_section = ""
     memory_urls = getattr(memory, "urls", []) or []
@@ -529,222 +396,74 @@ def consult_memory(memory_id: str) -> str:
         urls_list_str = "\n".join(f"- {url}" for url in memory_urls)
         urls_section = f"## URLs / Links Consulted\n\n{urls_list_str}\n\n"
 
+    journal_text = getattr(memory, "journal", "") or memory.note
+
     return (
         f"# Memory: {memory.title}\n\n"
-        f"{remote_warning}"
         f"**ID**        : {memory.id}\n"
         f"**Timestamp** : {memory.timestamp}\n"
         f"**Parent**    : {memory.parent_id or 'none (initial memory)'}\n"
-        f"{machine_line}\n"
+        f"{machine_line}"
         f"{context_block}"
+        f"{items_block}"
+        f"## Journal\n\n{journal_text}\n\n"
         f"## Files Recorded\n\n{changes_summary_str}\n\n"
         f"{urls_section}"
-        f"## Note\n\n{memory.note}"
     )
 
 
 @mcp.tool()
-def get_recent_memories(limit: int = 10, offset: int = 0) -> str:
-    """List recent memories chronologically with activity heatmap.
+def get_file_history(file_path: str) -> str:
+    """Affiche l'historique chronologique des souvenirs liés à un fichier et leurs tâches ouvertes."""
+    engine = _get_engine()
+    memories = engine._workspace.get_file_history(file_path)
 
-    Args:
-        limit: Max memories (default 10, max 50).
-        offset: Offset to skip (default 0).
-    """
-    limit = min(limit, 50)
-
-    all_recent = _get_engine().get_log(
-        limit=offset + limit,
-    )
-
-    page = all_recent[offset : offset + limit]
-
-    if not page:
-        return _format_cold_start_payload()
-
-    lines = [f"Showing memories {offset + 1}–{offset + len(page)} (newest first)\n"]
-
-    file_counter: Counter[str] = Counter()
-    all_remote_paths = set()
-
-    for i, memory in enumerate(page, offset + 1):
-        m_tag = f" [Remote: {memory.machine_id}]" if memory.machine_id and memory.machine_id != _local_machine_id else ""
-        lines.append(
-            f"{i:>3}. [{memory.timestamp[:10]}] {memory.title}{m_tag} (ID: {memory.id})"
-        )
-
-        # Collect files for aggregation
-        try:
-            m_files = _get_engine().get_memory_files(memory.id)
-            file_counter.update(m_files)
-            if memory.machine_id and memory.machine_id != _local_machine_id:
-                all_remote_paths.update(m_files)
-        except KeyError:
-            pass
-
-    # Heatmap of modified files
-    if file_counter:
-        # Show top 10 or proportional to limit (but at least 10)
-        num_files = max(10, limit // 2) if limit > 20 else 10
-        top_files = file_counter.most_common(num_files)
-
-        paths = []
-        extras = {}
-        for fp, count in top_files:
-            paths.append(fp)
-            extra_parts = [f"({count}x)"]
-
-            # Maintenance of hints (probablement ...)
-            if fp in all_remote_paths:
-                local_match = _get_engine().find_local_equivalent(fp)
-                if local_match:
-                    extra_parts.append(f"(probablement `{local_match}` localement)")
-
-            extras[fp] = " " + " ".join(extra_parts)
-
-        lines.append("\n## Recent Activity Heatmap")
-        lines.append(_render_file_tree(paths, extras, indent_prefix="  "))
-
-    lines.append("\n💡 Use `consult_memory(memory_id)` to read a full memory note.")
-    return "\n".join(lines)
-
-
-@mcp.tool()
-def get_file_history_metadata(file_path: str) -> str:
-    """List past memories that touched or consulted a file.
-
-    Args:
-        file_path: Target file path.
-    """
-    from pathlib import Path
-    abs_path = str(Path(file_path).resolve())
-    memory_ids = _get_engine().get_file_memories(abs_path)
-
-    if not memory_ids:
+    if not memories:
         return _format_cold_start_payload(f"pour `{file_path}`")
 
     lines = [f"## AIVC History for: `{file_path}`\n"]
-    lines.append(f"{len(memory_ids)} memory(ies) have touched this file:\n")
+    lines.append(f"{len(memories)} memory(ies) have touched this file:\n")
 
-    for mid in memory_ids:
-        try:
-            memory = _get_engine().get_memory(mid)
-            lines.append(
-                f"  - [{memory.timestamp[:10]}] {memory.title} (ID: {memory.id})"
-            )
-        except KeyError:
-            lines.append(f"  - [unknown date] Memory {mid} (metadata not found)")
+    for mem in memories:
+        lines.append(f"- [{mem.timestamp[:10]}] **{mem.title}** (ID: `{mem.id}`)")
+        open_items = [it for it in getattr(mem, "user_items", []) if not it.get("done", False)]
+        if open_items:
+            for it in open_items:
+                it_id = it.get("id", "")
+                task = it.get("task", "")
+                lines.append(f"    - [ ] `[{it_id}]` {task}")
 
     lines.append(
         "\n💡 Use `consult_memory(memory_id)` to read the full note of a specific memory."
-        "\n💡 Use `read_past_file_content(file_path, memory_id)` to read the file content at that memory."
+        "\n💡 Use `restore_file(file_path)` to restore the latest complete version from Google Drive."
     )
     return "\n".join(lines)
 
 
 @mcp.tool()
-def read_past_file_content(file_path: str, memory_id: str, diff_against: str = "current") -> str:
-    """Read historical file content or diff at a specific memory version.
+def complete_user_items(item_ids: list[str]) -> str:
+    """Marque une ou plusieurs tâches utilisateur comme terminées."""
+    if not item_ids:
+        return "Aucun identifiant de tâche spécifié."
 
-    Args:
-        file_path: Target file path.
-        memory_id: Memory UUID.
-        diff_against: 'current' (vs disk), 'parent' (vs parent), or 'none' (raw).
-    """
-    import difflib
-    import os
-    from pathlib import Path
+    engine = _get_engine()
+    done_ids = engine.complete_user_items(item_ids)
 
-    # Resolve the path to absolute format to ensure matching in history
-    abs_file_path = str(Path(file_path).resolve())
+    if not done_ids:
+        return f"Aucune tâche trouvée ou modifiée pour les IDs : {item_ids}"
 
-    if diff_against not in ("current", "parent", "none"):
-        raise ValueError(
-            f"Invalid diff_against value: {diff_against!r}. "
-            "Must be one of 'current', 'parent', 'none'."
-        )
+    return f"✅ Tâche(s) marquée(s) comme terminée(s) : {', '.join(done_ids)}"
 
+
+@mcp.tool()
+def restore_file(file_path: str, target_path: str | None = None) -> str:
+    """Télécharge la dernière version complète d'un fichier depuis Google Drive."""
+    engine = _get_engine()
     try:
-        raw: bytes = _get_engine().read_file_at_memory(abs_file_path, memory_id)
-        historical_content = raw.decode("utf-8")
-    except (KeyError, FileNotFoundError):
-        # Find which memory exactly has this blob to provide context
-        target_memory = None
-        mid = memory_id
-        while mid:
-            try:
-                m = _get_engine().get_memory(mid)
-                for change in m.changes:
-                    if str(Path(change.path).resolve()) == abs_file_path and change.blob_hash:
-                        target_memory = m
-                        break
-                if target_memory:
-                    break
-                mid = m.parent_id
-            except KeyError:
-                break
-            
-        if target_memory and target_memory.machine_id and target_memory.machine_id != _local_machine_id:
-            return (
-                f"⚠️ ERROR: Content of `{file_path}` is NOT available locally.\n\n"
-                f"This file version was recorded on a remote machine: `{target_memory.machine_id}`.\n"
-                "AIVC Phase 29+ does not synchronize file contents (blobs) across machines for security and performance.\n"
-                "Please synchronize your files manually (e.g., via `git pull`) to access this content."
-            )
-        
-        return f"⚠️ ERROR: Historical version of file `{file_path}` at memory `{memory_id}` could not be found locally (it may have only been consulted or not modified)."
-
-    if diff_against == "none":
-        return historical_content
-
-    elif diff_against == "current":
-        current_content = ""
-        if os.path.exists(abs_file_path):
-            try:
-                with open(abs_file_path, "r", encoding="utf-8", errors="replace") as f:
-                    current_content = f.read()
-            except Exception as e:
-                logger.error("Failed to read current local file %s: %s", abs_file_path, e)
-
-        diff_lines = list(
-            difflib.unified_diff(
-                historical_content.splitlines(keepends=True),
-                current_content.splitlines(keepends=True),
-                fromfile=f"aivc://{memory_id[:8]}/{file_path}",
-                tofile=f"local://current/{file_path}",
-            )
-        )
-        diff_text = "".join(diff_lines)
-        return f"```diff\n{diff_text}\n```"
-
-    elif diff_against == "parent":
-        parent_id = None
-        try:
-            memory = _get_engine().get_memory(memory_id)
-            parent_id = memory.parent_id
-        except KeyError:
-            pass
-
-        parent_content = ""
-        if parent_id:
-            try:
-                raw_parent: bytes = _get_engine().read_file_at_memory(abs_file_path, parent_id)
-                parent_content = raw_parent.decode("utf-8")
-            except (KeyError, FileNotFoundError):
-                pass
-
-        diff_lines = list(
-            difflib.unified_diff(
-                parent_content.splitlines(keepends=True),
-                historical_content.splitlines(keepends=True),
-                fromfile=f"aivc://{parent_id[:8] if parent_id else 'none'}/{file_path}",
-                tofile=f"aivc://{memory_id[:8]}/{file_path}",
-            )
-        )
-        diff_text = "".join(diff_lines)
-        return f"```diff\n{diff_text}\n```"
-
-    return historical_content
+        dest = engine.pull_latest_file(file_path, target_path)
+        return f"✅ Fichier restauré avec succès depuis Google Drive vers : `{dest}`"
+    except Exception as e:
+        return f"❌ Échec de la restauration de `{file_path}` : {e}"
 
 
 

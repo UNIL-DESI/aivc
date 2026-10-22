@@ -47,18 +47,16 @@ def test_create_memory_is_indexed(engine, tmp_path) -> None:
 
 
 def test_create_memory_updates_graph(engine, tmp_path) -> None:
+    from aivc.config import to_portable_path
     f = tmp_path / "test.py"
     _write(f, "x = 1")
     memory = engine.create_memory("Graph memory", "This should appear in the graph.", edited_files=[str(f)])
-    assert str(f) in engine._graph.get_memory_files(memory.id)
+    assert to_portable_path(f) in engine._graph.get_memory_files(memory.id)
 
 
-def test_create_memory_raises_if_no_changes(engine, tmp_path) -> None:
-    f = tmp_path / "test.py"
-    _write(f, "x = 1")
-    engine.create_memory("First", "Initial note.", edited_files=[str(f)])
-    with pytest.raises(RuntimeError, match="No changes detected"):
-        engine.create_memory("Second", "Should fail — nothing changed.", edited_files=[str(f)])
+def test_create_memory_raises_if_no_changes(engine) -> None:
+    with pytest.raises(RuntimeError, match="Nothing to remember"):
+        engine.create_memory("Empty", "", edited_files=[], read_files=[])
 
 
 # ---------------------------------------------------------------------------
@@ -84,13 +82,14 @@ def test_search_finds_relevant_memory(engine, tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_get_related_files(engine, tmp_path) -> None:
+    from aivc.config import to_portable_path
     fa = tmp_path / "a.py"
     fb = tmp_path / "b.py"
     _write(fa, "a = 1")
     _write(fb, "b = 2")
     engine.create_memory("Co-occur memory", "Both a and b changed.", edited_files=[str(fa), str(fb)])
     related = dict(engine.get_related_files(str(fa)))
-    assert str(fb) in related
+    assert to_portable_path(fb) in related
 
 
 # ---------------------------------------------------------------------------

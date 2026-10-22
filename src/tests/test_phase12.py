@@ -50,6 +50,8 @@ def test_memory_serialization_with_consulted():
     assert m2.changes[0].action == "consulted"
     assert m2.changes[0].path == "foo.txt"
 
+from aivc.config import to_portable_path
+
 def test_workspace_create_memory_only_consulted(tmp_path):
     ws = Workspace(tmp_path)
     file_a = tmp_path / "a.txt"
@@ -63,7 +65,7 @@ def test_workspace_create_memory_only_consulted(tmp_path):
     
     assert len(memory.changes) == 1
     assert memory.changes[0].action == "consulted"
-    assert memory.changes[0].path == str(file_a.resolve())
+    assert to_portable_path(memory.changes[0].path) == to_portable_path(file_a.resolve())
 
 def test_workspace_create_memory_mixed(tmp_path):
     ws = Workspace(tmp_path)
@@ -79,9 +81,9 @@ def test_workspace_create_memory_mixed(tmp_path):
     file_a.write_text("modified")
     memory = ws.create_memory("Mixed", "Note", consulted_files=[str(file_b)], edited_files=[str(file_a)])
     
-    actions = {c.path: c.action for c in memory.changes}
-    assert actions[str(file_a.resolve())] == "modified"
-    assert actions[str(file_b.resolve())] == "consulted"
+    actions = {to_portable_path(c.path): c.action for c in memory.changes}
+    assert actions[to_portable_path(file_a.resolve())] == "edited"
+    assert actions[to_portable_path(file_b.resolve())] == "consulted"
     assert len(memory.changes) == 2
 
 def test_workspace_create_memory_autotrack_consulted(tmp_path):
@@ -94,7 +96,7 @@ def test_workspace_create_memory_autotrack_consulted(tmp_path):
     memory = ws.create_memory("AutoTrack", "Note", consulted_files=[str(file_a)])
     assert len(memory.changes) == 1
     assert memory.changes[0].action == "consulted"
-    assert memory.changes[0].path == str(file_a.resolve())
+    assert to_portable_path(memory.changes[0].path) == to_portable_path(file_a.resolve())
 
 
 def test_workspace_create_memory_nonexistent_consulted(tmp_path):
@@ -129,7 +131,7 @@ def test_workspace_create_memory_strict_validation(tmp_path):
     real_file.unlink() # Delete it
     # Since it is tracked, it should not raise ValueError
     memory = ws.create_memory("Deleted", "Note", edited_files=[str(real_file)])
-    assert any(c.path == str(real_file.resolve()) and c.action == "deleted" for c in memory.changes)
+    assert any(to_portable_path(c.path) == to_portable_path(real_file.resolve()) and c.action == "deleted" for c in memory.changes)
 
 def test_semantic_engine_graph_updates(tmp_path):
     engine = SemanticEngine(tmp_path)
@@ -141,7 +143,7 @@ def test_semantic_engine_graph_updates(tmp_path):
     
     # Check graph
     files = engine.get_memory_files(memory.id)
-    assert str(file_a.resolve()) in files
+    assert to_portable_path(file_a.resolve()) in files
     
     memories = engine.get_file_memories(str(file_a.resolve()))
     assert memory.id in memories

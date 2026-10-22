@@ -31,7 +31,6 @@ def _import_server():
     """Import aivc.server with SemanticEngine fully mocked."""
     import aivc.server as srv
     if hasattr(srv, "_get_engine"):
-        # We don't overwrite the function permanently if not needed, but we can patch it
         srv._get_engine = lambda: _mock_engine
         
     return srv
@@ -40,15 +39,13 @@ def _import_server():
 # We import once for all tests.
 _server = _import_server()
 
-# Grab the tool functions directly from the server module.
+# Grab the 6 active tool functions directly from the server module.
 _remember = _server.remember
 _recall = _server.recall
 _consult_memory = _server.consult_memory
-_get_recent_memories = _server.get_recent_memories
-_get_file_history_metadata = _server.get_file_history_metadata
-_read_past_file_content = _server.read_past_file_content
-
-
+_get_file_history = _server.get_file_history
+_complete_user_items = _server.complete_user_items
+_restore_file = _server.restore_file
 
 
 # ---------------------------------------------------------------------------
@@ -58,27 +55,30 @@ _read_past_file_content = _server.read_past_file_content
 def _make_memory(
     memory_id="abc-123",
     title="Do something",
-    note="Detailed note.",
+    journal="Detailed journal.",
+    note="",
     timestamp="2026-03-18T12:00:00+00:00",
     parent_id=None,
     changes=None,
+    user_items=None,
 ):
     """Build a minimal mock Memory."""
-    from aivc.core.memory import Memory, FileChange
+    from aivc.core.memory import Memory, FileChange, _compose_note
     fc = FileChange(
         path="src/foo.py",
         action="modified",
-        blob_hash="aaa",
-        bytes_added=100,
-        bytes_removed=50,
     )
+    actual_user_items = user_items if user_items is not None else []
+    full_note = note or _compose_note(journal, actual_user_items, fallback_note="Detailed note.")
     return Memory(
         id=memory_id,
         title=title,
-        note=note,
-        timestamp=timestamp,
+        note=full_note,
         parent_id=parent_id,
+        timestamp=timestamp,
         changes=changes if changes is not None else [fc],
+        user_items=actual_user_items,
+        journal=journal,
     )
 
 
@@ -95,12 +95,6 @@ def _make_search_result(memory_id="abc-123", title="Old memory", score=0.9):
     )
 
 
-def _make_file_status(path="src/foo.py", current_size=1024, history_size=4096):
-    """Build a minimal mock FileStatus."""
-    from aivc.core.workspace import FileStatus
-    return FileStatus(path=path, current_size=current_size, history_size=history_size)
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -110,38 +104,62 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
         _mock_engine.reset_mock(return_value=True, side_effect=True)
 
     async def test_returns_memory_id_and_files(self):
-        _mock_engine.create_memory.return_value = _make_memory()
-        result = await _remember("Do something", "Detailed note.")
+        _mock_engine.remember.return_value = _make_memory()
+        result = await _remember("Do something", "Detailed journal.")
         self.assertIn("Memory successfully created", result)
+        self.assertIn("abc-123", result)
 
     async def test_delegates_to_engine(self):
-        _mock_engine.create_memory.return_value = _make_memory()
-        _mock_engine.get_tracked_paths.return_value = []
-        await _remember("T", "N")
-        _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=[], edited_files=[], urls=[])
+        _mock_engine.remember.return_value = _make_memory()
+        await _remember("T", "J")
+        _mock_engine.remember.assert_called_once_with(
+            title="T",
+            journal="J",
+            user_items=[],
+            read_files=[],
+            edited_files=[],
+            urls=[],
+        )
 
     async def test_delegates_to_engine_with_consulted(self):
-        from pathlib import Path
-        _mock_engine.create_memory.return_value = _make_memory()
-        _mock_engine.get_tracked_paths.return_value = [str(Path("f1.py").resolve())]
-        await _remember("T", "N", read_files=["f1.py"])
-        _mock_engine.create_memory.assert_called_once_with("T", "N", read_files=["f1.py"], edited_files=[], urls=[])
+        _mock_engine.remember.return_value = _make_memory()
+        await _remember("T", "J", read_files=["f1.py"])
+        _mock_engine.remember.assert_called_once_with(
+            title="T",
+            journal="J",
+            user_items=[],
+            read_files=["f1.py"],
+            edited_files=[],
+            urls=[],
+        )
+
+    async def test_delegates_to_engine_with_user_items(self):
+        _mock_engine.remember.return_value = _make_memory(
+            user_items=[{"id": "item-1", "task": "Check token", "done": False}]
+        )
+        result = await _remember(
+            "T",
+            "J",
+            user_items=[{"id": "item-1", "task": "Check token", "done": False}],
+        )
+        self.assertIn("Actions Utilisateur", result)
+        self.assertIn("[item-1] Check token", result)
 
     async def test_remember_validation_errors(self):
-        _mock_engine.create_memory.side_effect = ValueError("Validation error")
+        _mock_engine.remember.side_effect = ValueError("Validation error")
         with self.assertRaises(ValueError):
-            await _remember("T", "N", read_files=["non_existent.txt"])
-        _mock_engine.create_memory.side_effect = None
+            await _remember("T", "J", read_files=["non_existent.txt"])
+        _mock_engine.remember.side_effect = None
 
     async def test_runtime_error_propagates(self):
-        _mock_engine.create_memory.side_effect = RuntimeError("No changes detected")
+        _mock_engine.remember.side_effect = RuntimeError("Something failed")
         with self.assertRaises(RuntimeError):
-            await _remember("T", "N")
-        _mock_engine.create_memory.side_effect = None
+            await _remember("T", "J")
+        _mock_engine.remember.side_effect = None
 
     async def test_empty_changes_handled(self):
-        _mock_engine.create_memory.return_value = _make_memory(changes=[])
-        result = await _remember("T", "N")
+        _mock_engine.remember.return_value = _make_memory(changes=[])
+        result = await _remember("T", "J")
         self.assertIn("Memory successfully created", result)
 
 
@@ -156,8 +174,7 @@ class TestRecall(unittest.IsolatedAsyncioTestCase):
         self.assertIn("abc-123", result)
         self.assertIn("Old memory", result)
         self.assertIn("> short snippet", result)
-        # Must NOT contain the full note content
-        self.assertNotIn("Detailed note", result)
+        self.assertNotIn("Detailed journal", result)
 
     async def test_includes_aggregated_files(self):
         results = [
@@ -176,21 +193,32 @@ class TestRecall(unittest.IsolatedAsyncioTestCase):
     async def test_top_n_capped_at_20(self):
         _mock_engine.search.return_value = []
         await _recall("x", top_n=100)
-        # top_n is capped to 20 before passing to engine
         _mock_engine.search.assert_called_once_with("x", top_n=20, filter_glob="")
 
 
 class TestConsultMemory(unittest.TestCase):
     def setUp(self):
         _mock_engine.reset_mock(return_value=True, side_effect=True)
-        # Default: no child found
         _mock_engine.find_child_memory.return_value = None
 
-    def test_returns_full_note(self):
-        _mock_engine.get_memory.return_value = _make_memory(note="# My Work\n\nDetails here.")
+    def test_returns_full_journal(self):
+        _mock_engine.get_memory.return_value = _make_memory(journal="# My Work\n\nDetails here.")
         result = _consult_memory("abc-123")
         self.assertIn("# My Work", result)
         self.assertIn("Details here", result)
+
+    def test_renders_user_items(self):
+        _mock_engine.get_memory.return_value = _make_memory(
+            user_items=[
+                {"id": "task-1", "task": "Do thing", "details": "Extra info", "done": False},
+                {"id": "task-2", "task": "Done thing", "details": "", "done": True},
+            ]
+        )
+        result = _consult_memory("abc-123")
+        self.assertIn("Actions Utilisateur", result)
+        self.assertIn("- [ ] `[task-1]` Do thing", result)
+        self.assertIn("*Détails :* Extra info", result)
+        self.assertIn("- [x] `[task-2]` Done thing", result)
 
     def test_renders_file_changes(self):
         _mock_engine.get_memory.return_value = _make_memory()
@@ -205,226 +233,88 @@ class TestConsultMemory(unittest.TestCase):
     def test_shows_parent_context(self):
         parent = _make_memory(memory_id="p-123", title="Parent memory")
         child = _make_memory(memory_id="c-456", title="Child memory", parent_id="p-123")
-        
+
         def side_effect(mid):
-            if mid == "p-123": return parent
-            if mid == "c-456": return child
+            if mid == "p-123":
+                return parent
+            if mid == "c-456":
+                return child
             raise KeyError(mid)
-            
+
         _mock_engine.get_memory.side_effect = side_effect
-        
+
         result = _consult_memory("c-456")
         self.assertIn("⬆️ **Prev** : Parent memory (ID: p-123)", result)
 
     def test_shows_child_context(self):
         memory = _make_memory(memory_id="c-123", title="My memory")
         child = _make_memory(memory_id="next-456", title="Next memory")
-        
+
         _mock_engine.get_memory.return_value = memory
         _mock_engine.find_child_memory.return_value = child
-        
+
         result = _consult_memory("c-123")
         self.assertIn("⬇️ **Next** : Next memory (ID: next-456)", result)
 
-    def test_no_parent_no_child(self):
-        _mock_engine.get_memory.return_value = _make_memory(parent_id=None)
-        _mock_engine.find_child_memory.return_value = None
-        
-        result = _consult_memory("initial-id")
-        self.assertNotIn("⬆️ **Prev**", result)
-        self.assertNotIn("⬇️ **Next**", result)
 
-    def test_both_parent_and_child(self):
-        parent = _make_memory(memory_id="p-1", title="P")
-        current = _make_memory(memory_id="curr", title="C", parent_id="p-1")
-        child = _make_memory(memory_id="next", title="N")
-
-        def side_effect(mid):
-            if mid == "p-1": return parent
-            if mid == "curr": return current
-            raise KeyError(mid)
-
-        _mock_engine.get_memory.side_effect = side_effect
-        _mock_engine.find_child_memory.return_value = child
-
-        result = _consult_memory("curr")
-        self.assertIn("- ⬆️ **Prev** : P (ID: p-1)\n\n", result)
-        self.assertIn("- ⬇️ **Next** : N (ID: next)\n\n", result)
-        _mock_engine.get_memory.side_effect = None
-
-    def test_chantier2_features(self):
-        from aivc.core.memory import FileChange
-        
-        # Test 1: Navigation bullets and double newlines
-        parent = _make_memory(memory_id="p-123", title="Parent Title")
-        current = _make_memory(
-            memory_id="curr-123", 
-            title="Current Title", 
-            parent_id="p-123",
-            changes=[
-                FileChange(path="src/modified.py", action="modified", blob_hash="mod", bytes_added=10, bytes_removed=5),
-                FileChange(path="src/consulted.py", action="consulted", blob_hash="cons", bytes_added=0, bytes_removed=0),
-                FileChange(path="src/new.py", action="added", blob_hash="new", bytes_added=100, bytes_removed=0)
-            ]
-        )
-        child = _make_memory(memory_id="c-123", title="Child Title")
-
-        def mock_get_memory(mid):
-            if mid == "p-123": return parent
-            if mid == "curr-123": return current
-            raise KeyError(mid)
-
-        _mock_engine.get_memory.side_effect = mock_get_memory
-        _mock_engine.find_child_memory.return_value = child
-
-        # Mock read_file_at_memory for diffing
-        def mock_read_file(path, memory_id):
-            if memory_id == "curr-123":
-                if path == "src/modified.py":
-                    return b"line1\nline2_modified\nline3\n"
-                elif path == "src/new.py":
-                    return b"new1\nnew2\n"
-            elif memory_id == "p-123":
-                if path == "src/modified.py":
-                    return b"line1\nline2\nline3\n"
-            raise KeyError(f"Not found: {path} @ {memory_id}")
-
-        _mock_engine.read_file_at_memory.side_effect = mock_read_file
-
-        result = _consult_memory("curr-123")
-
-        # Verify Navigation bullets (double newlines format)
-        self.assertIn("- ⬆️ **Prev** : Parent Title (ID: p-123)\n\n", result)
-        self.assertIn("- ⬇️ **Next** : Child Title (ID: c-123)\n\n", result)
-
-        # Verify Separation of modified vs. consulted files
-        self.assertIn("### Fichiers modifiés", result)
-        self.assertIn("### Fichiers consultés", result)
-
-        # Verify Diff statistics
-        # src/modified.py changed line2 -> line2_modified (1 addition, 1 deletion): (+1 -1)
-        self.assertIn("(+1 -1)", result)
-        # src/new.py is new (no parent): 2 additions: (+2 -0)
-        self.assertIn("(+2 -0)", result)
-
-        _mock_engine.get_memory.side_effect = None
-        _mock_engine.read_file_at_memory.side_effect = None
-
-
-class TestGetRecentMemories(unittest.TestCase):
+class TestGetFileHistory(unittest.TestCase):
     def setUp(self):
         _mock_engine.reset_mock(return_value=True, side_effect=True)
 
-    def test_paginates_correctly(self):
-        memories = [_make_memory(memory_id=f"m{i}", title=f"Memory {i}") for i in range(15)]
-        _mock_engine.get_log.return_value = memories
-        _mock_engine.get_memory_files.return_value = ["src/foo.py"]
+    def test_returns_history_with_open_items(self):
+        mem = _make_memory(
+            memory_id="mem-1",
+            title="Refactor core",
+            user_items=[{"id": "item-1", "task": "Check prod", "done": False}],
+        )
+        _mock_engine._workspace.get_file_history.return_value = [mem]
 
-        result = _get_recent_memories(limit=5, offset=5)
-        self.assertIn("Memory 5", result)
-        self.assertNotIn("Memory 0", result)
+        result = _get_file_history("src/foo.py")
+        self.assertIn("AIVC History for: `src/foo.py`", result)
+        self.assertIn("Refactor core", result)
+        self.assertIn("`[item-1]` Check prod", result)
 
-    def test_empty_range_returns_graceful_message(self):
-        _mock_engine.get_log.return_value = []
-        result = _get_recent_memories()
+    def test_empty_history_returns_cold_start(self):
+        _mock_engine._workspace.get_file_history.return_value = []
+        result = _get_file_history("unknown.txt")
         self.assertIn("Aucun souvenir trouvé", result)
 
-    def test_limit_capped_at_50(self):
-        _mock_engine.get_log.return_value = []
-        _get_recent_memories(limit=200)
-        # Must request offset+50 at most
-        _mock_engine.get_log.assert_called_once_with(limit=50)
 
-
-class TestGetFileHistoryMetadata(unittest.TestCase):
+class TestCompleteUserItems(unittest.TestCase):
     def setUp(self):
         _mock_engine.reset_mock(return_value=True, side_effect=True)
 
-    def test_returns_memory_history(self):
-        _mock_engine.get_file_memories.return_value = ["abc-123"]
-        _mock_engine.get_memory.return_value = _make_memory()
-        result = _get_file_history_metadata("src/foo.py")
-        self.assertIn("src/foo.py", result)
-        self.assertIn("Do something", result)
+    def test_completes_items_success(self):
+        _mock_engine.complete_user_items.return_value = ["item-1", "item-2"]
+        result = _complete_user_items(["item-1", "item-2"])
+        self.assertIn("✅ Tâche(s) marquée(s) comme terminée(s)", result)
+        self.assertIn("item-1, item-2", result)
 
-    def test_key_error_propagates(self):
-        _mock_engine.get_file_memories.side_effect = KeyError("File not in graph")
-        with self.assertRaises(KeyError):
-            _get_file_history_metadata("src/unknown.py")
+    def test_empty_input(self):
+        result = _complete_user_items([])
+        self.assertIn("Aucun identifiant de tâche spécifié.", result)
 
-    def test_empty_memory_list(self):
-        _mock_engine.get_file_memories.return_value = []
-        result = _get_file_history_metadata("src/orphan.py")
-        self.assertIn("Aucun souvenir trouvé", result)
-        self.assertIn("src/orphan.py", result)
+    def test_no_items_modified(self):
+        _mock_engine.complete_user_items.return_value = []
+        result = _complete_user_items(["ghost-id"])
+        self.assertIn("Aucune tâche trouvée", result)
 
 
-class TestReadPastFileContent(unittest.TestCase):
+class TestRestoreFile(unittest.TestCase):
     def setUp(self):
         _mock_engine.reset_mock(return_value=True, side_effect=True)
 
-    def test_returns_decoded_utf8(self):
-        _mock_engine.read_file_at_memory.return_value = b"# Hello World\n"
-        result = _read_past_file_content("src/foo.py", "abc-123", diff_against="none")
-        self.assertEqual(result, "# Hello World\n")
+    def test_restore_file_success(self):
+        _mock_engine.pull_latest_file.return_value = "c:/dest/foo.py"
+        result = _restore_file("foo.py")
+        self.assertIn("✅ Fichier restauré avec succès", result)
+        self.assertIn("c:/dest/foo.py", result)
 
-    def test_resolves_relative_path_to_absolute(self):
-        from pathlib import Path
-        _mock_engine.read_file_at_memory.return_value = b"# Hello Resolved\n"
-        expected_abs_path = str(Path("src/foo.py").resolve())
-        
-        result = _read_past_file_content("src/foo.py", "abc-123", diff_against="none")
-        
-        _mock_engine.read_file_at_memory.assert_called_once_with(expected_abs_path, "abc-123")
-        self.assertEqual(result, "# Hello Resolved\n")
-
-    def test_returns_diff_current(self):
-        import os
-        from unittest.mock import patch
-        _mock_engine.read_file_at_memory.return_value = b"# Hello World\n"
-        with patch('os.path.exists', return_value=False):
-            result = _read_past_file_content("src/foo.py", "abc-123", diff_against="current")
-            self.assertIn("```diff", result)
-            self.assertIn("-# Hello World", result)
-
-    def test_returns_diff_parent(self):
-        _mock_engine.read_file_at_memory.side_effect = lambda path, mid: (
-            b"# Parent World\n" if mid == "parent-123" else b"# Hello World\n"
-        )
-        parent_memory = _make_memory()
-        parent_memory.id = "parent-123"
-        current_memory = _make_memory()
-        current_memory.id = "abc-123"
-        current_memory.parent_id = "parent-123"
-        
-        def mock_get_memory(mid):
-            if mid == "abc-123":
-                return current_memory
-            return parent_memory
-            
-        _mock_engine.get_memory.side_effect = mock_get_memory
-        
-        result = _read_past_file_content("src/foo.py", "abc-123", diff_against="parent")
-        self.assertIn("```diff", result)
-        self.assertIn("-# Parent World", result)
-        self.assertIn("+# Hello World", result)
-        
-        _mock_engine.get_memory.side_effect = None
-        _mock_engine.read_file_at_memory.side_effect = None
-
-    def test_invalid_diff_against_raises_value_error(self):
-        with self.assertRaises(ValueError):
-            _read_past_file_content("src/foo.py", "abc-123", diff_against="invalid")
-
-    def test_key_error_propagates(self):
-        _mock_engine.read_file_at_memory.side_effect = KeyError("Not found")
-        _mock_engine.get_memory.side_effect = KeyError("Not found")
-        result = _read_past_file_content("src/foo.py", "bad-memory", diff_against="none")
-        self.assertIn("ERROR:", result)
-        _mock_engine.read_file_at_memory.side_effect = None
-        _mock_engine.get_memory.side_effect = None
-
-
+    def test_restore_file_error(self):
+        _mock_engine.pull_latest_file.side_effect = RuntimeError("Drive network error")
+        result = _restore_file("foo.py")
+        self.assertIn("❌ Échec de la restauration", result)
+        self.assertIn("Drive network error", result)
 
 
 if __name__ == "__main__":

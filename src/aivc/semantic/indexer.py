@@ -18,6 +18,14 @@ import chromadb
 from chromadb import EmbeddingFunction, Documents, Embeddings
 from fastembed import TextEmbedding
 
+import threading
+try:
+    import tqdm
+    if not hasattr(tqdm.tqdm, "_lock") or tqdm.tqdm._lock is None:
+        tqdm.tqdm._lock = threading.RLock()
+except Exception:
+    pass
+
 if TYPE_CHECKING:
     from aivc.core.memory import Memory
 

@@ -12,6 +12,8 @@ import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from aivc.config import to_portable_path
+
 if TYPE_CHECKING:
     from aivc.core.memory import Memory
 
@@ -81,10 +83,11 @@ class CoreIndex:
         )
 
         for fc in memory.changes:
+            portable_path = to_portable_path(fc.path)
             self._execute(
                 "INSERT OR REPLACE INTO file_changes (commit_id, path, action, blob_hash, bytes_added, bytes_removed) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (memory.id, fc.path, fc.action, fc.blob_hash, fc.bytes_added, fc.bytes_removed),
+                (memory.id, portable_path, fc.action, fc.blob_hash, fc.bytes_added, fc.bytes_removed),
             )
         self._conn.commit()
 
@@ -115,16 +118,20 @@ class CoreIndex:
 
     def remove_file_changes(self, file_path: str) -> None:
         """Remove all file_change entries for a specific path (used for untrack)."""
-        self._execute("DELETE FROM file_changes WHERE path = ?", (file_path,))
+        target_portable = to_portable_path(file_path)
+        rows = self._execute("SELECT DISTINCT path FROM file_changes").fetchall()
+        for (p,) in rows:
+            if to_portable_path(p) == target_portable:
+                self._execute("DELETE FROM file_changes WHERE path = ?", (p,))
         self._conn.commit()
 
     def get_blob_hashes_for_file(self, file_path: str) -> set[str]:
         """Return all unique blob hashes ever associated with this file."""
+        target_portable = to_portable_path(file_path)
         rows = self._execute(
-            "SELECT DISTINCT blob_hash FROM file_changes WHERE path = ? AND blob_hash IS NOT NULL",
-            (file_path,),
+            "SELECT DISTINCT path, blob_hash FROM file_changes WHERE blob_hash IS NOT NULL"
         ).fetchall()
-        return {r[0] for r in rows}
+        return {h for p, h in rows if to_portable_path(p) == target_portable}
 
     def get_all_blob_hashes_by_file(self) -> dict[str, set[str]]:
         """Return a mapping of file_path -> set(blob_hashes) for all files."""
@@ -133,9 +140,10 @@ class CoreIndex:
         ).fetchall()
         result = {}
         for path, hash_ in rows:
-            if path not in result:
-                result[path] = set()
-            result[path].add(hash_)
+            p_port = to_portable_path(path)
+            if p_port not in result:
+                result[p_port] = set()
+            result[p_port].add(hash_)
         return result
 
     def find_child(self, memory_id: str) -> tuple[str, str] | None:
@@ -147,10 +155,16 @@ class CoreIndex:
 
     def get_memories_touching_file(self, file_path: str) -> list[str]:
         """Return all memory IDs that recorded a change for this file."""
+        target_portable = to_portable_path(file_path)
         rows = self._execute(
-            "SELECT DISTINCT commit_id FROM file_changes WHERE path = ?", (file_path,)
+            "SELECT DISTINCT commit_id, path FROM file_changes"
         ).fetchall()
-        return [r[0] for r in rows]
+        matching = []
+        for commit_id, path in rows:
+            if to_portable_path(path) == target_portable:
+                if commit_id not in matching:
+                    matching.append(commit_id)
+        return matching
 
     def migrate_from_json(self, memories_dir: Path) -> int:
         """Load all JSON memories from memories_dir and index them if not already present.

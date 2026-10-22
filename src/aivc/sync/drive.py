@@ -5,6 +5,7 @@ Replaces the legacy rclone-based sync with a native Python implementation
 using google-api-python-client, google-auth-httplib2, and google-auth-oauthlib.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,8 @@ from aivc.config import (
     get_aivc_config,
     get_machine_id,
     get_token_path,
+    to_portable_path,
+    from_portable_path,
 )
 
 # Scopes: full read/write on user's own Drive files
@@ -20,7 +23,7 @@ _ROOT_FOLDER_NAME = "AIVC_Sync"
 
 
 class NativeDriveSyncManager:
-    """Manages push/pull of memory metadata to Google Drive natively."""
+    """Manages push/pull of memory metadata and files to Google Drive natively."""
 
     def __init__(self, storage_root: Path):
         import os
@@ -38,6 +41,21 @@ class NativeDriveSyncManager:
 
         # Folder ID cache to avoid repeated API lookups
         self._folder_cache: dict[str, str] = {}
+        state_file = self.storage_root / "sync_state.json"
+        if state_file.exists():
+            try:
+                data = json.loads(state_file.read_text(encoding="utf-8"))
+                self._folder_cache.update(data.get("folders", {}))
+            except Exception:
+                pass
+
+    def _save_sync_state(self) -> None:
+        state_file = self.storage_root / "sync_state.json"
+        try:
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            state_file.write_text(json.dumps({"folders": self._folder_cache}, indent=2), encoding="utf-8")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Authentication
@@ -112,11 +130,27 @@ class NativeDriveSyncManager:
             folder_id = folder["id"]
 
         self._folder_cache[cache_key] = folder_id
+        self._save_sync_state()
         return folder_id
 
     def _get_root_folder_id(self) -> str:
         """Get (or create) the AIVC_Sync root folder."""
         return self._find_or_create_folder(_ROOT_FOLDER_NAME)
+
+    def _get_files_folder_id(self) -> str:
+        """Get (or create) the files/ folder under AIVC_Sync."""
+        root_id = self._get_root_folder_id()
+        return self._find_or_create_folder("files", root_id)
+
+    @property
+    def files_folder_id(self) -> str:
+        """Folder ID of AIVC_Sync/files/ on Google Drive."""
+        return self._get_files_folder_id()
+
+    def _get_root_memories_folder_id(self) -> str:
+        """Get (or create) the memories/ folder directly under AIVC_Sync."""
+        root_id = self._get_root_folder_id()
+        return self._find_or_create_folder("memories", root_id)
 
     def _get_machine_folder_id(self) -> str:
         """Get (or create) the machine-specific folder under AIVC_Sync."""
@@ -180,7 +214,7 @@ class NativeDriveSyncManager:
     # ------------------------------------------------------------------
 
     def push_memory(self, memory_id: str) -> None:
-        """Push a local memory JSON to Google Drive."""
+        """Push a local memory JSON to Google Drive (both machine commits/ and common memories/)."""
         if not self.enabled:
             return
 
@@ -190,6 +224,99 @@ class NativeDriveSyncManager:
 
         folder_id = self._get_memories_folder_id()
         self._upload_file(local_path, folder_id)
+
+        root_memories_id = self._get_root_memories_folder_id()
+        self._upload_file(local_path, root_memories_id)
+
+    def push_latest_file(self, file_path: str | Path) -> bool:
+        """Push the latest version of a file to Google Drive under AIVC_Sync/files/.
+
+        Overwrites existing file on Drive in place to keep only the latest version.
+        """
+        if not self.enabled:
+            return False
+
+        try:
+            from googleapiclient.http import MediaFileUpload
+        except ImportError:
+            return False
+
+        local_path = from_portable_path(file_path)
+        if not local_path.is_file():
+            return False
+
+        # If file exceeds 25 MB, ignore
+        try:
+            if local_path.stat().st_size > 25 * 1024 * 1024:
+                return False
+        except OSError:
+            return False
+
+        portable = to_portable_path(local_path)
+        rel_drive_path = portable[2:] if portable.startswith("~/") else portable.lstrip("/")
+
+        parts = Path(rel_drive_path).parts
+        if not parts:
+            return False
+
+        parent_folders = parts[:-1]
+        filename = parts[-1]
+
+        service = self._get_service()
+        current_parent_id = self.files_folder_id
+
+        for folder_name in parent_folders:
+            current_parent_id = self._find_or_create_folder(folder_name, current_parent_id)
+
+        query = f"name = '{filename}' and '{current_parent_id}' in parents and trashed = false"
+        results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
+        existing = results.get("files", [])
+
+        media = MediaFileUpload(str(local_path), resumable=True)
+
+        if existing:
+            file_id = existing[0]["id"]
+            service.files().update(fileId=file_id, media_body=media).execute()
+        else:
+            metadata: dict[str, Any] = {"name": filename, "parents": [current_parent_id]}
+            service.files().create(body=metadata, media_body=media, fields="id").execute()
+
+        return True
+
+    def pull_latest_file(self, file_path: str, target_path: str | Path | None = None) -> Path:
+        """Download latest version of file from AIVC_Sync/files/ on Google Drive to local disk."""
+        if not self.enabled:
+            raise RuntimeError("Google Drive sync is disabled.")
+
+        service = self._get_service()
+        portable = to_portable_path(file_path)
+        rel_drive_path = portable[2:] if portable.startswith("~/") else portable.lstrip("/")
+        parts = Path(rel_drive_path).parts
+        if not parts:
+            raise ValueError(f"Invalid file path: {file_path}")
+
+        parent_folders = parts[:-1]
+        filename = parts[-1]
+
+        current_parent_id = self.files_folder_id
+        for folder_name in parent_folders:
+            query = f"name = '{folder_name}' and '{current_parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
+            files = results.get("files", [])
+            if not files:
+                raise FileNotFoundError(f"Folder '{folder_name}' not found on Google Drive under AIVC_Sync/files/.")
+            current_parent_id = files[0]["id"]
+
+        query = f"name = '{filename}' and '{current_parent_id}' in parents and trashed = false"
+        results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
+        files = results.get("files", [])
+        if not files:
+            raise FileNotFoundError(f"File '{filename}' not found on Google Drive under AIVC_Sync/files/{'/'.join(parent_folders)}.")
+
+        file_id = files[0]["id"]
+        destination = from_portable_path(target_path or file_path)
+        self._download_file(file_id, destination)
+        return destination
 
     def push_missing(self) -> dict:
         """Finds all local memories and pushes those missing from Google Drive.

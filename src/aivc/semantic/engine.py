@@ -26,7 +26,7 @@ from typing import Any
 from aivc.core.memory import Memory
 from aivc.core.workspace import FileStatus, Workspace
 from aivc.semantic.graph import CooccurrenceGraph
-from aivc.config import get_machine_id
+from aivc.config import get_machine_id, to_portable_path, from_portable_path
 from aivc.sync.drive import NativeDriveSyncManager
 
 logger = logging.getLogger(__name__)
@@ -109,14 +109,18 @@ class SemanticEngine:
                 self._index_queue.task_done()
 
     def _sync_worker_loop(self):
-        """Background worker thread to push memories/blobs to cloud."""
+        """Background worker thread to push memories and latest files to cloud."""
         while True:
             memory = self._sync_queue.get()
-            if memory is None: # Shutdown signal
+            if memory is None:  # Shutdown signal
                 break
             try:
-                # Cloud Sync push (Memory JSON only)
+                # Cloud Sync push (Memory JSON)
                 self._sync_manager.push_memory(memory.id)
+                # Push latest versions of changed/consulted files
+                for c in getattr(memory, "changes", []):
+                    if c.action in ("edited", "consulted", "added", "modified"):
+                        self._sync_manager.push_latest_file(c.path)
             except Exception as e:
                 import sys
                 print(f"Error in async sync for memory {memory.id}: {e}", file=sys.stderr)
@@ -299,49 +303,29 @@ class SemanticEngine:
     # Commit lifecycle
     # ------------------------------------------------------------------
 
-    def create_memory(
+    def remember(
         self,
         title: str,
-        note: str,
-        read_files: list[str] | None = None,
+        journal: str = "",
+        user_items: list[dict[str, Any]] | None = None,
         edited_files: list[str] | None = None,
-        consulted_files: list[str] | None = None,
+        read_files: list[str] | None = None,
         urls: list[str] | None = None,
+        note: str | None = None,
+        consulted_files: list[str] | None = None,
     ) -> Memory:
-        """Create a versioning memory and index it semantically (asynchronously).
-
-        1. Delegates to :meth:`Workspace.create_memory` (which detects diffs,
-           stores blobs, and persists the memory JSON).
-        2. Updates the co-occurrence graph.
-        3. Pushes the memory to the background worker queue for semantic indexing.
-
-        Args:
-            title: Short memory title.
-            note: Detailed Markdown note (the 'memory').
-            read_files: Optional list of file paths consulted.
-            edited_files: Optional list of file paths modified/created.
-            consulted_files: Legacy parameter, mapped to read_files.
-            urls: Optional list of web URLs associated with this memory.
-
-        Returns:
-            The newly created :class:`~aivc.core.memory.Memory`.
-
-        Raises:
-            ValueError: If any paths in read_files or edited_files are directories
-                        or untracked non-existent files.
-            RuntimeError: if no changes detected and no files read or edited.
-        """
-        # Step 1: core versioning (may raise RuntimeError if no changes)
-        # Inject machine_id
+        """Create a versioning memory and index it semantically (asynchronously)."""
         machine_id = get_machine_id()
-        memory = self._workspace.create_memory(
-            title,
-            note,
-            read_files=read_files,
+        memory = self._workspace.remember(
+            title=title,
+            journal=journal,
+            user_items=user_items,
             edited_files=edited_files,
+            read_files=read_files,
+            urls=urls,
+            note=note,
             machine_id=machine_id,
             consulted_files=consulted_files,
-            urls=urls,
         )
 
         # Step 2: graph update (SQLite, always fast)
@@ -355,10 +339,49 @@ class SemanticEngine:
         except Exception as e:
             logger.warning("Failed to queue memory %s for sync: %s", memory.id, e)
 
-        # Step 4: Invalidate hints cache (new files might have been auto-tracked)
+        # Step 4: Invalidate hints cache
         self._local_hints_index = None
 
         return memory
+
+    def create_memory(
+        self,
+        title: str,
+        note: str = "",
+        read_files: list[str] | None = None,
+        edited_files: list[str] | None = None,
+        consulted_files: list[str] | None = None,
+        urls: list[str] | None = None,
+        user_items: list[dict[str, Any]] | None = None,
+        journal: str = "",
+    ) -> Memory:
+        """Create a versioning memory (alias for remember)."""
+        return self.remember(
+            title=title,
+            journal=journal or note,
+            user_items=user_items,
+            edited_files=edited_files,
+            read_files=read_files,
+            urls=urls,
+            note=note,
+            consulted_files=consulted_files,
+        )
+
+    def complete_user_items(self, item_ids: list[str]) -> list[str]:
+        """Mark task items as completed across all memories and sync to Drive."""
+        done_ids = self._workspace.complete_user_items(item_ids)
+        if done_ids and self._sync_manager.enabled:
+            import json
+            try:
+                for json_file in self._workspace._commits_dir.glob("*.json"):
+                    data = json.loads(json_file.read_text(encoding="utf-8"))
+                    for item in data.get("user_items", []):
+                        if item.get("id") in done_ids:
+                            self._sync_manager.push_memory(json_file.stem)
+                            break
+            except Exception as e:
+                logger.warning("Failed to sync completed user_items: %s", e)
+        return done_ids
 
     # ------------------------------------------------------------------
     # Search
@@ -442,7 +465,7 @@ class SemanticEngine:
         Returns:
             List of ``(file_path, cooccurrence_count)`` sorted descending.
         """
-        return self._graph.get_related_files(file_path, top_n=top_n)
+        return self._graph.get_related_files(to_portable_path(file_path), top_n=top_n)
 
     def get_memory_files(self, memory_id: str) -> list[str]:
         """Return file paths that were changed in a given memory."""
@@ -450,7 +473,7 @@ class SemanticEngine:
 
     def get_file_memories(self, file_path: str) -> list[str]:
         """Return memory IDs that have ever touched *file_path*."""
-        return self._graph.get_file_memories(file_path)
+        return self._graph.get_file_memories(to_portable_path(file_path))
 
     def graph_vis_data(self) -> dict:
         """Return the graph in visualisation format (nodes + edges)."""
@@ -500,6 +523,14 @@ class SemanticEngine:
             sorted by timestamp descending.
         """
         return self._graph.get_file_memories_with_metadata(file_path)
+
+    def pull_latest_file(self, file_path: str, target_path: str | Path | None = None) -> Path:
+        """Download latest version of file from Google Drive."""
+        return self._sync_manager.pull_latest_file(file_path, target_path)
+
+    def push_latest_file(self, file_path: str | Path) -> bool:
+        """Push latest version of file to Google Drive."""
+        return self._sync_manager.push_latest_file(file_path)
 
     def get_memory(self, memory_id: str) -> Memory:
         """Load a single memory by ID."""
