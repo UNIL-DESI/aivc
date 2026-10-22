@@ -314,7 +314,7 @@ class Workspace:
         # Strict validation
         for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
             for path_str in files_list:
-                p = Path(path_str)
+                p = from_portable_path(path_str)
                 portable_path = to_portable_path(path_str)
 
                 # Check for directories
@@ -330,7 +330,7 @@ class Workspace:
 
         # edited_files -> FileChange(path=portable_path, action="edited" or "deleted")
         for path_str in actual_edited_files:
-            p = Path(path_str)
+            p = from_portable_path(path_str)
             portable_path = to_portable_path(path_str)
             action = "deleted" if (not p.is_file() and portable_path in self._state["tracked_files"]) else "edited"
             if portable_path not in seen_paths:
