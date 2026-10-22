@@ -23,7 +23,7 @@ The evaluation tests AIVC across 3 primary software engineering benchmarks with 
 ### 3.1 SWE-bench-CL (Continual Learning)
 - **Source**: `thomasjoshi/swe-bench-cl` (Hugging Face Hub) / `princeton-nlp/SWE-bench_CL`.
 - **Protocol**: Sequential multi-turn issue resolution over consecutive commits.
-- **AIVC Tools Injected**: `recall`, `get_recent_memories`, `consult_memory`, `remember`, `get_file_history_metadata`, `read_past_file_content`, `view_file`, `grep_search`, `list_dir`, `submit_patch`.
+- **AIVC Tools Injected**: `remember`, `recall`, `consult_memory`, `get_file_history`, `complete_user_items`, `restore_file`, `view_file`, `grep_search`, `list_dir`, `submit_patch`.
 - **Target Metrics**: Cumulative Pass@1 Rate, Exploration Overhead Ratio (EOR), Memory Utility Index (MUI), Cumulative Cost Savings Ratio (CCSR).
 
 ### 3.2 DevBench (4-Phase Full SDLC)
