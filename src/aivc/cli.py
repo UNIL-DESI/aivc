@@ -380,6 +380,86 @@ def cmd_sync_status(args: argparse.Namespace) -> None:
         except Exception as e:
             print(f"{RED}Error: {e}{RESET}")
 
+
+def cmd_daemon(args: argparse.Namespace) -> None:
+    """Manage the persistent background AIVC daemon."""
+    port = args.port or int(os.environ.get("AIVC_DAEMON_PORT", "18765"))
+    action = args.daemon_action
+
+    from aivc.proxy import ensure_daemon_running
+    import urllib.request
+    import json
+    import time
+
+    def get_status() -> dict | None:
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/health")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                if resp.status == 200:
+                    return json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return None
+        return None
+
+    def post_shutdown() -> bool:
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/shutdown", data=b"{}", method="POST")
+            with urllib.request.urlopen(req, timeout=2.0) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    if action == "status":
+        st = get_status()
+        if st:
+            print(f"{GREEN}{CHECK_MARK} AIVC daemon is running on port {st.get('port', port)} (PID: {st.get('pid', 'unknown')}){RESET}")
+        else:
+            print(f"{YELLOW}AIVC daemon is not running on port {port}.{RESET}")
+
+    elif action == "start":
+        st = get_status()
+        if st:
+            print(f"{GREEN}{CHECK_MARK} AIVC daemon is already running on port {port} (PID: {st.get('pid')}){RESET}")
+            return
+        print(f"{DIM}Starting AIVC daemon on port {port}...{RESET}")
+        ensure_daemon_running(port)
+        st = get_status()
+        if st:
+            print(f"{GREEN}{CHECK_MARK} AIVC daemon started successfully on port {port} (PID: {st.get('pid')}){RESET}")
+        else:
+            print(f"{RED}Failed to verify AIVC daemon status.{RESET}")
+
+    elif action == "stop":
+        st = get_status()
+        if not st:
+            print(f"{YELLOW}AIVC daemon is not running on port {port}.{RESET}")
+            return
+        print(f"{DIM}Stopping AIVC daemon on port {port} (PID: {st.get('pid')})...{RESET}")
+        post_shutdown()
+        stopped = False
+        for _ in range(30):
+            time.sleep(0.1)
+            if not get_status():
+                stopped = True
+                break
+        if stopped:
+            print(f"{GREEN}{CHECK_MARK} AIVC daemon stopped.{RESET}")
+        else:
+            print(f"{YELLOW}Daemon shutdown signal sent.{RESET}")
+
+    elif action == "restart":
+        if get_status():
+            print(f"{DIM}Stopping running daemon...{RESET}")
+            post_shutdown()
+            time.sleep(0.5)
+        print(f"{DIM}Starting AIVC daemon on port {port}...{RESET}")
+        ensure_daemon_running(port)
+        st = get_status()
+        if st:
+            print(f"{GREEN}{CHECK_MARK} AIVC daemon restarted on port {port} (PID: {st.get('pid')}){RESET}")
+        else:
+            print(f"{RED}Failed to restart AIVC daemon.{RESET}")
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -437,6 +517,21 @@ def main() -> None:
         help="Port to serve the dashboard on (default: 8765)"
     )
 
+    # daemon
+    parser_daemon = subparsers.add_parser(
+        "daemon",
+        help="Manage the persistent background AIVC daemon"
+    )
+    parser_daemon.add_argument(
+        "daemon_action",
+        choices=["start", "stop", "status", "restart"],
+        help="Daemon action (start, stop, status, restart)"
+    )
+    parser_daemon.add_argument(
+        "-p", "--port", type=int, default=None,
+        help="Port for the daemon (default: 18765 or AIVC_DAEMON_PORT)"
+    )
+
     # config
     parser_config = subparsers.add_parser(
         "config",
@@ -471,6 +566,8 @@ def main() -> None:
         cmd_search(args)
     elif args.command == "web":
         cmd_web(args)
+    elif args.command == "daemon":
+        cmd_daemon(args)
     elif args.command == "config":
         cmd_config(args)
     elif args.command == "sync":

@@ -1,0 +1,259 @@
+"""
+AIVC Persistent Background Daemon.
+
+Runs an in-memory HTTP server keeping SemanticEngine, ChromaDB, FastEmbed ONNX
+and the BackgroundSyncer pre-warmed on a single main thread to eliminate cold-start
+latency and prevent subprocess thread deadlocks on Windows.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import sys
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from typing import Any
+
+# Mission-critical Windows environment variables before heavy imports
+if sys.platform == "win32":
+    os.environ["AIVC_DISABLE_CROSS_ENCODER"] = "True"
+os.environ["CHROMA_TELEMETRY_DISABLED"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+logger = logging.getLogger("aivc.daemon")
+
+
+def _get_daemon_json_path() -> Path:
+    return Path.home() / ".aivc" / "daemon.json"
+
+
+class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
+    server: "DaemonHTTPServer"
+
+    def log_message(self, format: str, *args: Any) -> None:
+        # Suppress standard logging to keep daemon quiet
+        logger.debug("%s - - [%s] %s", self.address_string(), self.log_date_time_string(), format % args)
+
+    def _send_json_response(self, status_code: int, data: dict[str, Any]) -> None:
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        self.server.touch()
+        if self.path == "/health":
+            self._send_json_response(200, {
+                "status": "ok",
+                "pid": os.getpid(),
+                "port": self.server.server_port,
+            })
+        else:
+            self._send_json_response(404, {"error": "Not Found"})
+
+    def do_POST(self) -> None:
+        self.server.touch()
+        if self.path == "/health":
+            self._send_json_response(200, {
+                "status": "ok",
+                "pid": os.getpid(),
+                "port": self.server.server_port,
+            })
+            return
+
+        if self.path == "/shutdown":
+            self._send_json_response(200, {"status": "shutting_down"})
+            self.server.running = False
+            return
+
+        if self.path == "/mcp":
+            content_length = int(self.headers.get("Content-Length", 0))
+            if content_length == 0:
+                self._send_json_response(400, {"error": "Empty request body"})
+                return
+
+            raw_body = self.rfile.read(content_length).decode("utf-8")
+            try:
+                msg = json.loads(raw_body)
+            except Exception as e:
+                self._send_json_response(400, {"error": f"Invalid JSON: {e}"})
+                return
+
+            # Notifications (no 'id' field in JSON-RPC)
+            if "id" not in msg:
+                self.send_response(204)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+
+            req_id = msg["id"]
+            method = msg.get("method", "")
+
+            try:
+                if method == "initialize":
+                    from aivc import server as aivc_server
+                    resp = {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "protocolVersion": msg.get("params", {}).get("protocolVersion", "2024-11-05"),
+                            "capabilities": {"tools": {"listChanged": False}},
+                            "serverInfo": {"name": "aivc", "version": "0.1.0"},
+                            "instructions": getattr(aivc_server, "_SYSTEM_PROMPT", ""),
+                        },
+                    }
+                    self._send_json_response(200, resp)
+
+                elif method == "ping":
+                    self._send_json_response(200, {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {},
+                    })
+
+                elif method == "tools/list":
+                    from aivc import server as aivc_server
+                    tools = asyncio.run(aivc_server.mcp.list_tools())
+                    tools_list = [t.model_dump(exclude_none=True) for t in tools]
+                    self._send_json_response(200, {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {"tools": tools_list},
+                    })
+
+                elif method == "tools/call":
+                    from aivc import server as aivc_server
+                    params = msg.get("params", {})
+                    name = params.get("name", "")
+                    arguments = params.get("arguments", {})
+
+                    try:
+                        res = asyncio.run(aivc_server.mcp.call_tool(name, arguments))
+                        # FastMCP returns a tuple (content_blocks, extra_context)
+                        if isinstance(res, tuple):
+                            content_blocks = res[0]
+                        elif isinstance(res, list):
+                            content_blocks = res
+                        else:
+                            content_blocks = [res]
+
+                        content_list = []
+                        for c in content_blocks:
+                            if hasattr(c, "model_dump"):
+                                content_list.append(c.model_dump(exclude_none=True))
+                            elif isinstance(c, dict):
+                                content_list.append(c)
+                            else:
+                                content_list.append({"type": "text", "text": str(c)})
+
+                        self._send_json_response(200, {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {
+                                "content": content_list,
+                                "isError": False,
+                            },
+                        })
+                    except Exception as err:
+                        self._send_json_response(200, {
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {
+                                "content": [{"type": "text", "text": str(err)}],
+                                "isError": True,
+                            },
+                        })
+
+                else:
+                    self._send_json_response(200, {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {"code": -32601, "message": f"Method {method!r} not found"},
+                    })
+
+            except Exception as e:
+                self._send_json_response(200, {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {"code": -32603, "message": f"Internal daemon error: {e}"},
+                })
+        else:
+            self._send_json_response(404, {"error": "Not Found"})
+
+
+class DaemonHTTPServer(HTTPServer):
+    def __init__(self, server_address: tuple[str, int], RequestHandlerClass: type[BaseHTTPRequestHandler]):
+        super().__init__(server_address, RequestHandlerClass)
+        self.running = True
+        self.last_activity = time.time()
+
+    def touch(self) -> None:
+        self.last_activity = time.time()
+
+
+def run_daemon(port: int | None = None, idle_timeout: int | None = None) -> None:
+    """Start and run the persistent AIVC daemon."""
+    if port is None:
+        port = int(os.environ.get("AIVC_DAEMON_PORT", "18765"))
+    if idle_timeout is None:
+        idle_timeout = int(os.environ.get("AIVC_DAEMON_IDLE_TIMEOUT", "7200"))
+
+    # Mission-critical Windows pre-configurations
+    if sys.platform == "win32":
+        os.environ["AIVC_DISABLE_CROSS_ENCODER"] = "True"
+
+    # Pre-warm server and engine components on the main thread
+    from aivc import server as aivc_server
+    try:
+        engine = aivc_server._get_engine()
+        _ = engine._indexer._collection
+    except Exception as e:
+        print(f"[aivc.daemon] Warning during indexer pre-warming: {e}", file=sys.stderr)
+
+    try:
+        syncer = aivc_server._get_syncer()
+        if syncer and syncer.manager.enabled:
+            syncer.start()
+    except Exception as e:
+        print(f"[aivc.daemon] Warning during syncer start: {e}", file=sys.stderr)
+
+    server = DaemonHTTPServer(("127.0.0.1", port), DaemonHTTPRequestHandler)
+    server.timeout = 10.0  # Periodic wakeup for idle timeout check and shutdown flag
+
+    # Record daemon state
+    daemon_path = _get_daemon_json_path()
+    daemon_path.parent.mkdir(parents=True, exist_ok=True)
+    state = {
+        "pid": os.getpid(),
+        "port": port,
+        "started_at": time.time(),
+    }
+    daemon_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    print(f"[aivc.daemon] Daemon listening on http://127.0.0.1:{port} (PID: {os.getpid()})", flush=True)
+
+    try:
+        while server.running:
+            server.handle_request()
+            if time.time() - server.last_activity > idle_timeout:
+                print(f"[aivc.daemon] Idle timeout ({idle_timeout}s) exceeded. Shutting down.", flush=True)
+                break
+    finally:
+        server.server_close()
+        try:
+            if daemon_path.exists():
+                daemon_path.unlink()
+        except Exception:
+            pass
+        print("[aivc.daemon] Daemon shut down cleanly.", flush=True)
+
+
+if __name__ == "__main__":
+    run_daemon()
