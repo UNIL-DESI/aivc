@@ -32,19 +32,32 @@ def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
     if _check_health(port, timeout=0.15):
         return
 
-    python_exe = Path(sys.executable).resolve()
-    exe = str(python_exe)
+    if sys.platform == "win32":
+        venv_pythonw = Path(sys.executable).with_name("pythonw.exe")
+        if not venv_pythonw.exists():
+            venv_pythonw = Path(sys.executable).resolve().with_name("pythonw.exe")
+        if not venv_pythonw.exists():
+            venv_pythonw = Path(sys.executable).resolve()
+        exe = str(venv_pythonw)
+    else:
+        exe = str(Path(sys.executable).resolve())
+
     cmd_line = f'"{exe}" -m aivc.daemon'
+    cwd_str = str(Path.home())
 
     if sys.platform == "win32":
-
-        # 1. Attempt launch via WMI / CIM to detach outside the calling Windows Job Object
+        # 1. Attempt launch via WMI / CIM with SW_HIDE (ShowWindow=0) to detach outside calling Job Object
+        ps_cmd = (
+            "$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; "
+            "Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
+            f"-Arguments @{{CommandLine='{cmd_line}'; CurrentDirectory='{cwd_str}'; ProcessStartupInformation=$si}} | Out-Null"
+        )
         wmi_cmd = [
             "powershell.exe",
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            f"Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{{CommandLine='{cmd_line}'; CurrentDirectory='{Path.home()}'}} | Out-Null",
+            ps_cmd,
         ]
         try:
             subprocess.run(wmi_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
