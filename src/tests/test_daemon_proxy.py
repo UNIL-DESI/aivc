@@ -197,6 +197,28 @@ class TestDaemonAndProxy(unittest.TestCase):
         self.assertFalse(srv.running)
         srv.server_close()
 
+    def test_08_handle_error_silences_connection_reset(self):
+        from aivc.daemon import DaemonHTTPServer, DaemonHTTPRequestHandler
+        srv = DaemonHTTPServer(("127.0.0.1", 0), DaemonHTTPRequestHandler)
+        try:
+            try:
+                raise ConnectionResetError("[WinError 10054] An existing connection was forcibly closed")
+            except ConnectionResetError:
+                # Should return cleanly without reraising or printing traceback
+                srv.handle_error(None, ("127.0.0.1", 12345))
+
+            try:
+                raise BrokenPipeError("Broken pipe")
+            except BrokenPipeError:
+                srv.handle_error(None, ("127.0.0.1", 12345))
+
+            try:
+                raise ConnectionAbortedError("Connection aborted")
+            except ConnectionAbortedError:
+                srv.handle_error(None, ("127.0.0.1", 12345))
+        finally:
+            srv.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()

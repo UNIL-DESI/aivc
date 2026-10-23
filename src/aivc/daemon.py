@@ -28,14 +28,22 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 logger = logging.getLogger("aivc.daemon")
 
 
+def get_aivc_home() -> Path:
+    storage_root = os.environ.get("AIVC_STORAGE_ROOT")
+    if storage_root:
+        return Path(storage_root).parent
+    try:
+        from aivc.config import get_home_dir
+        return get_home_dir() / ".aivc"
+    except Exception:
+        return Path.home() / ".aivc"
+
+
 def _get_daemon_json_path() -> Path:
     custom_state = os.environ.get("AIVC_DAEMON_STATE_FILE")
     if custom_state:
         return Path(custom_state)
-    storage_root = os.environ.get("AIVC_STORAGE_ROOT")
-    if storage_root:
-        return Path(storage_root).parent / "daemon.json"
-    return Path.home() / ".aivc" / "daemon.json"
+    return get_aivc_home() / "daemon.json"
 
 
 class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -203,9 +211,22 @@ class DaemonHTTPServer(HTTPServer):
     def touch(self) -> None:
         self.last_activity = time.time()
 
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        exc_type, exc_val, _ = sys.exc_info()
+        if exc_type is not None and issubclass(exc_type, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
 
 def run_daemon(port: int | None = None, idle_timeout: int | None = None) -> None:
     """Start and run the persistent AIVC daemon."""
+    # Redirect stdout and stderr to daemon.log for pythonw windowless execution
+    aivc_home = get_aivc_home()
+    aivc_home.mkdir(parents=True, exist_ok=True)
+    log_file = (aivc_home / "daemon.log").open("a", encoding="utf-8", buffering=1)
+    sys.stdout = log_file
+    sys.stderr = log_file
+
     if port is None:
         port = int(os.environ.get("AIVC_DAEMON_PORT", "18765"))
     if idle_timeout is None:
