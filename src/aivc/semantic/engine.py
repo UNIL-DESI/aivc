@@ -418,6 +418,10 @@ class SemanticEngine:
                 return self._searcher.search(query, top_k=top_k, top_n=top_n, filter_ids=memory_ids)
             
             return self._searcher.search(query, top_k=top_k, top_n=top_n)
+        except ValueError as e:
+            if "index is empty" in str(e).lower():
+                return []
+            raise
         except Exception as e:
             err_str = str(e)
             if "Nothing found on disk" in err_str or "segment" in err_str.lower() or "hnsw" in err_str.lower():

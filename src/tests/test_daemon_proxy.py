@@ -18,8 +18,10 @@ import urllib.request
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# Configure test environment
-os.environ["AIVC_STORAGE_ROOT"] = os.environ.get("AIVC_STORAGE_ROOT", str(Path.home() / ".aivc" / "storage"))
+import tempfile
+
+_TEST_TMP_DIR = tempfile.TemporaryDirectory()
+os.environ["AIVC_STORAGE_ROOT"] = str(Path(_TEST_TMP_DIR.name) / "storage")
 os.environ["AIVC_DISABLE_CROSS_ENCODER"] = "True"
 os.environ["CHROMA_TELEMETRY_DISABLED"] = "1"
 
@@ -66,6 +68,10 @@ class TestDaemonAndProxy(unittest.TestCase):
         cls.server.running = False
         try:
             cls.server.server_close()
+        except Exception:
+            pass
+        try:
+            _TEST_TMP_DIR.cleanup()
         except Exception:
             pass
 

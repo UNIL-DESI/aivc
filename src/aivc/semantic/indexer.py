@@ -11,6 +11,7 @@ stage) — ensuring correct distance comparisons with the Cross-Encoder stage.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -96,7 +97,9 @@ class Indexer:
         self._chroma_dir = storage_root / self._CHROMA_DIR
         self._chroma_dir.mkdir(parents=True, exist_ok=True)
 
-        self._fastembed_cache_dir = storage_root / "fastembed_cache"
+        self._fastembed_cache_dir = Path(
+            os.environ.get("AIVC_FASTEMBED_CACHE_DIR", str(Path.home() / ".aivc" / "fastembed_cache"))
+        )
         self._fastembed_cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._model = _get_shared_model(self._fastembed_cache_dir)
