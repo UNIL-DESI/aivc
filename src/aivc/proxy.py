@@ -32,11 +32,11 @@ def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
     if _check_health(port, timeout=0.15):
         return
 
-    python_exe = Path(sys.executable)
+    python_exe = Path(sys.executable).resolve()
+    exe = str(python_exe)
+    cmd_line = f'"{exe}" -m aivc.daemon'
+
     if sys.platform == "win32":
-        pythonw_exe = python_exe.with_name("pythonw.exe")
-        exe = str(pythonw_exe if pythonw_exe.exists() else python_exe)
-        cmd_line = f'"{exe}" -m aivc.daemon'
 
         # 1. Attempt launch via WMI / CIM to detach outside the calling Windows Job Object
         wmi_cmd = [

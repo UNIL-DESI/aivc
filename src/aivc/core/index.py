@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 
 from aivc.config import to_portable_path
@@ -156,8 +156,10 @@ class CoreIndex:
     def get_memories_touching_file(self, file_path: str) -> list[str]:
         """Return all memory IDs that recorded a change for this file."""
         target_portable = to_portable_path(file_path)
+        basename = PurePath(target_portable.replace("\\", "/")).name
         rows = self._execute(
-            "SELECT DISTINCT commit_id, path FROM file_changes"
+            "SELECT DISTINCT commit_id, path FROM file_changes WHERE path = ? OR path = ? OR path LIKE ? OR path LIKE ?",
+            (file_path, target_portable, f"%/{basename}", f"%\\{basename}"),
         ).fetchall()
         matching = []
         for commit_id, path in rows:

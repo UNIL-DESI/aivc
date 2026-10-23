@@ -110,15 +110,13 @@ def to_portable_path(path_str: str | Path) -> str:
     Converts Windows/macOS/Linux user home directory paths to '~/...'.
     """
     import re
-    if isinstance(path_str, Path):
-        s = path_str.as_posix()
-    else:
-        s = str(path_str).strip().replace("\\", "/")
-
-    if s.startswith("~/"):
-        return s
-    if s == "~":
+    p = str(path_str).strip().replace("\\", "/")
+    if p.startswith("~/"):
+        return p
+    if p == "~":
         return "~"
+
+    s = p
 
     patterns = [
         r"^[A-Za-z]:/Users/[^/]+/(.*)$",

@@ -29,6 +29,12 @@ logger = logging.getLogger("aivc.daemon")
 
 
 def _get_daemon_json_path() -> Path:
+    custom_state = os.environ.get("AIVC_DAEMON_STATE_FILE")
+    if custom_state:
+        return Path(custom_state)
+    storage_root = os.environ.get("AIVC_STORAGE_ROOT")
+    if storage_root:
+        return Path(storage_root).parent / "daemon.json"
     return Path.home() / ".aivc" / "daemon.json"
 
 
