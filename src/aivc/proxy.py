@@ -97,7 +97,7 @@ def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
         # Non-Windows daemon launch
         try:
             subprocess.Popen(
-                [str(python_exe), "-m", "aivc.daemon"],
+                [exe, "-m", "aivc.daemon"],
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -136,7 +136,10 @@ def main() -> None:
         req = urllib.request.Request(
             url,
             data=raw_line.encode("utf-8"),
-            headers={"Content-Type": "application/json; charset=utf-8"},
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "X-AIVC-Cwd": os.getcwd(),
+            },
             method="POST",
         )
 

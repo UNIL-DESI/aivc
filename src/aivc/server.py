@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 import sys
 import logging
-import difflib
 
 if hasattr(sys.stdin, "reconfigure"):
     sys.stdin.reconfigure(encoding="utf-8", errors="replace")
@@ -191,15 +190,6 @@ def _render_file_tree(paths: list[str], path_extras: dict[str, str] = None, inde
 
     tree_str = "\n".join(lines) if len(lines) > 0 else f"{indent_prefix}\u2014"
     return f"```text\n{tree_str}\n```"
-
-
-def _format_bytes(n: int) -> str:
-    """Format a byte count as a human-readable string."""
-    if n < 1024:
-        return f"{n} B"
-    if n < 1024 ** 2:
-        return f"{n / 1024:.1f} KB"
-    return f"{n / 1024 ** 2:.1f} MB"
 
 
 def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_id=None) -> str:
