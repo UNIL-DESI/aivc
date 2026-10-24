@@ -46,6 +46,54 @@ def _get_daemon_json_path() -> Path:
     return get_aivc_home() / "daemon.json"
 
 
+def _is_relative_path(v: str) -> bool:
+    if not isinstance(v, str) or not v.strip():
+        return False
+    v_strip = v.strip()
+    if v_strip.startswith(("~", "/", "\\")):
+        return False
+    if len(v_strip) >= 2 and v_strip[1] == ":":
+        return False
+    return True
+
+
+def _resolve_relative_args(arguments: dict[str, Any], client_cwd: str | None) -> dict[str, Any]:
+    if not client_cwd or not isinstance(client_cwd, str):
+        return arguments
+    cwd_path = Path(client_cwd)
+    if not cwd_path.is_dir():
+        return arguments
+
+    resolved = dict(arguments)
+    for k in ("file_path", "target_path"):
+        if k in resolved and isinstance(resolved[k], str) and resolved[k].strip():
+            val = resolved[k]
+            if _is_relative_path(val):
+                candidate = cwd_path / val
+                if k == "target_path":
+                    if candidate.exists() or candidate.parent.exists():
+                        resolved[k] = str(candidate.resolve())
+                else:
+                    if candidate.exists():
+                        resolved[k] = str(candidate.resolve())
+
+    for k in ("read_files", "edited_files"):
+        if k in resolved and isinstance(resolved[k], list):
+            new_list = []
+            for item in resolved[k]:
+                if isinstance(item, str) and _is_relative_path(item):
+                    candidate = cwd_path / item
+                    if candidate.exists():
+                        new_list.append(str(candidate.resolve()))
+                    else:
+                        new_list.append(item)
+                else:
+                    new_list.append(item)
+            resolved[k] = new_list
+
+    return resolved
+
+
 class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
     server: "DaemonHTTPServer"
 
@@ -60,6 +108,7 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+        self.wfile.flush()
 
     def do_GET(self) -> None:
         self.server.touch()
@@ -74,6 +123,9 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         self.server.touch()
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length) if content_length > 0 else b""
+
         if self.path == "/health":
             self._send_json_response(200, {
                 "status": "ok",
@@ -88,12 +140,11 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/mcp":
-            content_length = int(self.headers.get("Content-Length", 0))
-            if content_length == 0:
+            if not post_data:
                 self._send_json_response(400, {"error": "Empty request body"})
                 return
 
-            raw_body = self.rfile.read(content_length).decode("utf-8")
+            raw_body = post_data.decode("utf-8")
             try:
                 msg = json.loads(raw_body)
             except Exception as e:
@@ -147,6 +198,8 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
                     params = msg.get("params", {})
                     name = params.get("name", "")
                     arguments = params.get("arguments", {})
+                    client_cwd = self.headers.get("X-AIVC-Cwd")
+                    arguments = _resolve_relative_args(arguments, client_cwd)
 
                     try:
                         res = asyncio.run(aivc_server.mcp.call_tool(name, arguments))
