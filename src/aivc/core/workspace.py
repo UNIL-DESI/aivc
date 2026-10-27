@@ -297,6 +297,7 @@ class Workspace:
         self,
         title: str,
         journal: str = "",
+        tasks: list[dict[str, Any]] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         edited_files: list[str] | None = None,
         read_files: list[str] | None = None,
@@ -306,19 +307,20 @@ class Workspace:
         consulted_files: list[str] | None = None,
         roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
-        """Create a new memory in 3-part format (title, journal, user_items) without local diffs/blobs.
+        """Create a new memory in 3-part format (title, journal, tasks/user_items) without local diffs/blobs.
 
         Args:
             title: Short title summarising the achievement.
             journal: Agent thoughts and activity log.
-            user_items: User-facing task items [{id, task, details, done, kind}].
+            tasks: Unified tasks list [{id, task, task_status, details, done}].
+            user_items: Legacy alias for tasks [{id, task, details, done, kind}].
             edited_files: List of file paths modified or created.
             read_files: List of file paths consulted.
             urls: Optional list of URLs.
             note: Backward-compatibility parameter mapping to journal.
             machine_id: ID of the machine where the memory was created.
             consulted_files: Legacy parameter mapping to read_files.
-            roadmap_items: Optional roadmap tasks [{id, task, details, done}] recorded with kind='roadmap'.
+            roadmap_items: Optional roadmap tasks recorded with task_status='new' / kind='roadmap'.
         """
         self._reload_state_if_needed()
 
@@ -335,38 +337,122 @@ class Workspace:
         actual_edited_files = list(dict.fromkeys([self._resolve_tracked_path(f, allow_basename_fallback=False) for f in actual_edited_files]))
 
         memory_id = str(uuid.uuid4())
-        norm_user_items = []
-        if user_items:
-            for idx, item in enumerate(user_items, 1):
-                is_roadmap = (item.get("kind") == "roadmap" or item.get("type") == "roadmap")
-                default_prefix = f"r-{memory_id[:6]}" if is_roadmap else f"{memory_id[:6]}"
-                norm_item = {
-                    "id": item.get("id") or f"{default_prefix}-{idx}",
-                    "task": str(item.get("task", "")).strip(),
-                    "details": str(item.get("details", "")).strip(),
-                    "done": bool(item.get("done", False)),
-                }
-                if is_roadmap:
-                    norm_item["kind"] = "roadmap"
-                elif "kind" in item:
-                    norm_item["kind"] = item["kind"]
-                norm_user_items.append(norm_item)
+        self._last_modified_commit_ids: list[str] = []
 
+        # Merge input task collections
+        raw_task_entries: list[tuple[dict[str, Any], bool]] = []
+        if tasks:
+            for it in tasks:
+                if isinstance(it, dict):
+                    raw_task_entries.append((it, False))
+        if user_items:
+            for it in user_items:
+                if isinstance(it, dict):
+                    raw_task_entries.append((it, False))
         if roadmap_items:
-            for r_idx, r_item in enumerate(roadmap_items, 1):
-                r_task = r_item.get("task", "") if isinstance(r_item, dict) else str(r_item)
-                r_details = r_item.get("details", "") if isinstance(r_item, dict) else ""
-                r_id = r_item.get("id") if isinstance(r_item, dict) else None
-                r_done = bool(r_item.get("done", False)) if isinstance(r_item, dict) else False
-                norm_user_items.append(
-                    {
-                        "id": r_id or f"r-{memory_id[:6]}-{r_idx}",
-                        "task": str(r_task).strip(),
-                        "details": str(r_details).strip(),
-                        "done": r_done,
-                        "kind": "roadmap",
-                    }
-                )
+            for it in roadmap_items:
+                if isinstance(it, dict):
+                    raw_task_entries.append((it, True))
+                elif isinstance(it, str):
+                    raw_task_entries.append(({"task": it}, True))
+
+        # Build existing task map across commits for lookup and event-sourcing
+        existing_tasks: dict[str, dict[str, Any]] = {}
+        commits_data: dict[Path, dict[str, Any]] = {}
+        for p in self._commits_dir.glob("*.json"):
+            try:
+                c_data = json.loads(p.read_text(encoding="utf-8"))
+                commits_data[p] = c_data
+                for c_it in c_data.get("user_items", []):
+                    c_id = c_it.get("id")
+                    if c_id and c_id not in existing_tasks:
+                        existing_tasks[c_id] = c_it
+            except Exception:
+                continue
+
+        norm_user_items: list[dict[str, Any]] = []
+        status_updates_by_id: dict[str, tuple[str, bool]] = {}
+
+        for idx, (item, is_roadmap_arg) in enumerate(raw_task_entries, 1):
+            raw_id = str(item.get("id") or "").strip()
+            prior_task = existing_tasks.get(raw_id) if raw_id else None
+
+            # Resolve task_status
+            explicit_status = item.get("task_status")
+            if explicit_status in ("new", "await_validation", "validated"):
+                task_status = explicit_status
+            elif item.get("done") is True:
+                task_status = "validated"
+            elif (
+                is_roadmap_arg
+                or item.get("kind") == "roadmap"
+                or item.get("type") == "roadmap"
+                or (raw_id and raw_id.startswith("r-"))
+            ):
+                task_status = "new"
+            elif prior_task and prior_task.get("task_status"):
+                task_status = prior_task["task_status"]
+            else:
+                task_status = "await_validation"
+
+            done = (task_status == "validated")
+            kind = "roadmap" if task_status == "new" else "deliverable"
+
+            # Resolve id
+            if raw_id:
+                final_id = raw_id
+            else:
+                prefix = f"r-{memory_id[:6]}" if task_status == "new" else f"{memory_id[:6]}"
+                final_id = f"{prefix}-{idx}"
+
+            # Resolve task title (fallback to prior commit if empty)
+            task_title = str(item.get("task", "")).strip()
+            if not task_title and prior_task:
+                task_title = str(prior_task.get("task", "")).strip()
+
+            # Resolve details
+            details = str(item.get("details", "")).strip()
+            if not details and prior_task and prior_task.get("details"):
+                details = str(prior_task.get("details", "")).strip()
+
+            norm_item = {
+                "id": final_id,
+                "task": task_title,
+                "details": details,
+                "done": done,
+                "task_status": task_status,
+                "kind": kind,
+            }
+            norm_user_items.append(norm_item)
+
+            if raw_id and prior_task:
+                status_updates_by_id[raw_id] = (task_status, done)
+
+        # Event-sourcing update on previous commits if status changed
+        if status_updates_by_id:
+            for p, c_data in commits_data.items():
+                c_items = c_data.get("user_items", [])
+                c_modified = False
+                for c_it in c_items:
+                    c_id = c_it.get("id")
+                    if c_id in status_updates_by_id:
+                        new_st, new_dn = status_updates_by_id[c_id]
+                        if c_it.get("task_status") != new_st or c_it.get("done") != new_dn:
+                            c_it["task_status"] = new_st
+                            c_it["done"] = new_dn
+                            c_modified = True
+                if c_modified:
+                    c_data["user_items"] = c_items
+                    c_data["note"] = _compose_note(
+                        c_data.get("journal", ""),
+                        c_items,
+                        fallback_note=c_data.get("note", ""),
+                    )
+                    try:
+                        p.write_text(json.dumps(c_data, indent=2), encoding="utf-8")
+                        self._last_modified_commit_ids.append(p.stem)
+                    except Exception:
+                        pass
 
         # Strict validation
         for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
@@ -509,6 +595,7 @@ class Workspace:
             for item in user_items:
                 if item.get("id") in target_ids and not item.get("done", False):
                     item["done"] = True
+                    item["task_status"] = "validated"
                     marked_done.append(item["id"])
                     modified = True
 

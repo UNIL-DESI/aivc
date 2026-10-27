@@ -309,6 +309,7 @@ class SemanticEngine:
         self,
         title: str,
         journal: str = "",
+        tasks: list[dict[str, Any]] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         edited_files: list[str] | None = None,
         read_files: list[str] | None = None,
@@ -322,6 +323,7 @@ class SemanticEngine:
         memory = self._workspace.remember(
             title=title,
             journal=journal,
+            tasks=tasks,
             user_items=user_items,
             edited_files=edited_files,
             read_files=read_files,
@@ -340,6 +342,9 @@ class SemanticEngine:
         try:
             if self._sync_manager.enabled:
                 self._sync_queue.put(memory)
+                # Push any previous commits modified by event-sourcing
+                for mod_cid in getattr(self._workspace, "_last_modified_commit_ids", []):
+                    self._sync_manager.push_memory(mod_cid)
         except Exception as e:
             logger.warning("Failed to queue memory %s for sync: %s", memory.id, e)
 

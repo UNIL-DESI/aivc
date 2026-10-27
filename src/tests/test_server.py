@@ -145,6 +145,18 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Actions Utilisateur", result)
         self.assertIn("[item-1] Check token", result)
 
+    async def test_delegates_to_engine_with_tasks(self):
+        _mock_engine.remember.return_value = _make_memory(
+            user_items=[{"id": "t-1", "task": "Task test", "done": False, "task_status": "new"}]
+        )
+        result = await _remember(
+            "T",
+            "J",
+            tasks=[{"id": "t-1", "task": "Task test", "task_status": "new"}],
+        )
+        self.assertIn("Actions Utilisateur", result)
+        self.assertIn("[t-1] Task test", result)
+
     async def test_remember_validation_errors(self):
         _mock_engine.remember.side_effect = ValueError("Validation error")
         with self.assertRaises(ValueError):

@@ -126,7 +126,6 @@ class TestDaemonAndProxy(unittest.TestCase):
             "recall",
             "consult_memory",
             "get_file_history",
-            "complete_user_items",
             "restore_file",
         }
         self.assertEqual(tool_names, expected_tools)
