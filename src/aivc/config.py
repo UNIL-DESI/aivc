@@ -115,6 +115,11 @@ def to_portable_path(path_str: str | Path) -> str:
     else:
         s = str(path_str).strip().replace("\\", "/")
 
+    # If s contains a segment '/~/' (e.g. from concatenation with workspace root), extract the '~/' part
+    if "/~/" in s:
+        idx = s.rfind("/~/")
+        s = s[idx + 1:]
+
     # Fix potential missing separator before .gemini: e.g. Users/hjamet.gemini -> Users/hjamet/.gemini
     s = re.sub(r"(/Users/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
     s = re.sub(r"(/home/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
@@ -164,13 +169,24 @@ def from_portable_path(path_str: str | Path) -> Path:
     """Convert a portable path ('~/...') or foreign machine path to a local Path."""
     if isinstance(path_str, str):
         import re
-        path_str = re.sub(r"([A-Za-z]:[\\/]Users[\\/][^\\/]+)\.(gemini)", r"\1\\.\2", path_str, flags=re.IGNORECASE)
-        path_str = re.sub(r"(/Users/[^/]+)\.(gemini)", r"\1/.\2", path_str, flags=re.IGNORECASE)
+        s_clean = path_str.replace("\\", "/")
+        if "/~/" in s_clean:
+            idx = s_clean.rfind("/~/")
+            path_str = s_clean[idx + 1:]
+        path_str = re.sub(r"([A-Za-z]:[\\/]Users[\\/][^\\/]+)\.(gemini)", r"\1\\.\2", str(path_str), flags=re.IGNORECASE)
+        path_str = re.sub(r"(/Users/[^/]+)\.(gemini)", r"\1/.\2", str(path_str), flags=re.IGNORECASE)
+    elif isinstance(path_str, Path):
+        s_clean = path_str.as_posix()
+        if "/~/" in s_clean:
+            idx = s_clean.rfind("/~/")
+            path_str = s_clean[idx + 1:]
     portable = to_portable_path(path_str)
     home = get_home_dir()
     if portable.startswith("~/"):
-        return home / portable[2:]
+        rel_part = portable[2:].lstrip("/\\")
+        return home / Path(rel_part)
     if portable == "~":
         return home
     return Path(portable)
+
 

@@ -12,6 +12,7 @@ import glob as _glob
 import json
 import os
 import sys
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -167,7 +168,10 @@ class Workspace:
         path = self._memory_path(memory_id)
         if not path.exists():
             raise KeyError(f"Memory {memory_id!r} not found.")
-        return memory_from_dict(json.loads(path.read_text(encoding="utf-8")))
+        text = path.read_text(encoding="utf-8").strip()
+        if not text:
+            raise ValueError(f"Memory {memory_id!r} is empty.")
+        return memory_from_dict(json.loads(text))
 
     def _is_hidden(self, path: Path) -> bool:
         """Check if any component of the path starts with a dot."""
@@ -679,14 +683,56 @@ class Workspace:
 
             # 3. If still not found, try sync_manager (Google Drive) if available
             if content is None and sync_manager is not None:
-                try:
-                    if getattr(sync_manager, "enabled", False):
-                        dest = sync_manager.pull_latest_file(portable, target_path=local_path)
-                        if dest and dest.is_file():
-                            restored.append(str(local_path))
-                            continue
-                except Exception:
-                    pass
+                cache_file = self._root / "missing_blobs_cache.json"
+                missing_cache: dict[str, float] = {}
+                if cache_file.exists():
+                    try:
+                        missing_cache = json.loads(cache_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        missing_cache = {}
+
+                now = time.time()
+                ttl = 86400.0  # 24 hours
+
+                # Check if file path or blob_hash is negatively cached
+                is_neg_cached = False
+                cache_keys = [k for k in (portable, str(local_path), blob_hash) if k]
+                for key in cache_keys:
+                    if key in missing_cache:
+                        if now - missing_cache[key] < ttl:
+                            is_neg_cached = True
+                            break
+
+                if not is_neg_cached:
+                    try:
+                        if getattr(sync_manager, "enabled", False):
+                            dest = sync_manager.pull_latest_file(portable, target_path=local_path)
+                            if dest and dest.is_file():
+                                restored.append(str(local_path))
+                                # Clean up cache if previously marked missing
+                                updated = False
+                                for key in cache_keys:
+                                    if key in missing_cache:
+                                        del missing_cache[key]
+                                        updated = True
+                                if updated:
+                                    try:
+                                        cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
+                                    except Exception:
+                                        pass
+                                continue
+                            else:
+                                is_neg_cached = True
+                    except Exception:
+                        is_neg_cached = True
+
+                    if is_neg_cached:
+                        for key in cache_keys:
+                            missing_cache[key] = now
+                        try:
+                            cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
+                        except Exception:
+                            pass
 
             # Write content retrieved from blob_store to disk
             if content is not None:

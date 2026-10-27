@@ -185,6 +185,8 @@ class SemanticEngine:
             commits_dir = self._workspace._commits_dir
             if commits_dir.exists():
                 for json_file in commits_dir.glob("*.json"):
+                    if json_file.stat().st_size == 0:
+                        continue
                     try:
                         memory_id = json_file.stem
                         memory = self._workspace._load_memory(memory_id)
@@ -374,6 +376,8 @@ class SemanticEngine:
             import json
             try:
                 for json_file in self._workspace._commits_dir.glob("*.json"):
+                    if json_file.stat().st_size == 0:
+                        continue
                     data = json.loads(json_file.read_text(encoding="utf-8"))
                     for item in data.get("user_items", []):
                         if item.get("id") in done_ids:
@@ -432,6 +436,8 @@ class SemanticEngine:
                     commits_dir = self._workspace._commits_dir
                     if commits_dir.exists():
                         for json_file in commits_dir.glob("*.json"):
+                            if json_file.stat().st_size == 0:
+                                continue
                             try:
                                 memory = self._workspace._load_memory(json_file.stem)
                                 all_memories.append(memory)
