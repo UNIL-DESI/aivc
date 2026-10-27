@@ -6,6 +6,7 @@ import json
 import socket
 import os
 import sys
+import re
 from pathlib import Path
 
 def get_home_dir() -> Path:
@@ -109,14 +110,33 @@ def to_portable_path(path_str: str | Path) -> str:
 
     Converts Windows/macOS/Linux user home directory paths to '~/...'.
     """
-    import re
-    p = str(path_str).strip().replace("\\", "/")
-    if p.startswith("~/"):
-        return p
-    if p == "~":
+    if isinstance(path_str, Path):
+        s = path_str.as_posix()
+    else:
+        s = str(path_str).strip().replace("\\", "/")
+
+    # Fix potential missing separator before .gemini: e.g. Users/hjamet.gemini -> Users/hjamet/.gemini
+    s = re.sub(r"(/Users/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
+    s = re.sub(r"(/home/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
+
+    if s.startswith("~/"):
+        return s
+    if s == "~":
         return "~"
 
-    s = p
+    # Try local home resolution first
+    try:
+        resolved = Path(path_str).resolve()
+        home = get_home_dir().resolve()
+        if resolved == home:
+            return "~"
+        try:
+            rel = resolved.relative_to(home)
+            return f"~/{rel.as_posix()}"
+        except (ValueError, RuntimeError):
+            pass
+    except Exception:
+        pass
 
     patterns = [
         r"^[A-Za-z]:/Users/[^/]+/(.*)$",
@@ -137,25 +157,15 @@ def to_portable_path(path_str: str | Path) -> str:
         if re.match(pattern, s, re.IGNORECASE):
             return "~"
 
-    try:
-        resolved = Path(path_str).resolve()
-        try:
-            home = get_home_dir().resolve()
-            rel = resolved.relative_to(home)
-            return f"~/{rel.as_posix()}"
-        except (ValueError, RuntimeError):
-            res_s = resolved.as_posix()
-            for pattern in patterns:
-                m = re.match(pattern, res_s, re.IGNORECASE)
-                if m:
-                    return f"~/{m.group(1)}"
-            return res_s
-    except Exception:
-        return s
+    return s
 
 
 def from_portable_path(path_str: str | Path) -> Path:
     """Convert a portable path ('~/...') or foreign machine path to a local Path."""
+    if isinstance(path_str, str):
+        import re
+        path_str = re.sub(r"([A-Za-z]:[\\/]Users[\\/][^\\/]+)\.(gemini)", r"\1\\.\2", path_str, flags=re.IGNORECASE)
+        path_str = re.sub(r"(/Users/[^/]+)\.(gemini)", r"\1/.\2", path_str, flags=re.IGNORECASE)
     portable = to_portable_path(path_str)
     home = get_home_dir()
     if portable.startswith("~/"):
