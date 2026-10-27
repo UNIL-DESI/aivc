@@ -297,6 +297,13 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
     if not results:
         return warning_header + _format_cold_start_payload()
 
+    for r in results:
+        try:
+            mem = engine.get_memory(r.memory_id)
+            engine.auto_restore_brain_files(mem)
+        except Exception:
+            pass
+
     memory_lines = []
     for i, r in enumerate(results, 1):
         m_id = getattr(r, 'machine_id', "")
@@ -333,7 +340,12 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
 @mcp.tool()
 def consult_memory(memory_id: str) -> str:
     """Affiche les détails, le journal, les tâches utilisateur et les fichiers d'un souvenir."""
-    memory = _get_engine().get_memory(memory_id)
+    engine = _get_engine()
+    memory = engine.get_memory(memory_id)
+    try:
+        engine.auto_restore_brain_files(memory)
+    except Exception:
+        pass
 
     prev_str = ""
     if memory.parent_id:
@@ -420,6 +432,12 @@ def get_file_history(file_path: str) -> str:
 
     if not memories:
         return _format_cold_start_payload(f"pour `{file_path}`")
+
+    for mem in memories:
+        try:
+            engine.auto_restore_brain_files(mem)
+        except Exception:
+            pass
 
     lines = [f"## AIVC History for: `{file_path}`\n"]
     lines.append(f"{len(memories)} memory(ies) have touched this file:\n")

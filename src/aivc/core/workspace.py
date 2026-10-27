@@ -608,3 +608,87 @@ class Workspace:
             f"File {file_path!r} was not found in the history up to memory {memory_id!r}."
         )
 
+    def auto_restore_brain_files(self, memory: Memory, sync_manager: Any = None) -> list[str]:
+        """Automatically restore files under .gemini/antigravity/brain/ linked to this memory.
+
+        If a file does not exist locally and its blob is available in BlobStore
+        (or recoverable via other commits or sync_manager), it is restored to disk.
+        Returns the list of restored local file paths.
+        """
+        restored: list[str] = []
+
+        for change in getattr(memory, "changes", []):
+            path_str = getattr(change, "path", "")
+            if not path_str:
+                continue
+
+            # Normalize to portable path, then to current machine local path
+            portable = to_portable_path(path_str)
+            local_path = from_portable_path(portable)
+
+            # Check if file is located under .gemini/antigravity/brain/
+            posix_path = local_path.as_posix()
+            if ".gemini/antigravity/brain" not in posix_path and not portable.startswith("~/.gemini/antigravity/brain"):
+                continue
+
+            # If file already exists locally on disk, nothing to restore
+            if local_path.is_file():
+                continue
+
+            content: bytes | None = None
+            blob_hash = getattr(change, "blob_hash", None)
+
+            # 1. Try retrieving directly from blob_store using change.blob_hash
+            if blob_hash:
+                try:
+                    content = self._blob_store.retrieve(blob_hash)
+                except KeyError:
+                    content = None
+
+            # 2. If not found in change, check if another commit indexed this exact file or filename
+            if content is None:
+                try:
+                    hashes = self._index.get_blob_hashes_for_file(portable)
+                    if not hashes:
+                        filename = local_path.name
+                        cursor = self._index._conn.cursor()
+                        cursor.execute(
+                            "SELECT blob_hash FROM file_changes WHERE (path LIKE ? OR path LIKE ?) AND blob_hash IS NOT NULL LIMIT 1",
+                            (f"%/{filename}", f"%\\{filename}")
+                        )
+                        row = cursor.fetchone()
+                        if row and row[0]:
+                            hashes = {row[0]}
+                    for h in hashes:
+                        try:
+                            content = self._blob_store.retrieve(h)
+                            if content:
+                                break
+                        except KeyError:
+                            continue
+                except Exception:
+                    pass
+
+            # 3. If still not found, try sync_manager (Google Drive) if available
+            if content is None and sync_manager is not None:
+                try:
+                    if getattr(sync_manager, "enabled", False):
+                        dest = sync_manager.pull_latest_file(portable, target_path=local_path)
+                        if dest and dest.is_file():
+                            restored.append(str(local_path))
+                            continue
+                except Exception:
+                    pass
+
+            # Write content retrieved from blob_store to disk
+            if content is not None:
+                try:
+                    local_path.parent.mkdir(parents=True, exist_ok=True)
+                    local_path.write_bytes(content)
+                    restored.append(str(local_path))
+                except Exception:
+                    pass
+
+        return restored
+
+
