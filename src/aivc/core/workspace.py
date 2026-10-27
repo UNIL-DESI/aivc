@@ -335,11 +335,19 @@ class Workspace:
             action = "deleted" if (not p.is_file() and portable_path in self._state["tracked_files"]) else "edited"
             if portable_path not in seen_paths:
                 seen_paths.add(portable_path)
+                blob_hash = None
+                if p.is_file():
+                    try:
+                        if p.stat().st_size <= 10 * 1024 * 1024:
+                            data = p.read_bytes()
+                            blob_hash = self._blob_store.store(data)
+                    except OSError:
+                        blob_hash = None
                 changes.append(
                     FileChange(
                         path=portable_path,
                         action=action,
-                        blob_hash=None,
+                        blob_hash=blob_hash,
                         bytes_added=0,
                         bytes_removed=0,
                     )
@@ -390,7 +398,7 @@ class Workspace:
             if c.action == "deleted":
                 self._state["tracked_files"].pop(c.path, None)
             else:
-                self._state["tracked_files"][c.path] = {"hash": None, "mtime": None, "size": None}
+                self._state["tracked_files"][c.path] = {"hash": c.blob_hash, "mtime": None, "size": None}
 
         self._state["head_commit_id"] = memory.id
         self._save_state()
