@@ -304,19 +304,21 @@ class Workspace:
         note: str | None = None,
         machine_id: str = "",
         consulted_files: list[str] | None = None,
+        roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
         """Create a new memory in 3-part format (title, journal, user_items) without local diffs/blobs.
 
         Args:
             title: Short title summarising the achievement.
             journal: Agent thoughts and activity log.
-            user_items: User-facing task items [{id, task, details, done}].
+            user_items: User-facing task items [{id, task, details, done, kind}].
             edited_files: List of file paths modified or created.
             read_files: List of file paths consulted.
             urls: Optional list of URLs.
             note: Backward-compatibility parameter mapping to journal.
             machine_id: ID of the machine where the memory was created.
             consulted_files: Legacy parameter mapping to read_files.
+            roadmap_items: Optional roadmap tasks [{id, task, details, done}] recorded with kind='roadmap'.
         """
         self._reload_state_if_needed()
 
@@ -336,12 +338,33 @@ class Workspace:
         norm_user_items = []
         if user_items:
             for idx, item in enumerate(user_items, 1):
+                is_roadmap = (item.get("kind") == "roadmap" or item.get("type") == "roadmap")
+                default_prefix = f"r-{memory_id[:6]}" if is_roadmap else f"{memory_id[:6]}"
+                norm_item = {
+                    "id": item.get("id") or f"{default_prefix}-{idx}",
+                    "task": str(item.get("task", "")).strip(),
+                    "details": str(item.get("details", "")).strip(),
+                    "done": bool(item.get("done", False)),
+                }
+                if is_roadmap:
+                    norm_item["kind"] = "roadmap"
+                elif "kind" in item:
+                    norm_item["kind"] = item["kind"]
+                norm_user_items.append(norm_item)
+
+        if roadmap_items:
+            for r_idx, r_item in enumerate(roadmap_items, 1):
+                r_task = r_item.get("task", "") if isinstance(r_item, dict) else str(r_item)
+                r_details = r_item.get("details", "") if isinstance(r_item, dict) else ""
+                r_id = r_item.get("id") if isinstance(r_item, dict) else None
+                r_done = bool(r_item.get("done", False)) if isinstance(r_item, dict) else False
                 norm_user_items.append(
                     {
-                        "id": item.get("id") or f"{memory_id[:6]}-{idx}",
-                        "task": str(item.get("task", "")).strip(),
-                        "details": str(item.get("details", "")).strip(),
-                        "done": bool(item.get("done", False)),
+                        "id": r_id or f"r-{memory_id[:6]}-{r_idx}",
+                        "task": str(r_task).strip(),
+                        "details": str(r_details).strip(),
+                        "done": r_done,
+                        "kind": "roadmap",
                     }
                 )
 
@@ -449,6 +472,7 @@ class Workspace:
         urls: list[str] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         journal: str = "",
+        roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
         """Alias for remember for backwards compatibility."""
         return self.remember(
@@ -461,6 +485,7 @@ class Workspace:
             note=note,
             machine_id=machine_id,
             consulted_files=consulted_files,
+            roadmap_items=roadmap_items,
         )
 
     def complete_user_items(self, item_ids: list[str]) -> list[str]:

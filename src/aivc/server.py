@@ -220,6 +220,7 @@ async def remember(
     edited_files: list[str] | None = None,
     read_files: list[str] | None = None,
     urls: list[str] | None = None,
+    roadmap_items: list[dict[str, Any]] | None = None,
 ) -> str:
     """Enregistre un souvenir structuré avec journal, tâches utilisateur et fichiers."""
     import asyncio
@@ -232,14 +233,20 @@ async def remember(
 
     engine = _get_engine()
 
+    engine_kwargs = {
+        "title": title,
+        "journal": journal,
+        "user_items": actual_user_items,
+        "read_files": actual_read_files,
+        "edited_files": actual_edited_files,
+        "urls": actual_urls,
+    }
+    if roadmap_items is not None:
+        engine_kwargs["roadmap_items"] = roadmap_items
+
     memory = await asyncio.to_thread(
         engine.remember,
-        title=title,
-        journal=journal,
-        user_items=actual_user_items,
-        read_files=actual_read_files,
-        edited_files=actual_edited_files,
-        urls=actual_urls,
+        **engine_kwargs
     )
 
     try:

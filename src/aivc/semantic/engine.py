@@ -315,6 +315,7 @@ class SemanticEngine:
         urls: list[str] | None = None,
         note: str | None = None,
         consulted_files: list[str] | None = None,
+        roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
         """Create a versioning memory and index it semantically (asynchronously)."""
         machine_id = get_machine_id()
@@ -328,6 +329,7 @@ class SemanticEngine:
             note=note,
             machine_id=machine_id,
             consulted_files=consulted_files,
+            roadmap_items=roadmap_items,
         )
 
         # Step 2: graph update (SQLite, always fast)
@@ -356,6 +358,7 @@ class SemanticEngine:
         urls: list[str] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         journal: str = "",
+        roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
         """Create a versioning memory (alias for remember)."""
         return self.remember(
@@ -367,6 +370,7 @@ class SemanticEngine:
             urls=urls,
             note=note,
             consulted_files=consulted_files,
+            roadmap_items=roadmap_items,
         )
 
     def complete_user_items(self, item_ids: list[str]) -> list[str]:
