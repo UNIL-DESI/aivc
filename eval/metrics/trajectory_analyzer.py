@@ -58,6 +58,7 @@ EXPLORATION_TOOLS: Set[str] = {
     "find_by_name",
     "search_web",
     "read_past_file_content",
+    "restore_file",
 }
 
 

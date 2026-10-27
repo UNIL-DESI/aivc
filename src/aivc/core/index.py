@@ -155,17 +155,32 @@ class CoreIndex:
 
     def get_memories_touching_file(self, file_path: str) -> list[str]:
         """Return all memory IDs that recorded a change for this file."""
+        raw_s = file_path.strip().replace("\\", "/")
+        is_rel = not (raw_s.startswith(("~", "/")) or (len(raw_s) >= 2 and raw_s[1] == ":"))
+        rel_norm = raw_s.lstrip("./")
         target_portable = to_portable_path(file_path)
-        basename = PurePath(target_portable.replace("\\", "/")).name
+        basename = PurePath(raw_s).name
+
         rows = self._execute(
             "SELECT DISTINCT commit_id, path FROM file_changes WHERE path = ? OR path = ? OR path LIKE ? OR path LIKE ?",
             (file_path, target_portable, f"%/{basename}", f"%\\{basename}"),
         ).fetchall()
-        matching = []
+
+        matching: list[str] = []
+        # Passe 1 : match exact ou suffixe relatif
         for commit_id, path in rows:
-            if to_portable_path(path) == target_portable:
+            p = to_portable_path(path)
+            if p == target_portable or (is_rel and rel_norm and (p == rel_norm or p.endswith("/" + rel_norm))):
                 if commit_id not in matching:
                     matching.append(commit_id)
+
+        # Passe 2 : repli par basename si et seulement si matching est vide et basename non vide
+        if not matching and basename:
+            for commit_id, path in rows:
+                if PurePath(to_portable_path(path).replace("\\", "/")).name == basename:
+                    if commit_id not in matching:
+                        matching.append(commit_id)
+
         return matching
 
     def migrate_from_json(self, memories_dir: Path) -> int:

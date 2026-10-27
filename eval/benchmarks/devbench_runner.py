@@ -322,10 +322,13 @@ class DevBenchAIVCEnvironment:
     def remember(
         self,
         title: str,
-        note: str,
+        note: str = "",
         read_files: Optional[List[str]] = None,
         edited_files: Optional[List[str]] = None,
         repo_id: Optional[str] = None,
+        journal: str = "",
+        user_items: Optional[List[Dict[str, Any]]] = None,
+        urls: Optional[List[str]] = None,
     ) -> str:
         target_repo = repo_id or self.current_repo_id
         if target_repo not in self.repo_stores:
@@ -335,11 +338,15 @@ class DevBenchAIVCEnvironment:
         store["counter"] += 1
         mem_id = f"dev-mem-{store['counter']:04d}"
         now_str = datetime.now(timezone.utc).isoformat()
+        effective_note = journal or note
 
         record = {
             "id": mem_id,
             "title": title,
-            "note": note,
+            "note": effective_note,
+            "journal": effective_note,
+            "user_items": user_items or [],
+            "urls": urls or [],
             "read_files": read_files or [],
             "edited_files": edited_files or [],
             "repo_id": target_repo,
@@ -428,6 +435,37 @@ class DevBenchAIVCEnvironment:
             return f"Memory ID '{memory_id}' not found."
         return f"// Snapshot of {filepath} in [{target_repo}] associated with {memory_id} ({mem['title']})\n// Memory context:\n{mem['note'][:300]}"
 
+    def get_file_history(self, file_path: str, repo_id: Optional[str] = None) -> str:
+        return self.get_file_history_metadata(filepath=file_path, repo_id=repo_id)
+
+    def complete_user_items(self, item_ids: List[str], repo_id: Optional[str] = None) -> str:
+        target_repo = repo_id or self.current_repo_id
+        mems = self.repo_stores.get(target_repo, {}).get("memories", {})
+        completed = []
+        for mem in mems.values():
+            for it in mem.get("user_items", []):
+                if it.get("id") in item_ids:
+                    it["done"] = True
+                    completed.append(it["id"])
+        if not completed:
+            return f"No pending user items found for IDs: {item_ids}"
+        return f"✅ Marked user items as completed: {', '.join(completed)}"
+
+    def restore_file(
+        self,
+        file_path: str,
+        target_path: Optional[str] = None,
+        memory_id: str = "",
+        repo_id: Optional[str] = None,
+    ) -> str:
+        target_repo = repo_id or self.current_repo_id
+        store = self.repo_stores.get(target_repo, {})
+        snapshots = store.get("file_snapshots", {}).get(file_path, [])
+        if not snapshots:
+            return f"No recorded versions for '{file_path}' in repository '{target_repo}'."
+        target_mem_id = memory_id or snapshots[-1]["memory_id"]
+        return self.read_past_file_content(filepath=file_path, memory_id=target_mem_id, repo_id=target_repo)
+
     def execute_tool(self, tool_name: str, arguments: Dict[str, Any], phase_context: Dict[str, Any]) -> Tuple[str, List[str]]:
         returned_files: List[str] = []
         repo_id = phase_context.get("repo_id", self.current_repo_id)
@@ -457,9 +495,15 @@ class DevBenchAIVCEnvironment:
             if tool_name == "remember":
                 read_f = _normalize_file_list(arguments.get("read_files", []))
                 edit_f = _normalize_file_list(arguments.get("edited_files", []))
+                journal_val = str(arguments.get("journal") or arguments.get("note", ""))
+                user_items_val = arguments.get("user_items")
+                urls_val = arguments.get("urls")
                 res = self.remember(
                     title=str(arguments.get("title", "SDLC Progress")),
-                    note=str(arguments.get("note", "")),
+                    note=journal_val,
+                    journal=journal_val,
+                    user_items=user_items_val,
+                    urls=urls_val,
                     read_files=read_f,
                     edited_files=edit_f,
                     repo_id=repo_id,
@@ -491,16 +535,23 @@ class DevBenchAIVCEnvironment:
                 if mem:
                     returned_files = list(dict.fromkeys(mem.get("read_files", []) + mem.get("edited_files", [])))
                 return res, returned_files
-            elif tool_name == "get_file_history_metadata":
-                filepath = arguments.get("filepath", "")
-                res = self.get_file_history_metadata(filepath=filepath, repo_id=repo_id)
+            elif tool_name in ("get_file_history", "get_file_history_metadata"):
+                filepath = arguments.get("file_path") or arguments.get("filepath", "")
+                res = self.get_file_history(file_path=filepath, repo_id=repo_id)
                 if filepath:
                     returned_files = [filepath]
                 return res, returned_files
-            elif tool_name == "read_past_file_content":
-                filepath = arguments.get("filepath", "")
+            elif tool_name == "complete_user_items":
+                item_ids = arguments.get("item_ids", [])
+                if isinstance(item_ids, str):
+                    item_ids = [item_ids]
+                res = self.complete_user_items(item_ids=item_ids, repo_id=repo_id)
+                return res, returned_files
+            elif tool_name in ("restore_file", "read_past_file_content"):
+                filepath = arguments.get("file_path") or arguments.get("filepath", "")
                 mem_id = arguments.get("memory_id", "")
-                res = self.read_past_file_content(filepath=filepath, memory_id=mem_id, repo_id=repo_id)
+                target_path = arguments.get("target_path")
+                res = self.restore_file(file_path=filepath, target_path=target_path, memory_id=mem_id, repo_id=repo_id)
                 if filepath:
                     returned_files = [filepath]
                 return res, returned_files
@@ -552,6 +603,10 @@ def append_tool_interaction(
                     pass
         except Exception:
             pass
+
+
+# Backward-compatible alias for runners
+AIVCEnvironment = DevBenchAIVCEnvironment
 
 
 # ---------------------------------------------------------------------------
@@ -1004,9 +1059,9 @@ class DevBenchRunner:
                     turn_tools.append(fn_name)
                     tools_called_list.append(fn_name)
 
-                    if fn_name in ("recall", "get_recent_memories"):
+                    if fn_name in ("recall", "get_file_history", "get_recent_memories", "get_file_history_metadata"):
                         turn_recalled += 1
-                    elif fn_name in ("consult_memory", "read_past_file_content"):
+                    elif fn_name in ("consult_memory", "restore_file", "complete_user_items", "read_past_file_content"):
                         turn_used += 1
 
                     if fn_name == "submit_phase_deliverable":

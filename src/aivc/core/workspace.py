@@ -15,7 +15,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 from aivc.core.blob_store import BlobStore
@@ -226,6 +226,33 @@ class Workspace:
         """
         self._index.migrate_from_json(self._commits_dir)
 
+    def _resolve_tracked_path(self, path_str: str, allow_basename_fallback: bool = False) -> str:
+        """Resolve a relative or basename path to a known tracked file path."""
+        try:
+            if from_portable_path(path_str).exists() or to_portable_path(path_str) in self._state["tracked_files"]:
+                return path_str
+        except Exception:
+            if to_portable_path(path_str) in self._state["tracked_files"]:
+                return path_str
+
+        raw_s = path_str.strip().replace("\\", "/")
+        is_rel = not (raw_s.startswith(("~", "/")) or (len(raw_s) >= 2 and raw_s[1] == ":"))
+        rel_norm = raw_s.lstrip("./")
+
+        if is_rel and rel_norm:
+            for tp in self._state["tracked_files"]:
+                if tp == rel_norm or tp.endswith("/" + rel_norm):
+                    return tp
+
+        if allow_basename_fallback:
+            basename = PurePath(raw_s).name
+            if basename:
+                for tp in self._state["tracked_files"]:
+                    if PurePath(tp.replace("\\", "/")).name == basename:
+                        return tp
+
+        return path_str
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -266,6 +293,7 @@ class Workspace:
         self,
         title: str,
         journal: str = "",
+        tasks: list[dict[str, Any]] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         edited_files: list[str] | None = None,
         read_files: list[str] | None = None,
@@ -273,19 +301,22 @@ class Workspace:
         note: str | None = None,
         machine_id: str = "",
         consulted_files: list[str] | None = None,
+        roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
-        """Create a new memory in 3-part format (title, journal, user_items) without local diffs/blobs.
+        """Create a new memory in 3-part format (title, journal, tasks/user_items) without local diffs/blobs.
 
         Args:
             title: Short title summarising the achievement.
             journal: Agent thoughts and activity log.
-            user_items: User-facing task items [{id, task, details, done}].
+            tasks: Unified tasks list [{id, task, task_status, details, done}].
+            user_items: Legacy alias for tasks [{id, task, details, done, kind}].
             edited_files: List of file paths modified or created.
             read_files: List of file paths consulted.
             urls: Optional list of URLs.
             note: Backward-compatibility parameter mapping to journal.
             machine_id: ID of the machine where the memory was created.
             consulted_files: Legacy parameter mapping to read_files.
+            roadmap_items: Optional roadmap tasks recorded with task_status='new' / kind='roadmap'.
         """
         self._reload_state_if_needed()
 
@@ -298,18 +329,126 @@ class Workspace:
             actual_read_files.extend(consulted_files)
         actual_edited_files = list(edited_files) if edited_files is not None else []
 
+        actual_read_files = list(dict.fromkeys([self._resolve_tracked_path(f, allow_basename_fallback=True) for f in actual_read_files]))
+        actual_edited_files = list(dict.fromkeys([self._resolve_tracked_path(f, allow_basename_fallback=False) for f in actual_edited_files]))
+
         memory_id = str(uuid.uuid4())
-        norm_user_items = []
+        self._last_modified_commit_ids: list[str] = []
+
+        # Merge input task collections
+        raw_task_entries: list[tuple[dict[str, Any], bool]] = []
+        if tasks:
+            for it in tasks:
+                if isinstance(it, dict):
+                    raw_task_entries.append((it, False))
         if user_items:
-            for idx, item in enumerate(user_items, 1):
-                norm_user_items.append(
-                    {
-                        "id": item.get("id") or f"{memory_id[:6]}-{idx}",
-                        "task": str(item.get("task", "")).strip(),
-                        "details": str(item.get("details", "")).strip(),
-                        "done": bool(item.get("done", False)),
-                    }
-                )
+            for it in user_items:
+                if isinstance(it, dict):
+                    raw_task_entries.append((it, False))
+        if roadmap_items:
+            for it in roadmap_items:
+                if isinstance(it, dict):
+                    raw_task_entries.append((it, True))
+                elif isinstance(it, str):
+                    raw_task_entries.append(({"task": it}, True))
+
+        # Build existing task map across commits for lookup and event-sourcing
+        existing_tasks: dict[str, dict[str, Any]] = {}
+        commits_data: dict[Path, dict[str, Any]] = {}
+        for p in self._commits_dir.glob("*.json"):
+            try:
+                c_data = json.loads(p.read_text(encoding="utf-8"))
+                commits_data[p] = c_data
+                for c_it in c_data.get("user_items", []):
+                    c_id = c_it.get("id")
+                    if c_id and c_id not in existing_tasks:
+                        existing_tasks[c_id] = c_it
+            except Exception:
+                continue
+
+        norm_user_items: list[dict[str, Any]] = []
+        status_updates_by_id: dict[str, tuple[str, bool]] = {}
+
+        for idx, (item, is_roadmap_arg) in enumerate(raw_task_entries, 1):
+            raw_id = str(item.get("id") or "").strip()
+            prior_task = existing_tasks.get(raw_id) if raw_id else None
+
+            # Resolve task_status
+            explicit_status = item.get("task_status")
+            if explicit_status in ("new", "await_validation", "validated"):
+                task_status = explicit_status
+            elif item.get("done") is True:
+                task_status = "validated"
+            elif (
+                is_roadmap_arg
+                or item.get("kind") == "roadmap"
+                or item.get("type") == "roadmap"
+                or (raw_id and raw_id.startswith("r-"))
+            ):
+                task_status = "new"
+            elif prior_task and prior_task.get("task_status"):
+                task_status = prior_task["task_status"]
+            else:
+                task_status = "await_validation"
+
+            done = (task_status == "validated")
+            kind = "roadmap" if task_status == "new" else "deliverable"
+
+            # Resolve id
+            if raw_id:
+                final_id = raw_id
+            else:
+                prefix = f"r-{memory_id[:6]}" if task_status == "new" else f"{memory_id[:6]}"
+                final_id = f"{prefix}-{idx}"
+
+            # Resolve task title (fallback to prior commit if empty)
+            task_title = str(item.get("task", "")).strip()
+            if not task_title and prior_task:
+                task_title = str(prior_task.get("task", "")).strip()
+
+            # Resolve details
+            details = str(item.get("details", "")).strip()
+            if not details and prior_task and prior_task.get("details"):
+                details = str(prior_task.get("details", "")).strip()
+
+            norm_item = {
+                "id": final_id,
+                "task": task_title,
+                "details": details,
+                "done": done,
+                "task_status": task_status,
+                "kind": kind,
+            }
+            norm_user_items.append(norm_item)
+
+            if raw_id and prior_task:
+                status_updates_by_id[raw_id] = (task_status, done)
+
+        # Event-sourcing update on previous commits if status changed
+        if status_updates_by_id:
+            for p, c_data in commits_data.items():
+                c_items = c_data.get("user_items", [])
+                c_modified = False
+                for c_it in c_items:
+                    c_id = c_it.get("id")
+                    if c_id in status_updates_by_id:
+                        new_st, new_dn = status_updates_by_id[c_id]
+                        if c_it.get("task_status") != new_st or c_it.get("done") != new_dn:
+                            c_it["task_status"] = new_st
+                            c_it["done"] = new_dn
+                            c_modified = True
+                if c_modified:
+                    c_data["user_items"] = c_items
+                    c_data["note"] = _compose_note(
+                        c_data.get("journal", ""),
+                        c_items,
+                        fallback_note=c_data.get("note", ""),
+                    )
+                    try:
+                        p.write_text(json.dumps(c_data, indent=2), encoding="utf-8")
+                        self._last_modified_commit_ids.append(p.stem)
+                    except Exception:
+                        pass
 
         # Strict validation
         for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
@@ -415,6 +554,7 @@ class Workspace:
         urls: list[str] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         journal: str = "",
+        roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
         """Alias for remember for backwards compatibility."""
         return self.remember(
@@ -427,6 +567,7 @@ class Workspace:
             note=note,
             machine_id=machine_id,
             consulted_files=consulted_files,
+            roadmap_items=roadmap_items,
         )
 
     def complete_user_items(self, item_ids: list[str]) -> list[str]:
@@ -450,6 +591,7 @@ class Workspace:
             for item in user_items:
                 if item.get("id") in target_ids and not item.get("done", False):
                     item["done"] = True
+                    item["task_status"] = "validated"
                     marked_done.append(item["id"])
                     modified = True
 
@@ -467,19 +609,36 @@ class Workspace:
     def get_file_history(self, file_path: str) -> list[Memory]:
         """Return chronological list of memories touching file_path (portable match)."""
         self._reload_state_if_needed()
+        raw_s = file_path.strip().replace("\\", "/")
+        is_rel = not (raw_s.startswith(("~", "/")) or (len(raw_s) >= 2 and raw_s[1] == ":"))
+        rel_norm = raw_s.lstrip("./")
         target_portable = to_portable_path(file_path)
-        matching_memories = []
+        basename = PurePath(raw_s).name
 
         memory_ids = self._index.get_memories_touching_file(file_path)
+        loaded_memories: list[Memory] = []
         for mid in memory_ids:
             try:
-                mem = self._load_memory(mid)
-                for ch in mem.changes:
-                    if to_portable_path(ch.path) == target_portable:
-                        matching_memories.append(mem)
-                        break
+                loaded_memories.append(self._load_memory(mid))
             except KeyError:
                 continue
+
+        matching_memories: list[Memory] = []
+        # Passe 1 : match exact ou suffixe relatif
+        for mem in loaded_memories:
+            for ch in mem.changes:
+                p = to_portable_path(ch.path)
+                if p == target_portable or (is_rel and rel_norm and (p == rel_norm or p.endswith("/" + rel_norm))):
+                    matching_memories.append(mem)
+                    break
+
+        # Passe 2 : repli par basename si matching_memories est vide et basename non vide
+        if not matching_memories and basename:
+            for mem in loaded_memories:
+                for ch in mem.changes:
+                    if PurePath(to_portable_path(ch.path).replace("\\", "/")).name == basename:
+                        matching_memories.append(mem)
+                        break
 
         matching_memories.sort(key=lambda m: m.timestamp, reverse=True)
         return matching_memories

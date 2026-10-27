@@ -307,18 +307,21 @@ class SemanticEngine:
         self,
         title: str,
         journal: str = "",
+        tasks: list[dict[str, Any]] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         edited_files: list[str] | None = None,
         read_files: list[str] | None = None,
         urls: list[str] | None = None,
         note: str | None = None,
         consulted_files: list[str] | None = None,
+        roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
         """Create a versioning memory and index it semantically (asynchronously)."""
         machine_id = get_machine_id()
         memory = self._workspace.remember(
             title=title,
             journal=journal,
+            tasks=tasks,
             user_items=user_items,
             edited_files=edited_files,
             read_files=read_files,
@@ -326,6 +329,7 @@ class SemanticEngine:
             note=note,
             machine_id=machine_id,
             consulted_files=consulted_files,
+            roadmap_items=roadmap_items,
         )
 
         # Step 2: graph update (SQLite, always fast)
@@ -336,6 +340,9 @@ class SemanticEngine:
         try:
             if self._sync_manager.enabled:
                 self._sync_queue.put(memory)
+                # Push any previous commits modified by event-sourcing
+                for mod_cid in getattr(self._workspace, "_last_modified_commit_ids", []):
+                    self._sync_manager.push_memory(mod_cid)
         except Exception as e:
             logger.warning("Failed to queue memory %s for sync: %s", memory.id, e)
 
@@ -354,6 +361,7 @@ class SemanticEngine:
         urls: list[str] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         journal: str = "",
+        roadmap_items: list[dict[str, Any]] | None = None,
     ) -> Memory:
         """Create a versioning memory (alias for remember)."""
         return self.remember(
@@ -365,6 +373,7 @@ class SemanticEngine:
             urls=urls,
             note=note,
             consulted_files=consulted_files,
+            roadmap_items=roadmap_items,
         )
 
     def complete_user_items(self, item_ids: list[str]) -> list[str]:

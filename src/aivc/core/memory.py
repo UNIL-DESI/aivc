@@ -62,8 +62,13 @@ def _compose_note(journal: str, user_items: list[dict[str, Any]] | None, fallbac
             details = item.get("details", "").strip()
             item_id = item.get("id", "").strip()
             id_prefix = f"[{item_id}] " if item_id else ""
-            status = "[x]" if item.get("done") else "[ ]"
-            line = f"- {status} {id_prefix}{task}"
+            status_val = item.get("task_status")
+            if status_val == "validated" or item.get("done"):
+                status = "[x]"
+            else:
+                status = "[ ]"
+            status_tag = f"({status_val}) " if status_val else ""
+            line = f"- {status} {id_prefix}{status_tag}{task}"
             if details:
                 line += f" : {details}"
             items_lines.append(line)

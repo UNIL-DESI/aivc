@@ -109,13 +109,12 @@ Exposed tools available to LLM assistants when configuring the AIVC MCP server:
 
 | Command | Type | Description |
 |---------|------|-------------|
-| `remember` | Write | Records a memory (Title + Markdown Note) associated with explicitly read and edited files. Raises strict validation errors for folders or untracked non-existent paths. **Call after major milestones.** |
-| `recall` | Read | Semantic search over memories. Returns ranked results (ID, title, score) + contextual snippets. |
-| `get_recent_memories`| Read | Retrospective chronological journal of the last N memories. |
-| `consult_memory`| Read | Retrieve the complete Markdown note and modified file diffs for a specific memory. |
-| `get_file_history_metadata`| Read | Retrieve the chronological list of all memories (commits) that modified or consulted a specific file. |
-| `read_past_file_content`| Read | Retrieve the actual text content of a file exactly as it was at the time of a specific past memory. |
-| `get_status` | Read | Explores tracked files, active directory structures, and size allocations. |
+| `remember` | Write | Records a structured 3-part memory (`title`, `journal`, and actionable `user_items`) associated with `edited_files`, `read_files`, and `urls`, mirroring latest file versions to Google Drive. |
+| `recall` | Read | Hybrid semantic & lexical search (BM25 + dense embeddings) over memories. Returns ranked results (ID, title, score) + contextual snippets. |
+| `consult_memory`| Read | Retrieve the complete structured memory (`user_items`, `journal`, and tracked files) for a specific memory ID. |
+| `get_file_history`| Read | Retrieve the chronological lineage of all memories that modified or consulted a specific file path. |
+| `complete_user_items`| Write | Mark one or more pending `user_items` as completed (`done: true`) by their short IDs. |
+| `restore_file`| Read/Write | Restore the latest complete version of a tracked file from the Google Drive mirror (`AIVC_Sync/files/`) to the local workspace. |
 
 ---
 

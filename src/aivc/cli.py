@@ -451,7 +451,10 @@ def cmd_daemon(args: argparse.Namespace) -> None:
         if get_status():
             print(f"{DIM}Stopping running daemon...{RESET}")
             post_shutdown()
-            time.sleep(0.5)
+            for _ in range(30):
+                time.sleep(0.1)
+                if not get_status():
+                    break
         print(f"{DIM}Starting AIVC daemon on port {port}...{RESET}")
         ensure_daemon_running(port)
         st = get_status()

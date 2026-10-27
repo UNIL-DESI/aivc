@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 import sys
 import logging
-import difflib
 
 logger = logging.getLogger(__name__)
 
@@ -186,15 +185,6 @@ def _render_file_tree(paths: list[str], path_extras: dict[str, str] = None, inde
     return f"```text\n{tree_str}\n```"
 
 
-def _format_bytes(n: int) -> str:
-    """Format a byte count as a human-readable string."""
-    if n < 1024:
-        return f"{n} B"
-    if n < 1024 ** 2:
-        return f"{n / 1024:.1f} KB"
-    return f"{n / 1024 ** 2:.1f} MB"
-
-
 def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_id=None) -> str:
     """Render tracked file changes as a clear hierarchical tree."""
     if not changes:
@@ -219,12 +209,14 @@ def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_
 async def remember(
     title: str,
     journal: str,
+    tasks: list[dict[str, Any]] | None = None,
     user_items: list[dict[str, Any]] | None = None,
     edited_files: list[str] | None = None,
     read_files: list[str] | None = None,
     urls: list[str] | None = None,
+    roadmap_items: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Enregistre un souvenir structuré avec journal, tâches utilisateur et fichiers."""
+    """Enregistre un souvenir structuré avec journal, tâches (états: new, await_validation, validated) et fichiers."""
     import asyncio
     from pathlib import Path
 
@@ -232,17 +224,26 @@ async def remember(
     actual_edited_files = edited_files or []
     actual_urls = urls or []
     actual_user_items = user_items or []
+    actual_tasks = tasks or []
 
     engine = _get_engine()
 
+    engine_kwargs = {
+        "title": title,
+        "journal": journal,
+        "user_items": actual_user_items,
+        "read_files": actual_read_files,
+        "edited_files": actual_edited_files,
+        "urls": actual_urls,
+    }
+    if tasks is not None:
+        engine_kwargs["tasks"] = tasks
+    if roadmap_items is not None:
+        engine_kwargs["roadmap_items"] = roadmap_items
+
     memory = await asyncio.to_thread(
         engine.remember,
-        title=title,
-        journal=journal,
-        user_items=actual_user_items,
-        read_files=actual_read_files,
-        edited_files=actual_edited_files,
-        urls=actual_urls,
+        **engine_kwargs
     )
 
     try:
@@ -257,7 +258,10 @@ async def remember(
 
     items_summary = ""
     if memory.user_items:
-        items_lines = [f"  - [{'x' if it.get('done') else ' '}] [{it.get('id')}] {it.get('task')}" for it in memory.user_items]
+        items_lines = [
+            f"  - [{'x' if it.get('done') else ' '}] [{it.get('id')}] {it.get('task')}"
+            for it in memory.user_items
+        ]
         items_summary = "\n\nActions Utilisateur :\n" + "\n".join(items_lines)
 
     return (
@@ -458,9 +462,8 @@ def get_file_history(file_path: str) -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
 def complete_user_items(item_ids: list[str]) -> str:
-    """Marque une ou plusieurs tâches utilisateur comme terminées."""
+    """Marque une ou plusieurs tâches utilisateur comme terminées (deprecated - utiliser remember avec task_status='validated')."""
     if not item_ids:
         return "Aucun identifiant de tâche spécifié."
 

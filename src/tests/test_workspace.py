@@ -226,4 +226,34 @@ def test_create_memory_read_files(tmp_path: Path, ws: Workspace) -> None:
     c = m.changes[0]
     assert c.action == "consulted"
     assert c.blob_hash is None
+
+
+def test_remember_with_roadmap_items(tmp_path: Path, ws: Workspace) -> None:
+    f = _write(tmp_path / "code.py", b"hello")
+    m = ws.remember(
+        "Memory with roadmap",
+        journal="Did something",
+        edited_files=[str(f)],
+        user_items=[
+            {"task": "Deliverable 1", "details": "Done deal", "kind": "deliverable"},
+            {"task": "Roadmap item in user_items", "kind": "roadmap"},
+        ],
+        roadmap_items=[
+            {"task": "Roadmap item from parameter", "details": "detail roadmap"},
+        ],
+    )
+    assert len(m.user_items) == 3
+    assert m.user_items[0]["kind"] != "roadmap"
+    assert m.user_items[1]["kind"] == "roadmap"
+    assert m.user_items[1]["id"].startswith("r-")
+    assert m.user_items[2]["kind"] == "roadmap"
+    assert m.user_items[2]["id"].startswith("r-")
+
+    # Verify complete_user_items can complete roadmap items
+    r_id = m.user_items[2]["id"]
+    completed = ws.complete_user_items([r_id])
+    assert completed == [r_id]
+    reloaded = ws._load_memory(m.id)
+    assert reloaded.user_items[2]["done"] is True
+
 
