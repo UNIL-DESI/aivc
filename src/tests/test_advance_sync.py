@@ -122,6 +122,10 @@ def test_real_end_to_end_advance_tldr_sync_on_disk():
     cli_path = find_project_memory_cli_path()
     if not cli_path or not cli_path.is_file():
         pytest.skip("VoiceNotes project_memory_cli.py not found on this machine.")
+    from aivc.advance_sync import _load_project_memory_module
+    mod = _load_project_memory_module()
+    if not hasattr(mod, "sync_advance_tldr_for_memory"):
+        pytest.skip("sync_advance_tldr_for_memory not yet implemented in project_memory_cli.py")
 
     mem = Memory(
         id="test-e2e-sync",

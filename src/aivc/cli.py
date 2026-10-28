@@ -357,6 +357,29 @@ def cmd_sync_push(args: argparse.Namespace) -> None:
         print(f"{RED}Error during sync push: {e}{RESET}")
 
 
+def cmd_sync_semantic(args: argparse.Namespace) -> None:
+    """Synchronize semantic task states and archives to Google Drive as native Docs."""
+    from aivc.config import get_storage_root
+    from aivc.sync.semantic_export import SemanticDriveExporter
+
+    storage_root = get_storage_root(allow_fallback=True)
+    exporter = SemanticDriveExporter(storage_root=storage_root)
+
+    print(f"{CYAN}{BOLD}AIVC Semantic Drive Export:{RESET}")
+    print(f"  {DIM}Storage root:{RESET} {storage_root}")
+    print(f"  {DIM}Connecting to Google Drive and scanning tasks...{RESET}")
+
+    result = exporter.export_all(batch_size=getattr(args, "batch_size", 25))
+    if result.get("status") == "success":
+        print(f"\n{GREEN}{CHECK_MARK} Semantic Export complete!{RESET}")
+        print(f"  Live docs updated:     {result.get('synced_live')}/3")
+        print(f"  Archive docs updated:  {result.get('synced_archives')}")
+        counts = result.get("live_counts", {})
+        print(f"  Active tasks count:    new={counts.get('new')}, await_validation={counts.get('await_validation')}, validated={counts.get('validated')}")
+    else:
+        print(f"{RED}Error during semantic export: {result.get('error', 'Unknown error')}{RESET}")
+
+
 def cmd_sync_status(args: argparse.Namespace) -> None:
     """Show cloud sync status and remote machines."""
     from aivc.config import get_aivc_config, get_machine_id, get_token_path
@@ -557,6 +580,25 @@ def main() -> None:
     )
     sync_sub.add_parser("status", help="Check cloud sync status")
     sync_sub.add_parser("push", help="Force push all missing local memories to Drive")
+    parser_semantic = sync_sub.add_parser("semantic", help="Export semantic tasks and archives to Google Drive Docs")
+    parser_semantic.add_argument(
+        "--batch-size",
+        type=int,
+        default=25,
+        help="Number of tasks per document / archive batch (default: 25, max: 30)"
+    )
+
+    # sync-semantic alias
+    parser_sync_semantic = subparsers.add_parser(
+        "sync-semantic",
+        help="Alias for 'aivc sync semantic'"
+    )
+    parser_sync_semantic.add_argument(
+        "--batch-size",
+        type=int,
+        default=25,
+        help="Number of tasks per document / archive batch (default: 25, max: 30)"
+    )
 
     args = parser.parse_args()
 
@@ -573,6 +615,8 @@ def main() -> None:
         cmd_daemon(args)
     elif args.command == "config":
         cmd_config(args)
+    elif args.command == "sync-semantic":
+        cmd_sync_semantic(args)
     elif args.command == "sync":
         if args.sync_command == "setup":
             cmd_sync_setup(args)
@@ -580,6 +624,8 @@ def main() -> None:
             cmd_sync_status(args)
         elif args.sync_command == "push":
             cmd_sync_push(args)
+        elif args.sync_command == "semantic":
+            cmd_sync_semantic(args)
 
 
 if __name__ == "__main__":
