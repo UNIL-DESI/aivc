@@ -33,6 +33,8 @@ class NativeDriveSyncManager:
         self.enabled = (not disable_sync) and self.config.get("enabled", False)
         # Blob sync is disabled by default in Phase 29+ to avoid security/storage leaks
         self.sync_blobs = self.config.get("sync_blobs", False)
+        # File sync for edited_files (enabled by default when sync is enabled)
+        self.sync_files = self.config.get("sync_files", True)
         self.machine_id = get_machine_id()
 
         # Lazy Google Drive service (using thread local to ensure thread safety during parallel downloads)
@@ -232,6 +234,7 @@ class NativeDriveSyncManager:
         """Push the latest version of a file to Google Drive under AIVC_Sync/files/.
 
         Overwrites existing file on Drive in place to keep only the latest version.
+        Excludes files > 25 MB and .git / node_modules directories.
         """
         if not self.enabled:
             return False
@@ -241,47 +244,58 @@ class NativeDriveSyncManager:
         except ImportError:
             return False
 
-        local_path = from_portable_path(file_path)
-        if not local_path.is_file():
-            return False
-
-        # If file exceeds 25 MB, ignore
         try:
-            if local_path.stat().st_size > 25 * 1024 * 1024:
+            local_path = from_portable_path(file_path)
+            if not local_path.is_file():
                 return False
-        except OSError:
+
+            # If file exceeds 25 MB, ignore
+            try:
+                if local_path.stat().st_size > 25 * 1024 * 1024:
+                    return False
+            except OSError:
+                return False
+
+            portable = to_portable_path(local_path)
+            rel_drive_path = portable[2:] if portable.startswith("~/") else portable.lstrip("/")
+
+            parts = Path(rel_drive_path).parts
+            if not parts:
+                return False
+
+            # Exclude .git and node_modules folders
+            parts_lower = [p.lower() for p in parts]
+            if ".git" in parts_lower or "node_modules" in parts_lower:
+                return False
+
+            parent_folders = parts[:-1]
+            filename = parts[-1]
+
+            service = self._get_service()
+            current_parent_id = self.files_folder_id
+
+            for folder_name in parent_folders:
+                current_parent_id = self._find_or_create_folder(folder_name, current_parent_id)
+
+            query = f"name = '{filename}' and '{current_parent_id}' in parents and trashed = false"
+            results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
+            existing = results.get("files", [])
+
+            media = MediaFileUpload(str(local_path), resumable=True)
+
+            if existing:
+                file_id = existing[0]["id"]
+                service.files().update(fileId=file_id, media_body=media).execute()
+            else:
+                metadata: dict[str, Any] = {"name": filename, "parents": [current_parent_id]}
+                service.files().create(body=metadata, media_body=media, fields="id").execute()
+
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed to push latest file %s to Drive: %s", file_path, e)
             return False
 
-        portable = to_portable_path(local_path)
-        rel_drive_path = portable[2:] if portable.startswith("~/") else portable.lstrip("/")
-
-        parts = Path(rel_drive_path).parts
-        if not parts:
-            return False
-
-        parent_folders = parts[:-1]
-        filename = parts[-1]
-
-        service = self._get_service()
-        current_parent_id = self.files_folder_id
-
-        for folder_name in parent_folders:
-            current_parent_id = self._find_or_create_folder(folder_name, current_parent_id)
-
-        query = f"name = '{filename}' and '{current_parent_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
-        existing = results.get("files", [])
-
-        media = MediaFileUpload(str(local_path), resumable=True)
-
-        if existing:
-            file_id = existing[0]["id"]
-            service.files().update(fileId=file_id, media_body=media).execute()
-        else:
-            metadata: dict[str, Any] = {"name": filename, "parents": [current_parent_id]}
-            service.files().create(body=metadata, media_body=media, fields="id").execute()
-
-        return True
 
     def pull_latest_file(self, file_path: str, target_path: str | Path | None = None) -> Path:
         """Download latest version of file from AIVC_Sync/files/ on Google Drive to local disk."""
@@ -359,14 +373,86 @@ class NativeDriveSyncManager:
         
         for memory_file in missing_memories:
             memory_id = memory_file.replace(".json", "")
-            
-            # Blobs are no longer pushed as of Phase 29.
-            # We ONLY push the memory JSON (metadata).
-                
             self.push_memory(memory_id)
             memories_pushed += 1
+
+            # Push associated edited files if they exist locally
+            try:
+                mem_path = local_memories_dir / memory_file
+                if mem_path.is_file():
+                    mem_data = json.loads(mem_path.read_text(encoding="utf-8"))
+                    for c in mem_data.get("changes", []):
+                        if isinstance(c, dict) and c.get("action") in ("edited", "added", "modified"):
+                            p_str = c.get("path")
+                            if p_str:
+                                self.push_latest_file(p_str)
+                    for p_str in mem_data.get("edited_files", []):
+                        if p_str:
+                            self.push_latest_file(p_str)
+            except Exception:
+                pass
             
         return {"memories_pushed": memories_pushed}
+
+    def auto_restore_brain_files_from_data(self, mem_data: dict) -> list[str]:
+        """Auto-restore missing brain files referenced in a memory dict from Google Drive."""
+        from aivc.config import get_home_dir, extract_brain_subpath
+        import re
+
+        restored: list[str] = []
+        home = get_home_dir()
+
+        # Collect candidate subpaths under brain/
+        candidate_subpaths: set[str] = set()
+
+        # 1. From changes
+        for c in mem_data.get("changes", []):
+            p = c.get("path") if isinstance(c, dict) else str(c)
+            sub = extract_brain_subpath(p)
+            if sub:
+                candidate_subpaths.add(sub)
+
+        # 2. From edited_files and read_files
+        for p in mem_data.get("edited_files", []) + mem_data.get("read_files", []):
+            sub = extract_brain_subpath(p)
+            if sub:
+                candidate_subpaths.add(sub)
+
+        # 3. From user_items (task and details)
+        brain_regex = re.compile(
+            r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
+            re.IGNORECASE,
+        )
+        for item in mem_data.get("user_items", []) or mem_data.get("tasks", []):
+            if isinstance(item, dict):
+                text_to_scan = f"{item.get('task', '')} {item.get('details', '')}"
+                for m in brain_regex.finditer(text_to_scan):
+                    raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    if raw:
+                        candidate_subpaths.add(raw)
+
+        # 4. From journal and note
+        for text in (mem_data.get("journal", ""), mem_data.get("note", "")):
+            if text:
+                for m in brain_regex.finditer(text):
+                    raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    if raw:
+                        candidate_subpaths.add(raw)
+
+        # Download any missing files
+        for sub in candidate_subpaths:
+            local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+            if local_path.is_file():
+                continue
+            portable = f"~/.gemini/antigravity/brain/{sub.replace('\\', '/')}"
+            try:
+                dest = self.pull_latest_file(portable, target_path=local_path)
+                if dest and dest.is_file():
+                    restored.append(str(local_path))
+            except Exception:
+                pass
+
+        return restored
 
     def pull_memories_from_others(self) -> int:
         """Pull memories from other machines listed in config.
@@ -474,11 +560,21 @@ class NativeDriveSyncManager:
                     sys.stderr.flush()
                     failures.append((filename, e))
 
+        # Auto-restore brain files for newly downloaded memories if missing locally
+        for file_id, dest_path in missing_files:
+            try:
+                if dest_path.is_file():
+                    mem_data = json.loads(dest_path.read_text(encoding="utf-8"))
+                    self.auto_restore_brain_files_from_data(mem_data)
+            except Exception:
+                pass
+
         if failures:
             error_details = ", ".join(f"{name}: {err}" for name, err in failures)
             raise RuntimeError(f"Failed to download {len(failures)} memory files: {error_details}")
 
         return pulled_count
+
 
     # Blob sync (push_blob, fetch_blob) has been purged in Phase 30.
 

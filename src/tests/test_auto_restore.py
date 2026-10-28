@@ -258,3 +258,123 @@ def test_auto_restore_negative_cache(tmp_path: Path, monkeypatch):
     assert restored2 == []
     assert mock_sync.pull_latest_file.call_count == 0
 
+
+def test_auto_restore_brain_files_from_user_items_and_links(tmp_path: Path, monkeypatch):
+    """Verify brain files linked in user_items details or journal (even foreign user paths) are restored."""
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+
+    storage_root = tmp_path / ".aivc" / "storage"
+    ws = Workspace(storage_root)
+
+    expected_local = tmp_path / ".gemini" / "antigravity" / "brain" / "conv-other" / "plan.md"
+    assert not expected_local.exists()
+
+    foreign_link = "file:///C:/Users/other_user/.gemini/antigravity/brain/conv-other/plan.md"
+    mem = Memory(
+        id="mem-link-test",
+        timestamp="2026-10-28T10:00:00Z",
+        title="Deliverable with brain link",
+        note="Some note",
+        parent_id=None,
+        user_items=[
+            {
+                "id": "deliv-1",
+                "task": "Review plan",
+                "details": f"See artifact [Plan]({foreign_link})",
+                "task_status": "await_validation",
+            }
+        ],
+    )
+
+    mock_sync = MagicMock()
+    mock_sync.enabled = True
+
+    def fake_pull(file_path, target_path=None):
+        target = Path(target_path) if target_path else from_portable_path(file_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"# Restored Plan Content")
+        return target
+
+    mock_sync.pull_latest_file.side_effect = fake_pull
+
+    restored = ws.auto_restore_brain_files(mem, sync_manager=mock_sync)
+    assert str(expected_local) in restored
+    assert expected_local.is_file()
+    assert expected_local.read_bytes() == b"# Restored Plan Content"
+
+
+def test_push_latest_file_exclusions(tmp_path: Path, monkeypatch):
+    """Verify push_latest_file ignores .git, node_modules, >25MB files, and handles absent Drive gracefully."""
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+    from aivc.sync.drive import NativeDriveSyncManager
+
+    mgr = NativeDriveSyncManager(tmp_path / "storage")
+    mgr.enabled = True
+
+    # 1. File inside .git folder
+    git_file = tmp_path / ".git" / "config"
+    git_file.parent.mkdir(parents=True, exist_ok=True)
+    git_file.write_bytes(b"git config")
+    assert mgr.push_latest_file(git_file) is False
+
+    # 2. File inside node_modules
+    nm_file = tmp_path / "node_modules" / "pkg" / "index.js"
+    nm_file.parent.mkdir(parents=True, exist_ok=True)
+    nm_file.write_bytes(b"exports = {}")
+    assert mgr.push_latest_file(nm_file) is False
+
+    # 3. File > 25 MB
+    large_file = tmp_path / "large.bin"
+    large_file.write_bytes(b"0" * 1024)
+    # Mock stat to simulate > 25MB
+    mock_stat = MagicMock()
+    mock_stat.st_size = 26 * 1024 * 1024
+    monkeypatch.setattr(Path, "stat", lambda self: mock_stat if self == large_file else Path.stat(self))
+    assert mgr.push_latest_file(large_file) is False
+
+    # 4. Absent / unauthenticated Drive does not crash and returns False
+    normal_file = tmp_path / ".gemini" / "antigravity" / "brain" / "conv-x" / "test.md"
+    normal_file.parent.mkdir(parents=True, exist_ok=True)
+    normal_file.write_bytes(b"content")
+    # Will fail authentication gracefully
+    res = mgr.push_latest_file(normal_file)
+    assert res is False
+
+
+def test_advance_sync_auto_restore_brain_files(tmp_path: Path, monkeypatch):
+    """Verify sync_advance_tldr and restore_brain_files_for_memory restore brain files on new PC."""
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+    from aivc.advance_sync import restore_brain_files_for_memory, sync_advance_tldr
+
+    brain_file = tmp_path / ".gemini" / "antigravity" / "brain" / "conv-adv" / "report.md"
+    assert not brain_file.exists()
+
+    foreign_path = r"C:\Users\hjamet\.gemini\antigravity\brain\conv-adv\report.md"
+    mem = Memory(
+        id="mem-adv-1",
+        timestamp="2026-10-28T10:00:00Z",
+        title="[Advance] Test Project",
+        note="Note with report link",
+        parent_id=None,
+        changes=[FileChange(path=foreign_path, action="edited")],
+        user_items=[{"id": "t-1", "task": "Check report", "details": foreign_path, "task_status": "await_validation"}],
+    )
+
+
+    mock_sync = MagicMock()
+    mock_sync.enabled = True
+
+    def fake_pull(file_path, target_path=None):
+        target = Path(target_path) if target_path else from_portable_path(file_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"# Restored Report Content")
+        return target
+
+    mock_sync.pull_latest_file.side_effect = fake_pull
+
+    restored = restore_brain_files_for_memory(mem, sync_manager=mock_sync)
+    assert str(brain_file) in restored
+    assert brain_file.is_file()
+    assert brain_file.read_bytes() == b"# Restored Report Content"
+
+

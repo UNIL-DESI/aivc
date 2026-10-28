@@ -115,6 +115,16 @@ def to_portable_path(path_str: str | Path) -> str:
     else:
         s = str(path_str).strip().replace("\\", "/")
 
+    # Strip file URI prefix if present
+    if s.startswith("file:///"):
+        s = s[8:]
+    elif s.startswith("file://"):
+        s = s[7:]
+
+    # Strip trailing line numbers e.g. :L10-L20 if present
+    if ":L" in s or re.search(r":\d+", s):
+        s = re.split(r":L?\d+", s)[0]
+
     # If s contains a segment '/~/' (e.g. from concatenation with workspace root), extract the '~/' part
     if "/~/" in s:
         idx = s.rfind("/~/")
@@ -145,8 +155,8 @@ def to_portable_path(path_str: str | Path) -> str:
 
     patterns = [
         r"^[A-Za-z]:/Users/[^/]+/(.*)$",
-        r"^/Users/[^/]+/(.*)$",
-        r"^/home/[^/]+/(.*)$",
+        r"^/?Users/[^/]+/(.*)$",
+        r"^/?home/[^/]+/(.*)$",
     ]
     for pattern in patterns:
         m = re.match(pattern, s, re.IGNORECASE)
@@ -155,14 +165,41 @@ def to_portable_path(path_str: str | Path) -> str:
 
     exact_patterns = [
         r"^[A-Za-z]:/Users/[^/]+/?$",
-        r"^/Users/[^/]+/?$",
-        r"^/home/[^/]+/?$",
+        r"^/?Users/[^/]+/?$",
+        r"^/?home/[^/]+/?$",
     ]
     for pattern in exact_patterns:
         if re.match(pattern, s, re.IGNORECASE):
             return "~"
 
     return s
+
+
+def extract_brain_subpath(raw_path: str | Path) -> str | None:
+    """Extract relative path after .gemini/antigravity/brain/ from any path, URI, or link.
+
+    Example:
+        'file:///C:/Users/other/.gemini/antigravity/brain/conv-1/doc.md' -> 'conv-1/doc.md'
+    """
+    if not raw_path:
+        return None
+    s = str(raw_path).strip().replace("\\", "/")
+    if s.startswith("file:///"):
+        s = s[8:]
+    elif s.startswith("file://"):
+        s = s[7:]
+
+    # Strip line numbers
+    if ":L" in s or re.search(r":\d+", s):
+        s = re.split(r":L?\d+", s)[0]
+
+    marker = ".gemini/antigravity/brain/"
+    idx = s.lower().find(marker)
+    if idx != -1:
+        rel = s[idx + len(marker):].strip().strip("/")
+        return rel if rel else None
+    return None
+
 
 
 def from_portable_path(path_str: str | Path) -> Path:

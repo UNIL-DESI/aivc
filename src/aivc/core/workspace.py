@@ -794,37 +794,69 @@ class Workspace:
         (or recoverable via other commits or sync_manager), it is restored to disk.
         Returns the list of restored local file paths.
         """
-        restored: list[str] = []
+        import re
+        from aivc.config import extract_brain_subpath, get_home_dir
 
+        restored: list[str] = []
+        home = get_home_dir()
+
+        # Collect candidate items: (subpath_under_brain, blob_hash_or_None)
+        candidates: dict[str, str | None] = {}
+
+        # 1. From changes
         for change in getattr(memory, "changes", []):
             path_str = getattr(change, "path", "")
             if not path_str:
                 continue
+            sub = extract_brain_subpath(path_str)
+            if sub and sub not in candidates:
+                candidates[sub] = getattr(change, "blob_hash", None)
 
-            # Normalize to portable path, then to current machine local path
-            portable = to_portable_path(path_str)
-            local_path = from_portable_path(portable)
+        # 2. From edited_files and read_files
+        for path_str in getattr(memory, "edited_files", []) + getattr(memory, "read_files", []):
+            sub = extract_brain_subpath(path_str)
+            if sub and sub not in candidates:
+                candidates[sub] = None
 
-            # Check if file is located under .gemini/antigravity/brain/
-            posix_path = local_path.as_posix()
-            if ".gemini/antigravity/brain" not in posix_path and not portable.startswith("~/.gemini/antigravity/brain"):
-                continue
+        # 3. From user_items (task, details)
+        brain_regex = re.compile(
+            r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
+            re.IGNORECASE,
+        )
+        for item in getattr(memory, "user_items", []) or []:
+            if isinstance(item, dict):
+                text = f"{item.get('task', '')} {item.get('details', '')}"
+                for m in brain_regex.finditer(text):
+                    raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    if raw and raw not in candidates:
+                        candidates[raw] = None
+
+        # 4. From journal and note
+        for text in (getattr(memory, "journal", ""), getattr(memory, "note", "")):
+            if text:
+                for m in brain_regex.finditer(text):
+                    raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    if raw and raw not in candidates:
+                        candidates[raw] = None
+
+        for sub, blob_hash in candidates.items():
+            local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+            portable = f"~/.gemini/antigravity/brain/{sub.replace('\\', '/')}"
 
             # If file already exists locally on disk, nothing to restore
             if local_path.is_file():
                 continue
 
             content: bytes | None = None
-            blob_hash = getattr(change, "blob_hash", None)
 
-            # 1. Try retrieving directly from blob_store using change.blob_hash
+            # 1. Try retrieving directly from blob_store using blob_hash
             if blob_hash:
                 try:
                     content = self._blob_store.retrieve(blob_hash)
                 except KeyError:
                     content = None
 
-            # 2. If not found in change, check if another commit indexed this exact file
+            # 2. If not found, check if another commit indexed this exact file
             if content is None:
                 try:
                     hashes = self._index.get_blob_hashes_for_file(portable)
@@ -837,6 +869,7 @@ class Workspace:
                             continue
                 except Exception:
                     pass
+
 
             # 3. If still not found, try sync_manager (Google Drive) if available
             if content is None and sync_manager is not None:

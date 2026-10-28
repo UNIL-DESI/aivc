@@ -165,6 +165,8 @@ class Memory:
 
 def memory_to_dict(memory: Memory) -> dict[str, Any]:
     """Serialise a Memory to a JSON-compatible dict."""
+    edited_files = [c.path for c in memory.changes if c.action in ("edited", "added", "modified")]
+    read_files = [c.path for c in memory.changes if c.action == "consulted"]
     return {
         "id": memory.id,
         "timestamp": memory.timestamp,
@@ -175,14 +177,18 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
         "parent_id": memory.parent_id,
         "machine_id": memory.machine_id,
         "urls": list(memory.urls),
+        "edited_files": edited_files,
+        "read_files": read_files,
         "changes": [
             {
                 "path": c.path,
                 "action": c.action,
+                **({"blob_hash": c.blob_hash} if c.blob_hash else {}),
             }
             for c in memory.changes
         ],
     }
+
 
 
 def memory_from_dict(data: dict[str, Any]) -> Memory:

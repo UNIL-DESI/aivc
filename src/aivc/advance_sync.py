@@ -120,6 +120,91 @@ def is_obsidian_related_memory(memory: Any) -> bool:
     return False
 
 
+def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> list[str]:
+    """Auto-restores files under .gemini/antigravity/brain/ referenced by memory if missing locally.
+    Remaps any foreign machine paths to current PC's Path.home() / .gemini/antigravity/brain/...
+    """
+    from aivc.config import get_home_dir, extract_brain_subpath, get_storage_root
+    from aivc.sync.drive import NativeDriveSyncManager
+
+    home = get_home_dir()
+    restored: list[str] = []
+
+    # Prepare sync_manager if not provided
+    mgr = sync_manager
+    if mgr is None:
+        try:
+            storage_root = get_storage_root(allow_fallback=True)
+            mgr = NativeDriveSyncManager(storage_root)
+        except Exception:
+            mgr = None
+
+    if mgr is None or not getattr(mgr, "enabled", False):
+        return []
+
+    # Collect subpaths under brain/
+    candidate_subpaths: set[str] = set()
+
+    if isinstance(memory, dict):
+        changes = memory.get("changes", []) or []
+        edited_files = memory.get("edited_files", []) or []
+        read_files = memory.get("read_files", []) or []
+        user_items = memory.get("user_items", []) or memory.get("tasks", []) or []
+        texts = [memory.get("journal", ""), memory.get("note", "")]
+    else:
+        changes = getattr(memory, "changes", []) or []
+        edited_files = getattr(memory, "edited_files", []) or []
+        read_files = getattr(memory, "read_files", []) or []
+        user_items = getattr(memory, "user_items", []) or []
+        texts = [getattr(memory, "journal", ""), getattr(memory, "note", "")]
+
+    for c in changes:
+        p = getattr(c, "path", None) if hasattr(c, "path") else (c.get("path") if isinstance(c, dict) else str(c))
+        sub = extract_brain_subpath(p)
+        if sub:
+            candidate_subpaths.add(sub)
+
+    for p in edited_files + read_files:
+        p_val = p.get("path") if isinstance(p, dict) else str(p)
+        sub = extract_brain_subpath(p_val)
+        if sub:
+            candidate_subpaths.add(sub)
+
+    brain_regex = re.compile(
+        r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
+        re.IGNORECASE,
+    )
+
+    for item in user_items:
+        if isinstance(item, dict):
+            t = f"{item.get('task', '')} {item.get('details', '')}"
+            for m in brain_regex.finditer(t):
+                raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                if raw:
+                    candidate_subpaths.add(raw)
+
+    for txt in texts:
+        if txt:
+            for m in brain_regex.finditer(txt):
+                raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                if raw:
+                    candidate_subpaths.add(raw)
+
+    for sub in candidate_subpaths:
+        local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+        if local_path.is_file():
+            continue
+        portable = f"~/.gemini/antigravity/brain/{sub.replace('\\', '/')}"
+        try:
+            dest = mgr.pull_latest_file(portable, target_path=local_path)
+            if dest and dest.is_file():
+                restored.append(str(local_path))
+        except Exception:
+            pass
+
+    return restored
+
+
 def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[str]:
     """Synchronizes advance_tldr/🤖 <Titre>.md for the given memory.
 
@@ -140,6 +225,14 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
     if not is_obsidian_related_memory(memory):
         return []
+
+    # Restore missing brain files referenced by this memory or active tasks
+    try:
+        restore_brain_files_for_memory(memory)
+    except Exception as e:
+        logger.debug("auto-restore in sync_advance_tldr skipped: %s", e)
+
+
 
     mod = _load_project_memory_module()
     if mod is None:
