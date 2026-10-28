@@ -444,7 +444,8 @@ class NativeDriveSyncManager:
             local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
             if local_path.is_file():
                 continue
-            portable = f"~/.gemini/antigravity/brain/{sub.replace('\\', '/')}"
+            sub_posix = sub.replace("\\", "/")
+            portable = f"~/.gemini/antigravity/brain/{sub_posix}"
             try:
                 dest = self.pull_latest_file(portable, target_path=local_path)
                 if dest and dest.is_file():

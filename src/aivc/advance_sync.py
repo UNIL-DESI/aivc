@@ -194,7 +194,8 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
         local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
         if local_path.is_file():
             continue
-        portable = f"~/.gemini/antigravity/brain/{sub.replace('\\', '/')}"
+        sub_posix = sub.replace("\\", "/")
+        portable = f"~/.gemini/antigravity/brain/{sub_posix}"
         try:
             dest = mgr.pull_latest_file(portable, target_path=local_path)
             if dest and dest.is_file():

@@ -841,7 +841,8 @@ class Workspace:
 
         for sub, blob_hash in candidates.items():
             local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
-            portable = f"~/.gemini/antigravity/brain/{sub.replace('\\', '/')}"
+            sub_posix = sub.replace("\\", "/")
+            portable = f"~/.gemini/antigravity/brain/{sub_posix}"
 
             # If file already exists locally on disk, nothing to restore
             if local_path.is_file():
