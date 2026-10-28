@@ -9,6 +9,13 @@ import os
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Set mission-critical environment variables before heavy ML imports
 # This completely bypasses the 5-minute atexit/thread deadlock on Windows
 # caused by ChromaDB PostHog telemetry failing on corporate firewalls.

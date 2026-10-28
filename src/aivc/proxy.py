@@ -112,9 +112,11 @@ def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
 def main() -> None:
     if sys.platform == "win32":
         if hasattr(sys.stdin, "reconfigure"):
-            sys.stdin.reconfigure(encoding="utf-8")
+            sys.stdin.reconfigure(encoding="utf-8", errors="replace")
         if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     port = int(os.environ.get("AIVC_DAEMON_PORT", "18765"))
     ensure_daemon_running(port)

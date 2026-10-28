@@ -185,6 +185,8 @@ class SemanticEngine:
             commits_dir = self._workspace._commits_dir
             if commits_dir.exists():
                 for json_file in commits_dir.glob("*.json"):
+                    if json_file.stat().st_size == 0:
+                        continue
                     try:
                         memory_id = json_file.stem
                         memory = self._workspace._load_memory(memory_id)
@@ -349,6 +351,13 @@ class SemanticEngine:
         # Step 4: Invalidate hints cache
         self._local_hints_index = None
 
+        # Step 5: Auto-sync advance_tldr notes for Obsidian projects
+        try:
+            from aivc.advance_sync import sync_advance_tldr
+            sync_advance_tldr(memory)
+        except Exception as e:
+            logger.warning("Failed to auto-sync advance_tldr in engine.remember: %s", e)
+
         return memory
 
     def create_memory(
@@ -383,6 +392,8 @@ class SemanticEngine:
             import json
             try:
                 for json_file in self._workspace._commits_dir.glob("*.json"):
+                    if json_file.stat().st_size == 0:
+                        continue
                     data = json.loads(json_file.read_text(encoding="utf-8"))
                     for item in data.get("user_items", []):
                         if item.get("id") in done_ids:
@@ -441,6 +452,8 @@ class SemanticEngine:
                     commits_dir = self._workspace._commits_dir
                     if commits_dir.exists():
                         for json_file in commits_dir.glob("*.json"):
+                            if json_file.stat().st_size == 0:
+                                continue
                             try:
                                 memory = self._workspace._load_memory(json_file.stem)
                                 all_memories.append(memory)

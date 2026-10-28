@@ -14,6 +14,13 @@ import os
 import sys
 import logging
 
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 logger = logging.getLogger(__name__)
 
 # Set mission-critical environment variables before heavy ML imports
@@ -126,11 +133,11 @@ def _render_file_tree(paths: list[str], path_extras: dict[str, str] = None, inde
         return "—"
 
     if len(paths) == 1:
-        common_root = os.path.dirname(paths[0])
+        common_root = os.path.dirname(os.path.abspath(os.path.expanduser(paths[0])))
     else:
         try:
             # Safely find a common directory prefix
-            abs_paths = [os.path.abspath(p) for p in paths]
+            abs_paths = [os.path.abspath(os.path.expanduser(p)) for p in paths]
             common_root = os.path.commonpath([os.path.dirname(p) for p in abs_paths])
         except ValueError:
             common_root = ""
@@ -138,13 +145,14 @@ def _render_file_tree(paths: list[str], path_extras: dict[str, str] = None, inde
     tree: dict = {}
 
     for path in paths:
+        norm_p = os.path.abspath(os.path.expanduser(path))
         if common_root:
             try:
-                rel_path = os.path.relpath(path, common_root)
+                rel_path = os.path.relpath(norm_p, common_root)
             except ValueError:
-                rel_path = path
+                rel_path = norm_p
         else:
-            rel_path = path
+            rel_path = norm_p
 
         if rel_path == ".":
             continue
@@ -266,12 +274,19 @@ async def remember(
         ]
         items_summary = "\n\nActions Utilisateur :\n" + "\n".join(items_lines)
 
+    tldr_summary = ""
+    synced_paths = getattr(memory, "_tldr_synced_paths", [])
+    if synced_paths:
+        tldr_lines = [f"  - {p}" for p in synced_paths]
+        tldr_summary = "\n\nAdvance TLDR Synchronisés :\n" + "\n".join(tldr_lines)
+
     return (
         f"✅ Memory successfully created.\n"
         f"ID        : {memory.id}\n"
         f"Title     : {memory.title}\n"
         f"Files Recorded:\n{changes_summary_str}"
         f"{items_summary}"
+        f"{tldr_summary}"
     )
 
 
@@ -438,12 +453,6 @@ def get_file_history(file_path: str) -> str:
 
     if not memories:
         return _format_cold_start_payload(f"pour `{file_path}`")
-
-    for mem in memories:
-        try:
-            engine.auto_restore_brain_files(mem)
-        except Exception:
-            pass
 
     lines = [f"## AIVC History for: `{file_path}`\n"]
     lines.append(f"{len(memories)} memory(ies) have touched this file:\n")
