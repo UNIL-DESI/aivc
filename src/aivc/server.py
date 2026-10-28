@@ -133,11 +133,11 @@ def _render_file_tree(paths: list[str], path_extras: dict[str, str] = None, inde
         return "—"
 
     if len(paths) == 1:
-        common_root = os.path.dirname(paths[0])
+        common_root = os.path.dirname(os.path.abspath(os.path.expanduser(paths[0])))
     else:
         try:
             # Safely find a common directory prefix
-            abs_paths = [os.path.abspath(p) for p in paths]
+            abs_paths = [os.path.abspath(os.path.expanduser(p)) for p in paths]
             common_root = os.path.commonpath([os.path.dirname(p) for p in abs_paths])
         except ValueError:
             common_root = ""
@@ -145,13 +145,14 @@ def _render_file_tree(paths: list[str], path_extras: dict[str, str] = None, inde
     tree: dict = {}
 
     for path in paths:
+        norm_p = os.path.abspath(os.path.expanduser(path))
         if common_root:
             try:
-                rel_path = os.path.relpath(path, common_root)
+                rel_path = os.path.relpath(norm_p, common_root)
             except ValueError:
-                rel_path = path
+                rel_path = norm_p
         else:
-            rel_path = path
+            rel_path = norm_p
 
         if rel_path == ".":
             continue
