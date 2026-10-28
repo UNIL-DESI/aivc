@@ -250,6 +250,8 @@ async def remember(
         syncer = _get_syncer()
         if syncer and syncer.manager.enabled:
             syncer.trigger_sync()
+        from aivc.sync.semantic_export import trigger_semantic_export_async
+        trigger_semantic_export_async(_storage_root)
     except Exception as e:
         import sys
         print(f"Warning: Failed to trigger instant sync push: {e}", file=sys.stderr)
