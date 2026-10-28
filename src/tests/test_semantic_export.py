@@ -264,3 +264,87 @@ def test_semantic_drive_exporter_mock(tmp_path: Path):
     # Archives_Await_Validation: 1 batch (empty list produces 1 empty/initial doc)
     # Archives_Validated: 1 batch
     assert result["synced_archives"] >= 4
+
+
+def test_format_live_and_archive_document_validated_details():
+    items = [
+        {
+            "id": "t-val-1",
+            "task": "Intégration validée",
+            "project": "Projet : AIVC",
+            "timestamp": "2026-10-28T12:00:00Z",
+            "status": "validated",
+            "details": "[VALIDÉ PAR HENRI] Validation formelle reçue.",
+            "journal": "",
+        },
+        {
+            "id": "t-val-2",
+            "task": "Piste écartée",
+            "project": "Projet : AIVC",
+            "timestamp": "2026-10-28T12:00:00Z",
+            "status": "validated",
+            "details": "[ÉCARTÉ PAR HENRI] Piste abandonnée au profit d'une alternative.",
+            "journal": "",
+        },
+    ]
+    live_doc = format_live_document("validated", items)
+    assert "- **Décision & Détails** :\n[VALIDÉ PAR HENRI] Validation formelle reçue." in live_doc
+    assert "- **Décision & Détails** :\n[ÉCARTÉ PAR HENRI] Piste abandonnée au profit d'une alternative." in live_doc
+
+    archive_doc = format_archive_document("validated", items, 1, 1)
+    assert "- **Décision & Détails** :\n[VALIDÉ PAR HENRI] Validation formelle reçue." in archive_doc
+    assert "- **Décision & Détails** :\n[ÉCARTÉ PAR HENRI] Piste abandonnée au profit d'une alternative." in archive_doc
+
+
+def test_semantic_drive_exporter_blocked_during_pytest(tmp_path: Path):
+    from aivc.sync.semantic_export import trigger_semantic_export_async
+
+    # Non-mock manager or default manager should be blocked
+    real_like_manager = MagicMock()
+    # If not a MagicMock instance check, let's test with a dummy object
+    class FakeRealManager:
+        enabled = True
+        storage_root = tmp_path
+
+    exporter = SemanticDriveExporter(drive_sync_manager=FakeRealManager(), storage_root=tmp_path)
+    res = exporter.export_all()
+    assert res["status"] == "blocked"
+    assert res["reason"] == "pytest_active"
+
+    # trigger_semantic_export_async should return immediately without thread execution
+    # when under pytest
+    trigger_semantic_export_async(tmp_path)
+
+
+def test_upsert_gdoc_and_folder_deduplication(tmp_path: Path):
+    mock_service = MagicMock()
+    mock_files = mock_service.files.return_value
+
+    # Simulate duplicates in list
+    mock_files.list.return_value.execute.side_effect = [
+        # for folder
+        {"files": [{"id": "f-orig", "name": "TestFolder"}, {"id": "f-dup1", "name": "TestFolder"}]},
+        # for doc
+        {"files": [{"id": "d-orig", "name": "TestDoc"}, {"id": "d-dup1", "name": "TestDoc"}]},
+    ]
+    mock_files.update.return_value.execute.side_effect = [
+        {"id": "trashed-folder"},
+        {"id": "trashed-doc"},
+        {"id": "d-orig"},
+    ]
+
+    mock_manager = MagicMock()
+    mock_manager.enabled = True
+    mock_manager._get_service.return_value = mock_service
+
+    exporter = SemanticDriveExporter(drive_sync_manager=mock_manager, storage_root=tmp_path)
+    folder_id = exporter._get_or_create_folder("TestFolder", "root")
+    assert folder_id == "f-orig"
+    # dup1 must be trashed
+    mock_files.update.assert_any_call(fileId="f-dup1", body={"trashed": True})
+
+    doc_id = exporter._upsert_gdoc("TestDoc", "root", "hello")
+    assert doc_id == "d-orig"
+    # dup1 must be trashed
+    mock_files.update.assert_any_call(fileId="d-dup1", body={"trashed": True})
+

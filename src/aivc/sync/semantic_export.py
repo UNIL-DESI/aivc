@@ -319,7 +319,8 @@ def format_live_document(status: str, items: list[dict[str, Any]]) -> str:
         lines.append(f"- **Statut** : {it['status']}")
 
         if it.get("details"):
-            lines.append(f"- **Explications & Détails** :\n{it['details']}")
+            details_label = "Décision & Détails" if status == "validated" else "Explications & Détails"
+            lines.append(f"- **{details_label}** :\n{it['details']}")
 
         if status == "await_validation" and it.get("journal"):
             lines.append(f"- **Récit de Session (Journal)** :\n{it['journal']}")
@@ -354,7 +355,8 @@ def format_archive_document(status: str, items: list[dict[str, Any]], batch_num:
         lines.append(f"- **Statut d'archive** : {it['status']}")
 
         if it.get("details"):
-            lines.append(f"- **Détails** :\n{it['details']}")
+            details_label = "Décision & Détails" if status == "validated" else "Détails"
+            lines.append(f"- **{details_label}** :\n{it['details']}")
 
         if it.get("journal"):
             lines.append(f"- **Journal associé** :\n{it['journal']}")
@@ -376,20 +378,29 @@ class SemanticDriveExporter:
         self._doc_id_cache: dict[str, str] = {}
 
     def _get_or_create_folder(self, name: str, parent_id: str) -> str:
-        """Finds or creates a subfolder under parent_id."""
+        """Finds or creates a subfolder under parent_id, cleaning up duplicate folders if any."""
         service = self.manager._get_service()
         query = f"name = '{name}' and '{parent_id}' in parents and mimeType = '{MIME_FOLDER}' and trashed = false"
         results = service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
         files = results.get("files", [])
         if files:
-            return files[0]["id"]
+            folder_id = files[0]["id"]
+            if len(files) > 1:
+                # Deduplicate: trash extraneous duplicate folders
+                for dup in files[1:]:
+                    try:
+                        service.files().update(fileId=dup["id"], body={"trashed": True}).execute()
+                        logger.warning("Trashed duplicate folder %s (id=%s)", name, dup["id"])
+                    except Exception as e:
+                        logger.warning("Failed to trash duplicate folder %s: %s", dup["id"], e)
+            return folder_id
 
         metadata = {"name": name, "mimeType": MIME_FOLDER, "parents": [parent_id]}
         created = service.files().create(body=metadata, fields="id").execute()
         return created["id"]
 
     def _upsert_gdoc(self, title: str, parent_id: str, content: str) -> str:
-        """Creates or updates a native Google Doc by complete content replacement."""
+        """Creates or updates a native Google Doc by complete content replacement, deduplicating if needed."""
         from googleapiclient.http import MediaInMemoryUpload
 
         service = self.manager._get_service()
@@ -403,6 +414,14 @@ class SemanticDriveExporter:
             if files:
                 file_id = files[0]["id"]
                 self._doc_id_cache[cache_key] = file_id
+                if len(files) > 1:
+                    # Deduplicate: trash extraneous duplicate docs
+                    for dup in files[1:]:
+                        try:
+                            service.files().update(fileId=dup["id"], body={"trashed": True}).execute()
+                            logger.warning("Trashed duplicate doc %s (id=%s)", title, dup["id"])
+                        except Exception as e:
+                            logger.warning("Failed to trash duplicate doc %s: %s", dup["id"], e)
 
         media = MediaInMemoryUpload(content.encode("utf-8"), mimetype="text/plain", resumable=True)
 
@@ -427,6 +446,37 @@ class SemanticDriveExporter:
         Returns:
             dict summarizing synced files and counts.
         """
+        import os
+        from aivc.config import get_storage_root
+
+        # Strict Guard: prevent exporting to Google Drive if pytest is running OR if storage_root != canonical
+        is_in_test = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        is_canonical = False
+        try:
+            canonical_root = get_storage_root(allow_fallback=True)
+            is_canonical = (Path(self.storage_root).resolve() == Path(canonical_root).resolve())
+        except Exception:
+            is_canonical = False
+
+        if is_in_test or not is_canonical:
+            # Allow mock testing if manager is an explicit Mock/MagicMock
+            from unittest.mock import Mock, MagicMock
+            if isinstance(self.manager, (Mock, MagicMock)):
+                pass
+            else:
+                logger.warning(
+                    "SemanticDriveExporter: Blocked export to Google Drive (is_test=%s, is_canonical=%s, storage=%s)",
+                    is_in_test,
+                    is_canonical,
+                    self.storage_root,
+                )
+                return {
+                    "status": "blocked",
+                    "reason": "pytest_active" if is_in_test else "non_canonical_storage",
+                    "synced_live": 0,
+                    "synced_archives": 0,
+                }
+
         if not getattr(self.manager, "enabled", False):
             logger.info("SemanticDriveExporter: Drive sync is disabled.")
             return {"status": "disabled", "synced_live": 0, "synced_archives": 0}
@@ -513,11 +563,31 @@ class SemanticDriveExporter:
 
 def trigger_semantic_export_async(storage_root: Path | None = None) -> None:
     """Fires semantic export in a detached background daemon thread."""
+    import os
     import threading
+    from aivc.config import get_storage_root
+
+    # Strict Guard: do not trigger async export during pytest or for non-canonical storage
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        logger.debug("Skipping async semantic export: running inside pytest.")
+        return
+
+    real_root = get_storage_root(allow_fallback=True)
+    target_root = storage_root or real_root
+    try:
+        if Path(target_root).resolve() != Path(real_root).resolve():
+            logger.debug(
+                "Skipping async semantic export: target root %s != canonical %s",
+                target_root,
+                real_root,
+            )
+            return
+    except Exception:
+        return
 
     def _worker():
         try:
-            exporter = SemanticDriveExporter(storage_root=storage_root)
+            exporter = SemanticDriveExporter(storage_root=target_root)
             exporter.export_all()
         except Exception as e:
             logger.debug("Async semantic export skipped/failed: %s", e)

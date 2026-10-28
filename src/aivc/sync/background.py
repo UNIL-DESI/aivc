@@ -52,12 +52,14 @@ class BackgroundSyncer:
                     logger.info("[AIVC Sync] Auto-pushed %d local memories to Drive.", pushed)
 
                 # 3. Export semantic task state to Google Drive Docs
-                try:
-                    from aivc.sync.semantic_export import SemanticDriveExporter
-                    exporter = SemanticDriveExporter(self.manager, storage_root=self.manager.storage_root)
-                    exporter.export_all()
-                except Exception as e:
-                    logger.warning("[AIVC Sync] Semantic export skipped or failed: %s", e)
+                import os
+                if not os.environ.get("PYTEST_CURRENT_TEST"):
+                    try:
+                        from aivc.sync.semantic_export import SemanticDriveExporter
+                        exporter = SemanticDriveExporter(self.manager, storage_root=self.manager.storage_root)
+                        exporter.export_all()
+                    except Exception as e:
+                        logger.warning("[AIVC Sync] Semantic export skipped or failed: %s", e)
 
             except Exception as e:
                 logger.exception("Background sync failed: %s", e)
