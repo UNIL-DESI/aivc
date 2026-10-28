@@ -545,6 +545,14 @@ class Workspace:
 
         self._state["head_commit_id"] = memory.id
         self._save_state()
+
+        # Step: Auto-sync advance_tldr notes for Obsidian projects
+        try:
+            from aivc.advance_sync import sync_advance_tldr
+            sync_advance_tldr(memory)
+        except Exception as e:
+            logger.warning("Failed to auto-sync advance_tldr in workspace.remember: %s", e)
+
         return memory
 
     def create_memory(

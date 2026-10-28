@@ -271,12 +271,19 @@ async def remember(
         ]
         items_summary = "\n\nActions Utilisateur :\n" + "\n".join(items_lines)
 
+    tldr_summary = ""
+    synced_paths = getattr(memory, "_tldr_synced_paths", [])
+    if synced_paths:
+        tldr_lines = [f"  - {p}" for p in synced_paths]
+        tldr_summary = "\n\nAdvance TLDR Synchronisés :\n" + "\n".join(tldr_lines)
+
     return (
         f"✅ Memory successfully created.\n"
         f"ID        : {memory.id}\n"
         f"Title     : {memory.title}\n"
         f"Files Recorded:\n{changes_summary_str}"
         f"{items_summary}"
+        f"{tldr_summary}"
     )
 
 

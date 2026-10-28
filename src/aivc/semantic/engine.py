@@ -351,6 +351,13 @@ class SemanticEngine:
         # Step 4: Invalidate hints cache
         self._local_hints_index = None
 
+        # Step 5: Auto-sync advance_tldr notes for Obsidian projects
+        try:
+            from aivc.advance_sync import sync_advance_tldr
+            sync_advance_tldr(memory)
+        except Exception as e:
+            logger.warning("Failed to auto-sync advance_tldr in engine.remember: %s", e)
+
         return memory
 
     def create_memory(
