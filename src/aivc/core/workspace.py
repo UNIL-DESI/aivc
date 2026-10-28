@@ -816,20 +816,10 @@ class Workspace:
                 except KeyError:
                     content = None
 
-            # 2. If not found in change, check if another commit indexed this exact file or filename
+            # 2. If not found in change, check if another commit indexed this exact file
             if content is None:
                 try:
                     hashes = self._index.get_blob_hashes_for_file(portable)
-                    if not hashes:
-                        filename = local_path.name
-                        cursor = self._index._conn.cursor()
-                        cursor.execute(
-                            "SELECT blob_hash FROM file_changes WHERE (path LIKE ? OR path LIKE ?) AND blob_hash IS NOT NULL LIMIT 1",
-                            (f"%/{filename}", f"%\\{filename}")
-                        )
-                        row = cursor.fetchone()
-                        if row and row[0]:
-                            hashes = {row[0]}
                     for h in hashes:
                         try:
                             content = self._blob_store.retrieve(h)
@@ -892,7 +882,6 @@ class Workspace:
                             cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
                         except Exception:
                             pass
-
             # Write content retrieved from blob_store to disk
             if content is not None:
                 try:

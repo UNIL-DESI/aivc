@@ -444,12 +444,6 @@ def get_file_history(file_path: str) -> str:
     if not memories:
         return _format_cold_start_payload(f"pour `{file_path}`")
 
-    for mem in memories:
-        try:
-            engine.auto_restore_brain_files(mem)
-        except Exception:
-            pass
-
     lines = [f"## AIVC History for: `{file_path}`\n"]
     lines.append(f"{len(memories)} memory(ies) have touched this file:\n")
 

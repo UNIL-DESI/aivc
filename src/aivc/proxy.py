@@ -34,10 +34,69 @@ def _check_health(port: int, timeout: float = 0.15) -> bool:
         return False
 
 
+def _is_port_occupied(port: int) -> bool:
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.2)
+            return s.connect_ex(("127.0.0.1", port)) == 0
+    except Exception:
+        return False
+
+
+def _get_daemon_json_path() -> Path:
+    custom_state = os.environ.get("AIVC_DAEMON_STATE_FILE")
+    if custom_state:
+        return Path(custom_state)
+    storage_root = os.environ.get("AIVC_STORAGE_ROOT")
+    if storage_root:
+        return Path(storage_root).parent / "daemon.json"
+    return Path.home() / ".aivc" / "daemon.json"
+
+
+def _cleanup_zombie(port: int) -> None:
+    daemon_path = _get_daemon_json_path()
+    stale_pid = None
+    if daemon_path.exists():
+        try:
+            state = json.loads(daemon_path.read_text(encoding="utf-8"))
+            stale_pid = state.get("pid")
+        except Exception:
+            pass
+        try:
+            daemon_path.unlink()
+        except Exception:
+            pass
+
+    if stale_pid:
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/F", "/PID", str(stale_pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+            else:
+                os.kill(stale_pid, 9)
+        except Exception:
+            pass
+
+    if sys.platform == "win32":
+        ps_kill = (
+            f"Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | "
+            "ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }"
+        )
+        try:
+            subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps_kill], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        except Exception:
+            pass
+    time.sleep(0.15)
+
+
 def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
     """Ensure the AIVC daemon is running on the given port, launching it if necessary."""
-    if _check_health(port, timeout=0.15):
+    if _check_health(port, timeout=0.2):
         return
+
+    # If port is occupied or daemon.json exists but /health fails, clean up stale zombie process
+    if _is_port_occupied(port) or _get_daemon_json_path().exists():
+        _cleanup_zombie(port)
 
     if sys.platform == "win32":
         venv_pythonw = Path(sys.executable).with_name("pythonw.exe")
@@ -56,8 +115,9 @@ def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
         # 1. Attempt launch via WMI / CIM with SW_HIDE (ShowWindow=0) to detach outside calling Job Object
         ps_cmd = (
             "$si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ShowWindow=[uint16]0}; "
-            "Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
-            f"-Arguments @{{CommandLine='{cmd_line}'; CurrentDirectory='{cwd_str}'; ProcessStartupInformation=$si}} | Out-Null"
+            "$res = Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
+            f"-Arguments @{{CommandLine='{cmd_line}'; CurrentDirectory='{cwd_str}'; ProcessStartupInformation=$si}}; "
+            "if ($res.ReturnValue -ne 0) { exit $res.ReturnValue }"
         )
         wmi_cmd = [
             "powershell.exe",
@@ -66,20 +126,16 @@ def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
             "-Command",
             ps_cmd,
         ]
+        wmi_launched = False
         try:
-            subprocess.run(wmi_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            res = subprocess.run(wmi_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            if res.returncode == 0:
+                wmi_launched = True
         except Exception:
-            pass
+            wmi_launched = False
 
-        # Give WMI a brief moment to bring the process up
-        start_wait = time.time()
-        while time.time() - start_wait < 1.5:
-            if _check_health(port, timeout=0.1):
-                return
-            time.sleep(0.1)
-
-        # 2. Fallback: detached Popen if WMI failed or port not yet responsive
-        if not _check_health(port, timeout=0.1):
+        # 2. Fallback: detached Popen only if WMI failed
+        if not wmi_launched:
             # DETACHED_PROCESS (0x8) | CREATE_NEW_PROCESS_GROUP (0x200) | CREATE_NO_WINDOW (0x08000000)
             flags = 0x00000008 | 0x00000200 | 0x08000000
             try:
@@ -109,9 +165,9 @@ def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
     # Wait for daemon to become healthy
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if _check_health(port, timeout=0.1):
+        if _check_health(port, timeout=0.15):
             return
-        time.sleep(0.1)
+        time.sleep(0.05)
 
     raise RuntimeError(f"AIVC daemon failed to start on port {port} within {timeout}s")
 
