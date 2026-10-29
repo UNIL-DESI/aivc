@@ -300,4 +300,74 @@ def test_pull_memories_from_others_triggers_sync_advance_tldr(tmp_path: Path, mo
         set_custom_sync_handler(None)
 
 
+def test_restore_brain_files_from_tldr_file_path(tmp_path: Path, monkeypatch):
+    """Verify restore_brain_files_for_memory accepts a file path, scans it, and decodes %20 URLs."""
+    from aivc.advance_sync import restore_brain_files_for_memory
+
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+
+    pulled_files = []
+    mock_mgr = MagicMock()
+    mock_mgr.enabled = True
+    def fake_pull(portable, target_path=None):
+        pulled_files.append((portable, target_path))
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text("restored", encoding="utf-8")
+        return target_path
+
+    mock_mgr.pull_latest_file = fake_pull
+
+    tldr_file = tmp_path / "advance_tldr" / "🤖 Frontier.md"
+    tldr_file.parent.mkdir(parents=True, exist_ok=True)
+    tldr_file.write_text(
+        "Link: [Doc](file:///C:/Users/test/.gemini/antigravity/brain/conv-abc/Analyse%20Équilibrage%20Test.md)\n"
+        "Canvas: [Canvas](file:///C:/Users/test/.gemini/antigravity/brain/conv-abc/Frontieres.canvas)",
+        encoding="utf-8",
+    )
+
+    restored = restore_brain_files_for_memory(tldr_file, sync_manager=mock_mgr)
+    assert len(restored) == 2
+    assert any("Analyse Équilibrage Test.md" in r for r in restored)
+    assert any("Frontieres.canvas" in r for r in restored)
+
+
+def test_restore_brain_files_scans_existing_advance_tldr_note(tmp_path: Path, monkeypatch):
+    """Verify restore_brain_files_for_memory scans the existing advance_tldr note of a project."""
+    from aivc.advance_sync import restore_brain_files_for_memory
+
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+
+    pulled_files = []
+    mock_mgr = MagicMock()
+    mock_mgr.enabled = True
+    def fake_pull(portable, target_path=None):
+        pulled_files.append((portable, target_path))
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text("restored", encoding="utf-8")
+        return target_path
+
+    mock_mgr.pull_latest_file = fake_pull
+
+    # Pre-create an existing advance_tldr note on disk referencing a brain file
+    tldr_note = tmp_path / ".gemini" / "antigravity" / "brain" / "advance_tldr" / "🤖 Frontier.md"
+    tldr_note.parent.mkdir(parents=True, exist_ok=True)
+    tldr_note.write_text(
+        "Existing link: [PDF](file:///C:/Users/other/.gemini/antigravity/brain/conv-xyz/rules.pdf)",
+        encoding="utf-8",
+    )
+
+    # Memory only references the main project file, no edited_files
+    mem = {
+        "id": "mem-frontier-new",
+        "title": "[Advance] Frontier",
+        "main_project_file": "~/Documents/VoiceNotes/notes/Frontier.md",
+        "user_items": [],
+    }
+
+    restored = restore_brain_files_for_memory(mem, sync_manager=mock_mgr)
+    assert len(restored) == 1
+    assert "rules.pdf" in restored[0]
+
+
+
 

@@ -162,7 +162,9 @@ def normalize_advance_tldr_title(title: str) -> str:
 def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> list[str]:
     """Auto-restores files under .gemini/antigravity/brain/ referenced by memory if missing locally.
     Remaps any foreign machine paths to current PC's Path.home() / .gemini/antigravity/brain/...
+    Supports memory objects, dicts, file paths, or advance_tldr notes.
     """
+    import urllib.parse
     from aivc.config import get_home_dir, extract_brain_subpath, get_storage_root
     from aivc.sync.drive import NativeDriveSyncManager
 
@@ -184,50 +186,83 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
     # Collect subpaths under brain/
     candidate_subpaths: set[str] = set()
 
-    if isinstance(memory, dict):
-        changes = memory.get("changes", []) or []
-        edited_files = memory.get("edited_files", []) or []
-        read_files = memory.get("read_files", []) or []
-        user_items = memory.get("user_items", []) or memory.get("tasks", []) or []
-        texts = [memory.get("journal", ""), memory.get("note", "")]
-    else:
-        changes = getattr(memory, "changes", []) or []
-        edited_files = getattr(memory, "edited_files", []) or []
-        read_files = getattr(memory, "read_files", []) or []
-        user_items = getattr(memory, "user_items", []) or []
-        texts = [getattr(memory, "journal", ""), getattr(memory, "note", "")]
-
-    for c in changes:
-        p = getattr(c, "path", None) if hasattr(c, "path") else (c.get("path") if isinstance(c, dict) else str(c))
-        sub = extract_brain_subpath(p)
-        if sub:
-            candidate_subpaths.add(sub)
-
-    for p in edited_files + read_files:
-        p_val = p.get("path") if isinstance(p, dict) else str(p)
-        sub = extract_brain_subpath(p_val)
-        if sub:
-            candidate_subpaths.add(sub)
-
     brain_regex = re.compile(
         r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
         re.IGNORECASE,
     )
 
-    for item in user_items:
-        if isinstance(item, dict):
-            t = f"{item.get('task', '')} {item.get('details', '')}"
-            for m in brain_regex.finditer(t):
-                raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+    if isinstance(memory, (str, Path)):
+        p_mem = Path(memory)
+        if p_mem.is_file():
+            try:
+                txt = p_mem.read_text(encoding="utf-8")
+                for m in brain_regex.finditer(txt):
+                    raw = urllib.parse.unquote(m.group(1)).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    if raw:
+                        candidate_subpaths.add(raw)
+            except Exception:
+                pass
+        else:
+            for m in brain_regex.finditer(str(memory)):
+                raw = urllib.parse.unquote(m.group(1)).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
                 if raw:
                     candidate_subpaths.add(raw)
+    else:
+        if isinstance(memory, dict):
+            changes = memory.get("changes", []) or []
+            edited_files = memory.get("edited_files", []) or []
+            read_files = memory.get("read_files", []) or []
+            user_items = memory.get("user_items", []) or memory.get("tasks", []) or []
+            texts = [memory.get("journal", ""), memory.get("note", "")]
+            mpf = memory.get("main_project_file", "")
+        else:
+            changes = getattr(memory, "changes", []) or []
+            edited_files = getattr(memory, "edited_files", []) or []
+            read_files = getattr(memory, "read_files", []) or []
+            user_items = getattr(memory, "user_items", []) or []
+            texts = [getattr(memory, "journal", ""), getattr(memory, "note", "")]
+            mpf = getattr(memory, "main_project_file", "")
 
-    for txt in texts:
-        if txt:
-            for m in brain_regex.finditer(txt):
-                raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
-                if raw:
-                    candidate_subpaths.add(raw)
+        for c in changes:
+            p = getattr(c, "path", None) if hasattr(c, "path") else (c.get("path") if isinstance(c, dict) else str(c))
+            sub = extract_brain_subpath(p)
+            if sub:
+                candidate_subpaths.add(urllib.parse.unquote(sub))
+
+        for p in edited_files + read_files:
+            p_val = p.get("path") if isinstance(p, dict) else str(p)
+            sub = extract_brain_subpath(p_val)
+            if sub:
+                candidate_subpaths.add(urllib.parse.unquote(sub))
+
+        for item in user_items:
+            if isinstance(item, dict):
+                t = f"{item.get('task', '')} {item.get('details', '')}"
+                for m in brain_regex.finditer(t):
+                    raw = urllib.parse.unquote(m.group(1)).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    if raw:
+                        candidate_subpaths.add(raw)
+
+        for txt in texts:
+            if txt:
+                for m in brain_regex.finditer(txt):
+                    raw = urllib.parse.unquote(m.group(1)).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    if raw:
+                        candidate_subpaths.add(raw)
+
+        if mpf:
+            try:
+                stem = Path(str(mpf)).stem
+                title = normalize_advance_tldr_title(stem)
+                tldr_candidate = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
+                if tldr_candidate.is_file():
+                    tldr_txt = tldr_candidate.read_text(encoding="utf-8")
+                    for m in brain_regex.finditer(tldr_txt):
+                        raw = urllib.parse.unquote(m.group(1)).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                        if raw:
+                            candidate_subpaths.add(raw)
+            except Exception:
+                pass
 
     for sub in candidate_subpaths:
         local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
@@ -258,6 +293,12 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
         if getattr(memory, "_tldr_synced", False):
             return getattr(memory, "_tldr_synced_paths", [])
 
+    # Restore missing brain files referenced by this memory or active tasks
+    try:
+        restore_brain_files_for_memory(memory)
+    except Exception as e:
+        logger.debug("auto-restore in sync_advance_tldr skipped: %s", e)
+
     if _CUSTOM_SYNC_HANDLER is not None:
         try:
             res = _CUSTOM_SYNC_HANDLER(memory, vault_dir=vault_dir)
@@ -267,6 +308,12 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
             else:
                 setattr(memory, "_tldr_synced", True)
                 setattr(memory, "_tldr_synced_paths", res or [])
+            if res:
+                for sp in res:
+                    try:
+                        restore_brain_files_for_memory(sp)
+                    except Exception:
+                        pass
             return res or []
         except Exception as e:
             logger.warning("Custom sync handler failed: %s", e)
@@ -274,12 +321,6 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
     if not is_obsidian_related_memory(memory):
         return []
-
-    # Restore missing brain files referenced by this memory or active tasks
-    try:
-        restore_brain_files_for_memory(memory)
-    except Exception as e:
-        logger.debug("auto-restore in sync_advance_tldr skipped: %s", e)
 
     mod = _load_project_memory_module()
     if mod is None:
@@ -294,6 +335,15 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
         vault_str = str(vault_dir) if vault_dir else str(get_vault_dir())
         synced_paths = sync_fn(memory, vault_dir=vault_str)
+
+        # Restore missing brain files referenced in newly generated/updated advance_tldr files
+        if synced_paths:
+            for sp in synced_paths:
+                try:
+                    restore_brain_files_for_memory(sp)
+                except Exception:
+                    pass
+
         if is_dict:
             memory["_tldr_synced"] = True
             memory["_tldr_synced_paths"] = synced_paths or []
