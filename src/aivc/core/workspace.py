@@ -14,6 +14,8 @@ import os
 import sys
 import time
 import uuid
+import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
@@ -23,7 +25,7 @@ from aivc.core.blob_store import BlobStore
 from aivc.core.memory import Memory, FileChange, memory_from_dict, memory_to_dict, _compose_note
 from aivc.core.diff import compute_diff
 from aivc.core.index import CoreIndex
-from aivc.config import get_machine_id, to_portable_path, from_portable_path
+from aivc.config import get_machine_id, to_portable_path, from_portable_path, get_aivc_temp_dir
 
 
 @dataclass
@@ -827,7 +829,7 @@ class Workspace:
 
         # 3. From user_items (task, details)
         brain_regex = re.compile(
-            r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
+            r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\"\'\`\)\>:]+)",
             re.IGNORECASE,
         )
         for item in getattr(memory, "user_items", []) or []:
@@ -846,10 +848,20 @@ class Workspace:
                     if raw and raw not in candidates:
                         candidates[raw] = None
 
+        temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
         for sub, blob_hash in candidates.items():
             local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+            temp_artifact_path = temp_artifacts_dir / Path(sub)
             sub_posix = sub.replace("\\", "/")
             portable = f"~/.gemini/antigravity/brain/{sub_posix}"
+
+            # Mirror to temp_artifacts_dir if local_path already exists
+            if local_path.is_file() and not temp_artifact_path.is_file():
+                try:
+                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(local_path, temp_artifact_path)
+                except OSError:
+                    pass
 
             # If file already exists locally on disk, nothing to restore
             if local_path.is_file():
@@ -907,6 +919,11 @@ class Workspace:
                             dest = sync_manager.pull_latest_file(portable, target_path=local_path)
                             if dest and dest.is_file():
                                 restored.append(str(local_path))
+                                try:
+                                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(local_path, temp_artifact_path)
+                                except OSError:
+                                    pass
                                 # Clean up cache if previously marked missing
                                 updated = False
                                 for key in cache_keys:
@@ -937,6 +954,11 @@ class Workspace:
                     local_path.parent.mkdir(parents=True, exist_ok=True)
                     local_path.write_bytes(content)
                     restored.append(str(local_path))
+                    try:
+                        temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(local_path, temp_artifact_path)
+                    except OSError:
+                        pass
                 except Exception:
                     pass
 

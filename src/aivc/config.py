@@ -21,9 +21,17 @@ def get_home_dir() -> Path:
             return Path(home)
         homedrive = os.environ.get("HOMEDRIVE")
         homepath = os.environ.get("HOMEPATH")
-        if homedrive and homepath:
-            return Path(homedrive) / homepath
         return Path(r"C:\Users\Jamet")
+
+
+def get_aivc_temp_dir() -> Path:
+    """Returns the base temp directory for AIVC runtime files (<temp>/aivc)."""
+    env_dir = os.environ.get("AIVC_TEMP_DIR")
+    if env_dir:
+        return Path(env_dir)
+    import tempfile
+    return Path(tempfile.gettempdir()) / "aivc"
+
 
 _STORAGE_ROOT_ENV = "AIVC_STORAGE_ROOT"
 _CONFIG_PATH = get_home_dir() / ".aivc" / "config.json"
@@ -134,6 +142,11 @@ def to_portable_path(path_str: str | Path) -> str:
     s = re.sub(r"(/Users/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
     s = re.sub(r"(/home/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
 
+    # Check for temporary aivc artifacts path
+    sub_art = extract_brain_subpath(s)
+    if sub_art and "aivc/artifacts/" in s.lower():
+        return f"~/.gemini/antigravity/brain/{sub_art}"
+
     if s.startswith("~/"):
         return s
     if s == "~":
@@ -180,6 +193,7 @@ def extract_brain_subpath(raw_path: str | Path) -> str | None:
 
     Example:
         'file:///C:/Users/other/.gemini/antigravity/brain/conv-1/doc.md' -> 'conv-1/doc.md'
+        'file:///C:/Users/hjamet/AppData/Local/Temp/aivc/artifacts/conv-1/doc.md' -> 'conv-1/doc.md'
     """
     if not raw_path:
         return None
@@ -193,7 +207,7 @@ def extract_brain_subpath(raw_path: str | Path) -> str | None:
     if ":L" in s or re.search(r":\d+", s):
         s = re.split(r":L?\d+", s)[0]
 
-    for marker in (".gemini/antigravity-cli/brain/", ".gemini/antigravity/brain/"):
+    for marker in (".gemini/antigravity-cli/brain/", ".gemini/antigravity/brain/", "aivc/artifacts/"):
         idx = s.lower().find(marker)
         if idx != -1:
             rel = s[idx + len(marker):].strip().strip("/")

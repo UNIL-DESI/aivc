@@ -191,3 +191,49 @@ def test_auto_restore_fallback_to_index_blob(tmp_path: Path, monkeypatch):
     assert str(brain_file_path) in restored
     assert brain_file_path.exists()
     assert brain_file_path.read_bytes() == content
+
+
+def test_aivc_artifacts_portability_and_mirror(tmp_path: Path, monkeypatch):
+    """Verify aivc/artifacts paths are recognized as portable and mirrored to temp."""
+    import tempfile
+    from aivc.config import extract_brain_subpath, to_portable_path
+
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+    monkeypatch.setenv("AIVC_TEMP_DIR", str(tmp_path / "custom_temp"))
+
+    # 1. extract_brain_subpath
+    uri = "file:///C:/Users/someone/AppData/Local/Temp/aivc/artifacts/conv-123/scratch/plan.md"
+    assert extract_brain_subpath(uri) == "conv-123/scratch/plan.md"
+
+    # 2. to_portable_path
+    native = r"C:\Users\someone\AppData\Local\Temp\aivc\artifacts\conv-123\scratch\plan.md"
+    portable = to_portable_path(native)
+    assert portable == "~/.gemini/antigravity/brain/conv-123/scratch/plan.md"
+
+    # 3. auto_restore mirrors to temp
+    storage_root = tmp_path / ".aivc" / "storage"
+    ws = Workspace(storage_root)
+    content = b"# Artifact Test"
+    blob_hash = ws._blob_store.store(content)
+
+    mem = Memory(
+        id="mem-art-1",
+        timestamp="2026-10-27T10:00:00Z",
+        title="Artifact Commit",
+        note="Note with file:///tmp/aivc/artifacts/conv-art/doc.md",
+        parent_id=None,
+        changes=[
+            FileChange(
+                path=native,
+                action="added",
+                blob_hash=blob_hash,
+                bytes_added=len(content),
+                bytes_removed=0,
+            )
+        ],
+    )
+    ws.auto_restore_brain_files(mem)
+    expected_temp = tmp_path / "custom_temp" / "artifacts" / "conv-123" / "scratch" / "plan.md"
+    assert expected_temp.is_file()
+    assert expected_temp.read_bytes() == content
+

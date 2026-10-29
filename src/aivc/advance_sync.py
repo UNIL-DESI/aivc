@@ -10,6 +10,8 @@ import logging
 import os
 import re
 import sys
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -165,7 +167,7 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
     Supports memory objects, dicts, file paths, or advance_tldr notes.
     """
     import urllib.parse
-    from aivc.config import get_home_dir, extract_brain_subpath, get_storage_root
+    from aivc.config import get_home_dir, extract_brain_subpath, get_storage_root, get_aivc_temp_dir
     from aivc.sync.drive import NativeDriveSyncManager
 
     home = get_home_dir()
@@ -187,7 +189,7 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
     candidate_subpaths: set[str] = set()
 
     brain_regex = re.compile(
-        r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
+        r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\"\'\`\)\>:]+)",
         re.IGNORECASE,
     )
 
@@ -254,7 +256,14 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
             try:
                 stem = Path(str(mpf)).stem
                 title = normalize_advance_tldr_title(stem)
-                tldr_candidate = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
+                tldr_temp = get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md"
+                tldr_legacy = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
+                if home != Path.home() and tldr_legacy.is_file():
+                    tldr_candidate = tldr_legacy
+                elif tldr_temp.is_file():
+                    tldr_candidate = tldr_temp
+                else:
+                    tldr_candidate = tldr_legacy
                 if tldr_candidate.is_file():
                     tldr_txt = tldr_candidate.read_text(encoding="utf-8")
                     for m in brain_regex.finditer(tldr_txt):
@@ -264,8 +273,19 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
             except Exception:
                 pass
 
+    temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
     for sub in candidate_subpaths:
         local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+        temp_artifact_path = temp_artifacts_dir / Path(sub)
+
+        # Mirror to temp_artifacts_dir if local_path already exists
+        if local_path.is_file() and not temp_artifact_path.is_file():
+            try:
+                temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(local_path, temp_artifact_path)
+            except OSError:
+                pass
+
         if local_path.is_file():
             continue
         sub_posix = sub.replace("\\", "/")
@@ -274,6 +294,11 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
             dest = mgr.pull_latest_file(portable, target_path=local_path)
             if dest and dest.is_file():
                 restored.append(str(local_path))
+                try:
+                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(local_path, temp_artifact_path)
+                except OSError:
+                    pass
         except Exception:
             pass
 
