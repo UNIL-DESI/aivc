@@ -105,16 +105,17 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
 
     async def test_returns_memory_id_and_files(self):
         _mock_engine.remember.return_value = _make_memory()
-        result = await _remember("Do something", "Detailed journal.")
+        result = await _remember("Do something", "Detailed journal.", "main.py")
         self.assertIn("Memory successfully created", result)
         self.assertIn("abc-123", result)
 
     async def test_delegates_to_engine(self):
         _mock_engine.remember.return_value = _make_memory()
-        await _remember("T", "J")
+        await _remember("T", "J", "main.py")
         _mock_engine.remember.assert_called_once_with(
             title="T",
             journal="J",
+            main_project_file="main.py",
             user_items=[],
             read_files=[],
             edited_files=[],
@@ -123,10 +124,11 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
 
     async def test_delegates_to_engine_with_consulted(self):
         _mock_engine.remember.return_value = _make_memory()
-        await _remember("T", "J", read_files=["f1.py"])
+        await _remember("T", "J", "main.py", read_files=["f1.py"])
         _mock_engine.remember.assert_called_once_with(
             title="T",
             journal="J",
+            main_project_file="main.py",
             user_items=[],
             read_files=["f1.py"],
             edited_files=[],
@@ -140,6 +142,7 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
         result = await _remember(
             "T",
             "J",
+            "main.py",
             user_items=[{"id": "item-1", "task": "Check token", "done": False}],
         )
         self.assertIn("Actions Utilisateur", result)
@@ -152,6 +155,7 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
         result = await _remember(
             "T",
             "J",
+            "main.py",
             tasks=[{"id": "t-1", "task": "Task test", "task_status": "new"}],
         )
         self.assertIn("Actions Utilisateur", result)
@@ -160,18 +164,18 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
     async def test_remember_validation_errors(self):
         _mock_engine.remember.side_effect = ValueError("Validation error")
         with self.assertRaises(ValueError):
-            await _remember("T", "J", read_files=["non_existent.txt"])
+            await _remember("T", "J", "non_existent.txt", read_files=["non_existent.txt"])
         _mock_engine.remember.side_effect = None
 
     async def test_runtime_error_propagates(self):
         _mock_engine.remember.side_effect = RuntimeError("Something failed")
         with self.assertRaises(RuntimeError):
-            await _remember("T", "J")
+            await _remember("T", "J", "main.py")
         _mock_engine.remember.side_effect = None
 
     async def test_empty_changes_handled(self):
         _mock_engine.remember.return_value = _make_memory(changes=[])
-        result = await _remember("T", "J")
+        result = await _remember("T", "J", "main.py")
         self.assertIn("Memory successfully created", result)
 
 

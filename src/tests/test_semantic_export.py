@@ -83,6 +83,14 @@ def test_clean_semantic_text_preserves_utf8():
 
 
 def test_extract_project_name():
+    # From main_project_file (absolute priority over read_files and title)
+    p0 = extract_project_name(
+        [{"path": "notes/Autre Note.md"}],
+        memory_title="[Titre Secondaire] Session",
+        main_project_file="~/Documents/VoiceNotes/notes/Mon Projet Prioritaire.md",
+    )
+    assert p0 == "Projet : Mon Projet Prioritaire"
+
     # From notes/ path
     p1 = extract_project_name([{"path": "notes/Améliorer le système Antigravity Obsidian.md"}])
     assert p1 == "Projet : Améliorer le système Antigravity Obsidian"

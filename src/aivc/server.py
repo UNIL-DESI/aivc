@@ -217,6 +217,7 @@ def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_
 async def remember(
     title: str,
     journal: str,
+    main_project_file: str,
     tasks: list[dict[str, Any]] | None = None,
     user_items: list[dict[str, Any]] | None = None,
     edited_files: list[str] | None = None,
@@ -224,7 +225,19 @@ async def remember(
     urls: list[str] | None = None,
     roadmap_items: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Enregistre un souvenir structuré avec journal, tâches (états: new, await_validation, validated) et fichiers."""
+    """Enregistre un souvenir structuré avec journal, tâches (états: new, await_validation, validated) et fichiers.
+
+    Args:
+        title: Titre résumant le souvenir.
+        journal: Récit détaillé de session.
+        main_project_file: Chemin du fichier principal identifiant le projet ou sujet de ce souvenir (ex. la note maîtresse du projet dans un coffre Obsidian ou le README.md d'un dépôt de code). Doit exister sur le disque. Ajouté automatiquement aux fichiers consultés (read_files) s'il n'est ni dans read_files ni dans edited_files, et utilisé comme cible unique de rattachement des tâches (user_items).
+        tasks: Liste unifiée des tâches.
+        user_items: Actions utilisateur.
+        edited_files: Fichiers édités ou créés.
+        read_files: Fichiers consultés.
+        urls: URLs consultées.
+        roadmap_items: Tâches de roadmap.
+    """
     import asyncio
     from pathlib import Path
 
@@ -239,6 +252,7 @@ async def remember(
     engine_kwargs = {
         "title": title,
         "journal": journal,
+        "main_project_file": main_project_file,
         "user_items": actual_user_items,
         "read_files": actual_read_files,
         "edited_files": actual_edited_files,

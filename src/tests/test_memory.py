@@ -124,3 +124,19 @@ def test_memory_from_dict_legacy_backwards_compat() -> None:
     restored = memory_from_dict(d)
     assert restored.urls == []
 
+
+def test_memory_main_project_file_roundtrip_and_legacy() -> None:
+    original = make_memory(main_project_file="~/Documents/VoiceNotes/notes/My Project.md")
+    assert original.main_project_file == "~/Documents/VoiceNotes/notes/My Project.md"
+
+    d = memory_to_dict(original)
+    assert d["main_project_file"] == "~/Documents/VoiceNotes/notes/My Project.md"
+
+    restored = memory_from_dict(d)
+    assert restored.main_project_file == "~/Documents/VoiceNotes/notes/My Project.md"
+
+    # Legacy without main_project_file
+    del d["main_project_file"]
+    legacy_restored = memory_from_dict(d)
+    assert legacy_restored.main_project_file == ""
+

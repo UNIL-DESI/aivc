@@ -139,7 +139,7 @@ def test_semantic_engine_graph_updates(tmp_path):
     file_a.write_text("hello")
     
     # Memory with only consulted file
-    memory = engine.create_memory("Consulted Only", "Note", consulted_files=[str(file_a)])
+    memory = engine.create_memory("Consulted Only", "Note", consulted_files=[str(file_a)], main_project_file=str(file_a))
     
     # Check graph
     files = engine.get_memory_files(memory.id)

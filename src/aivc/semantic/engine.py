@@ -317,8 +317,38 @@ class SemanticEngine:
         note: str | None = None,
         consulted_files: list[str] | None = None,
         roadmap_items: list[dict[str, Any]] | None = None,
+        main_project_file: str = "",
     ) -> Memory:
         """Create a versioning memory and index it semantically (asynchronously)."""
+        if not main_project_file or not str(main_project_file).strip():
+            raise ValueError("main_project_file is required and cannot be empty.")
+
+        p_str = str(main_project_file).strip()
+        if p_str.startswith("~/") or p_str.startswith("~\\"):
+            resolved_path = Path.home() / p_str[2:].lstrip("/\\")
+        else:
+            raw_p = Path(p_str)
+            if raw_p.is_absolute():
+                resolved_path = raw_p
+            else:
+                ws_root = getattr(self, "workspace_root", None) or getattr(self._workspace, "_root", None) or Path.cwd()
+                resolved_path = Path(ws_root) / raw_p
+
+        if not resolved_path.exists():
+            raise ValueError(f"main_project_file does not exist on disk: {main_project_file}")
+
+        portable_main = to_portable_path(resolved_path)
+
+        # Ajout automatique aux fichiers consultés (read_files) si non présent
+        portable_main_lower = portable_main.lower()
+        existing_paths_lower = set()
+        for f in (read_files or []) + (consulted_files or []) + (edited_files or []):
+            existing_paths_lower.add(to_portable_path(f).lower())
+
+        actual_read_files = list(read_files) if read_files is not None else []
+        if portable_main_lower not in existing_paths_lower:
+            actual_read_files.append(str(resolved_path))
+
         machine_id = get_machine_id()
         memory = self._workspace.remember(
             title=title,
@@ -326,13 +356,15 @@ class SemanticEngine:
             tasks=tasks,
             user_items=user_items,
             edited_files=edited_files,
-            read_files=read_files,
+            read_files=actual_read_files,
             urls=urls,
             note=note,
             machine_id=machine_id,
             consulted_files=consulted_files,
             roadmap_items=roadmap_items,
+            main_project_file=portable_main,
         )
+        memory.main_project_file = portable_main
 
         # Step 2: graph update (SQLite, always fast)
         self._graph.add_memory(memory)
@@ -371,6 +403,7 @@ class SemanticEngine:
         user_items: list[dict[str, Any]] | None = None,
         journal: str = "",
         roadmap_items: list[dict[str, Any]] | None = None,
+        main_project_file: str = "",
     ) -> Memory:
         """Create a versioning memory (alias for remember)."""
         return self.remember(
@@ -383,6 +416,7 @@ class SemanticEngine:
             note=note,
             consulted_files=consulted_files,
             roadmap_items=roadmap_items,
+            main_project_file=main_project_file,
         )
 
     def complete_user_items(self, item_ids: list[str]) -> list[str]:

@@ -13,7 +13,22 @@ from aivc.advance_sync import (
     sync_advance_tldr,
     set_custom_sync_handler,
     find_project_memory_cli_path,
+    extract_obsidian_project_notes,
 )
+
+
+def test_extract_obsidian_project_notes_uses_main_project_file_exclusively():
+    mem = Memory(
+        id="mem-exclusive",
+        timestamp="2026-10-28T10:00:00Z",
+        title="Test",
+        note="Note",
+        parent_id=None,
+        changes=[FileChange(path="~/Documents/VoiceNotes/Other.md", action="consulted")],
+        main_project_file="~/Documents/VoiceNotes/Main.md",
+    )
+    notes = extract_obsidian_project_notes(mem)
+    assert notes == ["~/Documents/VoiceNotes/Main.md"]
 
 
 def test_is_obsidian_related_memory_with_user_items():

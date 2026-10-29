@@ -306,6 +306,7 @@ class Workspace:
         machine_id: str = "",
         consulted_files: list[str] | None = None,
         roadmap_items: list[dict[str, Any]] | None = None,
+        main_project_file: str = "",
     ) -> Memory:
         """Create a new memory in 3-part format (title, journal, tasks/user_items) without local diffs/blobs.
 
@@ -321,6 +322,7 @@ class Workspace:
             machine_id: ID of the machine where the memory was created.
             consulted_files: Legacy parameter mapping to read_files.
             roadmap_items: Optional roadmap tasks recorded with task_status='new' / kind='roadmap'.
+            main_project_file: Portable path to the main project note or file.
         """
         self._reload_state_if_needed()
 
@@ -532,6 +534,7 @@ class Workspace:
             urls=actual_urls,
             user_items=norm_user_items,
             journal=journal or (note if not norm_user_items else ""),
+            main_project_file=main_project_file,
         )
 
         self._save_memory(memory)

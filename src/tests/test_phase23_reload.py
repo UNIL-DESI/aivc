@@ -45,7 +45,7 @@ def test_semantic_engine_cache_invalidation_on_reload(tmp_path):
     test_file.write_text("hello")
     
     engine = SemanticEngine(storage_root)
-    engine.create_memory("Initial", "Note", edited_files=[str(test_file)])
+    engine.create_memory("Initial", "Note", edited_files=[str(test_file)], main_project_file=str(test_file))
     
     # Trigger lazy build of hints index
     hints = engine._get_local_hints_index()

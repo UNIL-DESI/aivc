@@ -33,7 +33,7 @@ def engine(tmp_path: Path):
 def test_create_memory_returns_memory(engine, tmp_path) -> None:
     f = tmp_path / "test.py"
     _write(f, "x = 1")
-    memory = engine.create_memory("First memory", "Initialised x to 1.", edited_files=[str(f)])
+    memory = engine.create_memory("First memory", "Initialised x to 1.", edited_files=[str(f)], main_project_file=str(f))
     assert memory.id
     assert memory.title == "First memory"
 
@@ -41,7 +41,7 @@ def test_create_memory_returns_memory(engine, tmp_path) -> None:
 def test_create_memory_is_indexed(engine, tmp_path) -> None:
     f = tmp_path / "test.py"
     _write(f, "x = 1")
-    memory = engine.create_memory("Indexed memory", "This note should be vectorised.", edited_files=[str(f)])
+    memory = engine.create_memory("Indexed memory", "This note should be vectorised.", edited_files=[str(f)], main_project_file=str(f))
     assert engine.wait_until_indexed()
     assert engine._indexer.is_indexed(memory.id)
 
@@ -50,13 +50,13 @@ def test_create_memory_updates_graph(engine, tmp_path) -> None:
     from aivc.config import to_portable_path
     f = tmp_path / "test.py"
     _write(f, "x = 1")
-    memory = engine.create_memory("Graph memory", "This should appear in the graph.", edited_files=[str(f)])
+    memory = engine.create_memory("Graph memory", "This should appear in the graph.", edited_files=[str(f)], main_project_file=str(f))
     assert to_portable_path(f) in engine._graph.get_memory_files(memory.id)
 
 
-def test_create_memory_raises_if_no_changes(engine) -> None:
-    with pytest.raises(RuntimeError, match="Nothing to remember"):
-        engine.create_memory("Empty", "", edited_files=[], read_files=[])
+def test_create_memory_raises_if_no_main_project_file(engine) -> None:
+    with pytest.raises(ValueError, match="main_project_file is required and cannot be empty"):
+        engine.create_memory("Empty", "", edited_files=[], read_files=[], main_project_file="")
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +69,8 @@ def test_search_finds_relevant_memory(engine, tmp_path) -> None:
     engine.create_memory(
         "Implement quicksort",
         "Implemented an in-place quicksort algorithm for sorting integer arrays.",
-        edited_files=[str(f)]
+        edited_files=[str(f)],
+        main_project_file=str(f),
     )
     assert engine.wait_until_indexed()
     results = engine.search("sorting algorithm", top_k=10, top_n=1)
@@ -87,7 +88,7 @@ def test_get_related_files(engine, tmp_path) -> None:
     fb = tmp_path / "b.py"
     _write(fa, "a = 1")
     _write(fb, "b = 2")
-    engine.create_memory("Co-occur memory", "Both a and b changed.", edited_files=[str(fa), str(fb)])
+    engine.create_memory("Co-occur memory", "Both a and b changed.", edited_files=[str(fa), str(fb)], main_project_file=str(fa))
     related = dict(engine.get_related_files(str(fa)))
     assert to_portable_path(fb) in related
 
@@ -99,7 +100,47 @@ def test_get_related_files(engine, tmp_path) -> None:
 def test_get_log_returns_memories(engine, tmp_path) -> None:
     f = tmp_path / "x.py"
     _write(f, "x = 1")
-    engine.create_memory("Log test", "First entry in log.", edited_files=[str(f)])
+    engine.create_memory("Log test", "First entry in log.", edited_files=[str(f)], main_project_file=str(f))
     log = engine.get_log()
     assert len(log) == 1
     assert log[0].title == "Log test"
+
+
+# ---------------------------------------------------------------------------
+# main_project_file validation & behavior
+# ---------------------------------------------------------------------------
+
+def test_main_project_file_behavior(engine, tmp_path: Path) -> None:
+    from aivc.config import to_portable_path
+
+    # (a) qu'un main_project_file inexistant sur le disque lève ValueError
+    non_existent = tmp_path / "does_not_exist.md"
+    with pytest.raises(ValueError, match="does not exist on disk"):
+        engine.remember(
+            title="Invalid project file",
+            journal="Test journal",
+            main_project_file=str(non_existent),
+        )
+
+    # (b) qu'un main_project_file absent de read_files et edited_files est automatiquement ajouté comme consulted dans changes
+    project_file = tmp_path / "Project Master.md"
+    _write(project_file, "# Project Master")
+    other_file = tmp_path / "code.py"
+    _write(other_file, "print('hello')")
+
+    mem = engine.remember(
+        title="Valid memory with auto-added project file",
+        journal="Journal entry",
+        edited_files=[str(other_file)],
+        main_project_file=str(project_file),
+    )
+
+    portable_proj = to_portable_path(project_file)
+    change_paths = {c.path: c.action for c in mem.changes}
+    assert portable_proj in change_paths
+    assert change_paths[portable_proj] == "consulted"
+
+    # (c) que memory.to_dict()["main_project_file"] contient bien le chemin portable normalisé
+    mem_dict = mem.to_dict()
+    assert "main_project_file" in mem_dict
+    assert mem_dict["main_project_file"] == portable_proj

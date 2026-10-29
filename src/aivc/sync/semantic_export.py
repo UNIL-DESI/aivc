@@ -109,13 +109,34 @@ def extract_project_name(
     journal: str = "",
     task_text: str = "",
     details_text: str = "",
+    main_project_file: str = "",
 ) -> str:
-    """Converts read_files notes reference into a readable project title.
+    """Converts main_project_file or read_files notes reference into a readable project title.
 
     Examples:
         'notes/Améliorer le système Antigravity Obsidian.md' -> 'Projet : Améliorer le système Antigravity Obsidian'
         '[Asharde] Session 12' in title -> 'Projet : Asharde'
     """
+    # 0. Priority: From main_project_file (absolute priority)
+    if main_project_file and str(main_project_file).strip():
+        p = str(main_project_file).strip().replace("\\", "/")
+        name = None
+        if "notes/" in p and p.endswith(".md"):
+            name = p.split("notes/")[-1][:-3].strip()
+        elif p.endswith(".md") and "voicenotes" in p.lower():
+            name = p.split("/")[-1][:-3].strip()
+        elif p.endswith(".md"):
+            name = p.split("/")[-1][:-3].strip()
+        elif "/" in p:
+            name = p.split("/")[-1].strip()
+        else:
+            name = p.strip()
+
+        if name:
+            if not _is_generic_project_name(name):
+                return f"Projet : {name}"
+            return f"Projet : {name}"
+
     # 1. From read_files
     if read_files:
         for rf in read_files:
@@ -234,10 +255,12 @@ def collect_tasks_from_commits(commits_dir: Path) -> tuple[dict[str, dict[str, A
     }
 
     for m in memories:
+        mpf = m.get("main_project_file", "")
         project_name = extract_project_name(
             m.get("read_files"),
             memory_title=m.get("title", ""),
             journal=m.get("journal", "") or m.get("note", ""),
+            main_project_file=mpf,
         )
         user_items = m.get("user_items", []) or m.get("tasks", []) or []
         journal_text = clean_semantic_text(m.get("journal", "") or m.get("note", ""))
@@ -258,7 +281,7 @@ def collect_tasks_from_commits(commits_dir: Path) -> tuple[dict[str, dict[str, A
             raw_details = item.get("details", "")
 
             item_project = project_name
-            if "Général" in item_project:
+            if "Général" in item_project and not mpf:
                 fb = extract_project_name(
                     [],
                     memory_title="",

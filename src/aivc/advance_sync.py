@@ -78,26 +78,27 @@ def _load_project_memory_module() -> Any:
     return None
 
 
-def is_obsidian_related_memory(memory: Any) -> bool:
-    """Determines if a memory relates to the Obsidian vault or contains task items."""
+def extract_obsidian_project_notes(memory: Any) -> list[str]:
+    """Extracts Obsidian project note paths from a memory.
+
+    If main_project_file is present, uses it exclusively.
+    Otherwise scans read_files, edited_files, and changes for markdown notes.
+    """
     if isinstance(memory, dict):
-        user_items = memory.get("user_items") or memory.get("tasks") or []
+        mpf = memory.get("main_project_file") or ""
         read_files = memory.get("read_files") or []
         edited_files = memory.get("edited_files") or []
         changes = memory.get("changes") or []
-        title = memory.get("title", "")
     else:
-        user_items = getattr(memory, "user_items", []) or []
+        mpf = getattr(memory, "main_project_file", "") or ""
         read_files = getattr(memory, "read_files", []) or []
         edited_files = getattr(memory, "edited_files", []) or []
         changes = getattr(memory, "changes", []) or []
-        title = getattr(memory, "title", "")
 
-    # If tasks or user_items are present, synchronization is eligible
-    if user_items:
-        return True
+    if mpf and str(mpf).strip():
+        return [str(mpf).strip()]
 
-    # Check for any .md file in read_files, edited_files or changes
+    notes: list[str] = []
     all_paths: list[str] = []
     for f in read_files:
         all_paths.append(f.get("path") if isinstance(f, dict) else str(f))
@@ -111,7 +112,40 @@ def is_obsidian_related_memory(memory: Any) -> bool:
     for p in all_paths:
         p_clean = str(p).strip().replace("\\", "/").lower()
         if p_clean.endswith(".md") or "voicenotes" in p_clean:
+            if str(p) not in notes:
+                notes.append(str(p))
+
+    return notes
+
+
+def is_obsidian_related_memory(memory: Any) -> bool:
+    """Determines if a memory relates to the Obsidian vault or contains task items."""
+    if isinstance(memory, dict):
+        mpf = memory.get("main_project_file") or ""
+        user_items = memory.get("user_items") or memory.get("tasks") or []
+        title = memory.get("title", "")
+    else:
+        mpf = getattr(memory, "main_project_file", "") or ""
+        user_items = getattr(memory, "user_items", []) or []
+        title = getattr(memory, "title", "")
+
+    # If main_project_file is present, inspect it exclusively
+    if mpf and str(mpf).strip():
+        p_clean = str(mpf).strip().replace("\\", "/").lower()
+        if p_clean.endswith(".md") or "voicenotes" in p_clean:
             return True
+
+    # If tasks or user_items are present, synchronization is eligible
+    if user_items:
+        return True
+
+    # Check extracted notes
+    notes = extract_obsidian_project_notes(memory)
+    if notes:
+        for p in notes:
+            p_clean = str(p).strip().replace("\\", "/").lower()
+            if p_clean.endswith(".md") or "voicenotes" in p_clean:
+                return True
 
     # Check project title pattern [Project Title]
     if title and re.search(r"\[[^\]]+\]", title):
