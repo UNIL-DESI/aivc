@@ -207,3 +207,97 @@ def test_real_end_to_end_no_double_robot_sync():
     assert "# 🤖 🤖" not in content
 
 
+def test_sync_advance_tldr_with_dict():
+    mock_handler = MagicMock(return_value=["/path/to/advance_tldr/🤖 Dict.md"])
+    set_custom_sync_handler(mock_handler)
+    try:
+        mem_dict = {
+            "id": "mem-dict-1",
+            "timestamp": "2026-10-29T12:00:00Z",
+            "title": "[Dict Project] Test",
+            "note": "Note",
+            "user_items": [{"id": "t-1", "task": "A task", "task_status": "new"}],
+        }
+        res = sync_advance_tldr(mem_dict)
+        assert res == ["/path/to/advance_tldr/🤖 Dict.md"]
+        assert mock_handler.called
+        assert mem_dict.get("_tldr_synced") is True
+        assert mem_dict.get("_tldr_synced_paths") == ["/path/to/advance_tldr/🤖 Dict.md"]
+
+        # Second call uses cache
+        mock_handler.reset_mock()
+        res2 = sync_advance_tldr(mem_dict)
+        assert res2 == ["/path/to/advance_tldr/🤖 Dict.md"]
+        assert not mock_handler.called
+    finally:
+        set_custom_sync_handler(None)
+
+
+def test_pull_memories_from_others_triggers_sync_advance_tldr(tmp_path: Path, monkeypatch):
+    """Verify pull_memories_from_others triggers auto_restore and sync_advance_tldr for new commits."""
+    import json
+    from aivc.sync.drive import NativeDriveSyncManager
+
+    storage_root = tmp_path / ".aivc" / "storage"
+    storage_root.mkdir(parents=True, exist_ok=True)
+
+    manager = NativeDriveSyncManager(storage_root)
+    manager.enabled = True
+    manager.machine_id = "local-machine-id"
+
+    mock_service = MagicMock()
+    monkeypatch.setattr(manager, "_get_service", lambda: mock_service)
+    monkeypatch.setattr(manager, "_get_root_folder_id", lambda: "root-folder-id")
+
+    machine_folders_res = {"files": [{"id": "remote-machine-folder", "name": "remote-machine"}]}
+    commits_folder_res = {"files": [{"id": "remote-commits-folder", "name": "commits"}]}
+    memory_files_res = {"files": [{"id": "remote-mem-file-1", "name": "mem-123.json"}]}
+
+    mock_service.files().list.return_value.execute.side_effect = [
+        machine_folders_res,
+        commits_folder_res,
+        memory_files_res,
+    ]
+
+    remote_mem_content = {
+        "id": "mem-123",
+        "timestamp": "2026-10-29T12:00:00Z",
+        "title": "[Sync Test Project] From Remote Drive",
+        "note": "Downloaded memory",
+        "main_project_file": "~/Documents/VoiceNotes/Remote Project.md",
+        "user_items": [{"id": "t-remote-1", "task": "Validate remote sync", "task_status": "new"}],
+    }
+
+    def fake_download(file_id, dest_path):
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path.write_text(json.dumps(remote_mem_content), encoding="utf-8")
+
+    monkeypatch.setattr(manager, "_download_file", fake_download)
+
+    auto_restore_called_with = []
+    def fake_auto_restore(mem_data):
+        auto_restore_called_with.append(mem_data)
+        return []
+
+    monkeypatch.setattr(manager, "auto_restore_brain_files_from_data", fake_auto_restore)
+
+    synced_memories = []
+    def fake_sync(mem, vault_dir=None):
+        synced_memories.append(mem)
+        return ["/fake/advance_tldr/🤖 Remote Project.md"]
+
+    set_custom_sync_handler(fake_sync)
+    try:
+        pulled = manager.pull_memories_from_others()
+        assert pulled == 1
+        assert len(auto_restore_called_with) == 1
+        assert auto_restore_called_with[0]["id"] == "mem-123"
+        assert len(synced_memories) == 1
+        assert synced_memories[0]["id"] == "mem-123"
+        assert synced_memories[0].get("_tldr_synced") is True
+        assert synced_memories[0].get("_tldr_synced_paths") == ["/fake/advance_tldr/🤖 Remote Project.md"]
+    finally:
+        set_custom_sync_handler(None)
+
+
+

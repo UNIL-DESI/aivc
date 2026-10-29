@@ -250,14 +250,23 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
     Returns the list of generated or updated advance_tldr file paths.
     """
-    if getattr(memory, "_tldr_synced", False):
-        return getattr(memory, "_tldr_synced_paths", [])
+    is_dict = isinstance(memory, dict)
+    if is_dict:
+        if memory.get("_tldr_synced", False):
+            return memory.get("_tldr_synced_paths", [])
+    else:
+        if getattr(memory, "_tldr_synced", False):
+            return getattr(memory, "_tldr_synced_paths", [])
 
     if _CUSTOM_SYNC_HANDLER is not None:
         try:
             res = _CUSTOM_SYNC_HANDLER(memory, vault_dir=vault_dir)
-            setattr(memory, "_tldr_synced", True)
-            setattr(memory, "_tldr_synced_paths", res or [])
+            if is_dict:
+                memory["_tldr_synced"] = True
+                memory["_tldr_synced_paths"] = res or []
+            else:
+                setattr(memory, "_tldr_synced", True)
+                setattr(memory, "_tldr_synced_paths", res or [])
             return res or []
         except Exception as e:
             logger.warning("Custom sync handler failed: %s", e)
@@ -272,8 +281,6 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
     except Exception as e:
         logger.debug("auto-restore in sync_advance_tldr skipped: %s", e)
 
-
-
     mod = _load_project_memory_module()
     if mod is None:
         logger.debug("project_memory_cli module not available; skipping advance_tldr sync.")
@@ -287,9 +294,14 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
         vault_str = str(vault_dir) if vault_dir else str(get_vault_dir())
         synced_paths = sync_fn(memory, vault_dir=vault_str)
-        setattr(memory, "_tldr_synced", True)
-        setattr(memory, "_tldr_synced_paths", synced_paths or [])
+        if is_dict:
+            memory["_tldr_synced"] = True
+            memory["_tldr_synced_paths"] = synced_paths or []
+        else:
+            setattr(memory, "_tldr_synced", True)
+            setattr(memory, "_tldr_synced_paths", synced_paths or [])
         return synced_paths or []
     except Exception as e:
-        logger.warning("Failed to synchronize advance_tldr for memory %s: %s", getattr(memory, "id", "unknown"), e)
+        mem_id = memory.get("id", "unknown") if is_dict else getattr(memory, "id", "unknown")
+        logger.warning("Failed to synchronize advance_tldr for memory %s: %s", mem_id, e)
         return []

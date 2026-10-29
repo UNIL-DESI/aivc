@@ -6,6 +6,7 @@ using google-api-python-client, google-auth-httplib2, and google-auth-oauthlib.
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ from aivc.config import (
     to_portable_path,
     from_portable_path,
 )
+
+logger = logging.getLogger(__name__)
 
 # Scopes: full read/write on user's own Drive files
 _SCOPES = ["https://www.googleapis.com/auth/drive.file"]
@@ -561,14 +564,16 @@ class NativeDriveSyncManager:
                     sys.stderr.flush()
                     failures.append((filename, e))
 
-        # Auto-restore brain files for newly downloaded memories if missing locally
+        # Auto-restore brain files and sync advance_tldr for newly downloaded memories
         for file_id, dest_path in missing_files:
             try:
                 if dest_path.is_file():
                     mem_data = json.loads(dest_path.read_text(encoding="utf-8"))
                     self.auto_restore_brain_files_from_data(mem_data)
-            except Exception:
-                pass
+                    from aivc.advance_sync import sync_advance_tldr
+                    sync_advance_tldr(mem_data)
+            except Exception as e:
+                logger.debug("Post-pull restore/tldr sync skipped for %s: %s", dest_path, e)
 
         if failures:
             error_details = ", ".join(f"{name}: {err}" for name, err in failures)
