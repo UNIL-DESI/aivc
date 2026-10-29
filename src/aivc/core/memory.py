@@ -33,7 +33,7 @@ class FileChange:
     """Size of the previous blob in bytes."""
 
     def __post_init__(self) -> None:
-        _VALID_ACTIONS = {"added", "modified", "deleted", "consulted", "edited"}
+        _VALID_ACTIONS = {"added", "modified", "deleted", "consulted", "edited", "roadmap"}
         if self.action not in _VALID_ACTIONS:
             raise ValueError(
                 f"Invalid FileChange action {self.action!r}. "

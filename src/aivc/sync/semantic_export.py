@@ -370,11 +370,18 @@ def is_test_environment() -> bool:
     """Detects if code is executing under pytest or unittest."""
     import os
     import sys
-    return bool(
-        os.environ.get("PYTEST_CURRENT_TEST")
-        or ("pytest" in sys.modules)
-        or ("unittest" in sys.modules)
-    )
+    if os.environ.get("PYTEST_CURRENT_TEST") or ("pytest" in sys.modules):
+        return True
+    if os.environ.get("UNITTEST_CURRENT_TEST") or os.environ.get("AIVC_TEST_MODE"):
+        return True
+    # unittest est importé transitivement par googleapiclient en production :
+    # ne le considérer en test que si unittest est le script principal (__main__)
+    main_mod = sys.modules.get("__main__")
+    if main_mod and getattr(main_mod, "__file__", None):
+        main_file = str(main_mod.__file__).lower()
+        if "test" in os.path.basename(main_file) or "pytest" in main_file or "unittest" in main_file:
+            return True
+    return False
 
 
 def is_canonical_storage(storage_root: Path | str | None) -> bool:
