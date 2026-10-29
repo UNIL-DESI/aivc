@@ -144,3 +144,24 @@ def test_main_project_file_behavior(engine, tmp_path: Path) -> None:
     mem_dict = mem.to_dict()
     assert "main_project_file" in mem_dict
     assert mem_dict["main_project_file"] == portable_proj
+
+
+def test_main_project_file_resolves_voicenotes_relative_path(engine, monkeypatch, tmp_path: Path) -> None:
+    from aivc.config import to_portable_path
+    vn_dir = tmp_path / "Documents" / "VoiceNotes"
+    notes_dir = vn_dir / "notes"
+    notes_dir.mkdir(parents=True)
+    proj = notes_dir / "Test Project.md"
+    _write(proj, "# Test Project")
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    mem = engine.remember(
+        title="Test VoiceNotes relative path",
+        journal="Journal",
+        main_project_file="notes/Test Project.md",
+    )
+
+    expected_portable = to_portable_path(proj)
+    assert mem.main_project_file == expected_portable
+    assert any(c.path == expected_portable for c in mem.changes)

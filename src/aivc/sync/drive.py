@@ -19,6 +19,8 @@ from aivc.config import (
 )
 
 logger = logging.getLogger(__name__)
+logging.getLogger("googleapiclient").setLevel(logging.ERROR)
+logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
 
 # Scopes: full read/write on user's own Drive files
 _SCOPES = ["https://www.googleapis.com/auth/drive.file"]
@@ -97,7 +99,7 @@ class NativeDriveSyncManager:
                     "Run 'aivc sync setup' to re-authenticate."
                 )
 
-        service = build("drive", "v3", credentials=creds)
+        service = build("drive", "v3", credentials=creds, cache_discovery=False)
         self._thread_local.service = service
         return service
 

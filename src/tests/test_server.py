@@ -106,8 +106,7 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
     async def test_returns_memory_id_and_files(self):
         _mock_engine.remember.return_value = _make_memory()
         result = await _remember("Do something", "Detailed journal.", "main.py")
-        self.assertIn("Memory successfully created", result)
-        self.assertIn("abc-123", result)
+        self.assertEqual(result, "OK (abc-123)")
 
     async def test_delegates_to_engine(self):
         _mock_engine.remember.return_value = _make_memory()
@@ -137,7 +136,7 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
 
     async def test_delegates_to_engine_with_user_items(self):
         _mock_engine.remember.return_value = _make_memory(
-            user_items=[{"id": "item-1", "task": "Check token", "done": False}]
+            user_items=[{"id": "item-1", "task": "Check token", "done": False, "task_status": "new"}]
         )
         result = await _remember(
             "T",
@@ -145,8 +144,7 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
             "main.py",
             user_items=[{"id": "item-1", "task": "Check token", "done": False}],
         )
-        self.assertIn("Actions Utilisateur", result)
-        self.assertIn("[item-1] Check token", result)
+        self.assertEqual(result, "[item-1] new")
 
     async def test_delegates_to_engine_with_tasks(self):
         _mock_engine.remember.return_value = _make_memory(
@@ -158,8 +156,7 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
             "main.py",
             tasks=[{"id": "t-1", "task": "Task test", "task_status": "new"}],
         )
-        self.assertIn("Actions Utilisateur", result)
-        self.assertIn("[t-1] Task test", result)
+        self.assertEqual(result, "[t-1] new")
 
     async def test_remember_validation_errors(self):
         _mock_engine.remember.side_effect = ValueError("Validation error")
@@ -176,7 +173,7 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
     async def test_empty_changes_handled(self):
         _mock_engine.remember.return_value = _make_memory(changes=[])
         result = await _remember("T", "J", "main.py")
-        self.assertIn("Memory successfully created", result)
+        self.assertEqual(result, "OK (abc-123)")
 
 
 class TestRecall(unittest.IsolatedAsyncioTestCase):

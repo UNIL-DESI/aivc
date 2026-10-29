@@ -489,7 +489,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             t_path = get_token_path()
             if t_path.exists():
                 creds = Credentials.from_authorized_user_file(str(t_path))
-                svc = build("drive", "v3", credentials=creds)
+                svc = build("drive", "v3", credentials=creds, cache_discovery=False)
                 svc.files().update(fileId=doc_id, body={"trashed": True}).execute()
                 trashed = True
         except Exception:
@@ -512,7 +512,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
                     req = urllib.request.Request("https://oauth2.googleapis.com/token", data=urllib.parse.urlencode(params).encode("utf-8"), method="POST")
                     with urllib.request.urlopen(req) as resp:
                         tok_resp = json.loads(resp.read().decode("utf-8"))
-                    svc = build("drive", "v3", credentials=Credentials(token=tok_resp["access_token"]))
+                    svc = build("drive", "v3", credentials=Credentials(token=tok_resp["access_token"]), cache_discovery=False)
                     svc.files().update(fileId=doc_id, body={"trashed": True}).execute()
                     trashed = True
             except Exception:

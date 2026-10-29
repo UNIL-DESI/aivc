@@ -12,7 +12,19 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module=".*pydantic_settings.*")
+warnings.filterwarnings("ignore", message=".*lifespan.*")
+warnings.filterwarnings("ignore", message=".*file_cache is only supported.*")
+
 import logging
+logging.getLogger("mcp").setLevel(logging.WARNING)
+logging.getLogger("mcp.server").setLevel(logging.WARNING)
+logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.WARNING)
+logging.getLogger("googleapiclient").setLevel(logging.ERROR)
+logging.getLogger("googleapiclient.discovery").setLevel(logging.ERROR)
+logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
+logging.getLogger("aivc").setLevel(logging.WARNING)
 
 if hasattr(sys.stdin, "reconfigure"):
     sys.stdin.reconfigure(encoding="utf-8", errors="replace")
@@ -106,7 +118,15 @@ def _get_engine() -> SemanticEngine:
 # FastMCP server instance
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP(name="aivc", instructions=_SYSTEM_PROMPT)
+mcp = FastMCP(name="aivc", instructions=_SYSTEM_PROMPT, log_level="ERROR")
+
+# Prevent duplicate handlers on root logger configured by dependencies
+for _h in list(logging.root.handlers):
+    _h.setLevel(logging.WARNING)
+logging.root.setLevel(logging.WARNING)
+logging.getLogger("mcp").setLevel(logging.WARNING)
+logging.getLogger("mcp.server").setLevel(logging.WARNING)
+logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.WARNING)
 
 
 # ---------------------------------------------------------------------------
@@ -279,30 +299,16 @@ async def remember(
         import sys
         print(f"Warning: Failed to trigger instant sync push: {e}", file=sys.stderr)
 
-    changes_summary_str = _format_changes_compressed(memory.changes, memory.machine_id, memory.id, memory.parent_id)
-
-    items_summary = ""
     if memory.user_items:
-        items_lines = [
-            f"  - [{'x' if it.get('done') else ' '}] [{it.get('id')}] {it.get('task')}"
-            for it in memory.user_items
-        ]
-        items_summary = "\n\nActions Utilisateur :\n" + "\n".join(items_lines)
+        lines = []
+        for it in memory.user_items:
+            task_id = it.get("id") or "task"
+            status = it.get("task_status") or ("validated" if it.get("done") else "new")
+            lines.append(f"[{task_id}] {status}")
+        return "\n".join(lines)
 
-    tldr_summary = ""
-    synced_paths = getattr(memory, "_tldr_synced_paths", [])
-    if synced_paths:
-        tldr_lines = [f"  - {p}" for p in synced_paths]
-        tldr_summary = "\n\nAdvance TLDR Synchronisés :\n" + "\n".join(tldr_lines)
-
-    return (
-        f"✅ Memory successfully created.\n"
-        f"ID        : {memory.id}\n"
-        f"Title     : {memory.title}\n"
-        f"Files Recorded:\n{changes_summary_str}"
-        f"{items_summary}"
-        f"{tldr_summary}"
-    )
+    short_cid = memory.id[:8] if memory.id else "ok"
+    return f"OK ({short_cid})"
 
 
 @mcp.tool()

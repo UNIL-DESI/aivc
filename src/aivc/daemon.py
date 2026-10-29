@@ -25,6 +25,11 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module=".*pydantic_settings.*")
+warnings.filterwarnings("ignore", message=".*lifespan.*")
+warnings.filterwarnings("ignore", message=".*file_cache is only supported.*")
+
 # Mission-critical Windows environment variables before heavy imports
 if sys.platform == "win32":
     os.environ["AIVC_DISABLE_CROSS_ENCODER"] = "True"
@@ -32,6 +37,9 @@ os.environ["CHROMA_TELEMETRY_DISABLED"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+logging.getLogger("mcp").setLevel(logging.WARNING)
+logging.getLogger("googleapiclient").setLevel(logging.ERROR)
+logging.getLogger("aivc").setLevel(logging.WARNING)
 logger = logging.getLogger("aivc.daemon")
 
 
@@ -71,8 +79,10 @@ def _resolve_relative_args(arguments: dict[str, Any], client_cwd: str | None) ->
     if not cwd_path.is_dir():
         return arguments
 
+    vn_root = Path.home() / "Documents" / "VoiceNotes"
+
     resolved = dict(arguments)
-    for k in ("file_path", "target_path"):
+    for k in ("file_path", "target_path", "main_project_file"):
         if k in resolved and isinstance(resolved[k], str) and resolved[k].strip():
             val = resolved[k]
             if _is_relative_path(val):
@@ -83,6 +93,8 @@ def _resolve_relative_args(arguments: dict[str, Any], client_cwd: str | None) ->
                 else:
                     if candidate.exists():
                         resolved[k] = str(candidate.resolve())
+                    elif (vn_root / val.strip()).exists():
+                        resolved[k] = str((vn_root / val.strip()).resolve())
 
     for k in ("read_files", "edited_files"):
         if k in resolved and isinstance(resolved[k], list):
@@ -92,6 +104,8 @@ def _resolve_relative_args(arguments: dict[str, Any], client_cwd: str | None) ->
                     candidate = cwd_path / item
                     if candidate.exists():
                         new_list.append(str(candidate.resolve()))
+                    elif (vn_root / item.strip()).exists():
+                        new_list.append(str((vn_root / item.strip()).resolve()))
                     else:
                         new_list.append(item)
                 else:

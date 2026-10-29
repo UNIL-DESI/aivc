@@ -244,6 +244,10 @@ class Workspace:
         rel_norm = raw_s.lstrip("./")
 
         if is_rel and rel_norm:
+            vn_cand = Path.home() / "Documents" / "VoiceNotes" / rel_norm
+            if vn_cand.exists():
+                return str(vn_cand)
+
             for tp in self._state["tracked_files"]:
                 if tp == rel_norm or tp.endswith("/" + rel_norm):
                     return tp

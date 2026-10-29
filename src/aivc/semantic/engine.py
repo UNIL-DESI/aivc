@@ -323,6 +323,24 @@ class SemanticEngine:
         if not main_project_file or not str(main_project_file).strip():
             raise ValueError("main_project_file is required and cannot be empty.")
 
+        def _resolve_relative_vn(p_cand: str) -> str:
+            if not isinstance(p_cand, str) or not p_cand.strip():
+                return p_cand
+            raw_s = p_cand.strip()
+            if raw_s.startswith("~/") or raw_s.startswith("~\\"):
+                return str(Path.home() / raw_s[2:].lstrip("/\\"))
+            cand = Path(raw_s)
+            if cand.is_absolute():
+                return raw_s
+            ws_root = getattr(self, "workspace_root", None) or getattr(self._workspace, "_root", None) or Path.cwd()
+            candidate = Path(ws_root) / cand
+            if candidate.exists():
+                return str(candidate)
+            vn_cand = Path.home() / "Documents" / "VoiceNotes" / cand
+            if vn_cand.exists():
+                return str(vn_cand)
+            return raw_s
+
         p_str = str(main_project_file).strip()
         if p_str.startswith("~/") or p_str.startswith("~\\"):
             resolved_path = Path.home() / p_str[2:].lstrip("/\\")
@@ -333,19 +351,27 @@ class SemanticEngine:
             else:
                 ws_root = getattr(self, "workspace_root", None) or getattr(self._workspace, "_root", None) or Path.cwd()
                 resolved_path = Path(ws_root) / raw_p
+                if not resolved_path.exists():
+                    vn_candidate = Path.home() / "Documents" / "VoiceNotes" / raw_p
+                    if vn_candidate.exists():
+                        resolved_path = vn_candidate
 
         if not resolved_path.exists():
             raise ValueError(f"main_project_file does not exist on disk: {main_project_file}")
 
         portable_main = to_portable_path(resolved_path)
 
+        norm_read_files = [_resolve_relative_vn(f) for f in (read_files or [])]
+        norm_consulted_files = [_resolve_relative_vn(f) for f in (consulted_files or [])]
+        norm_edited_files = [_resolve_relative_vn(f) for f in (edited_files or [])]
+
         # Ajout automatique aux fichiers consultés (read_files) si non présent
         portable_main_lower = portable_main.lower()
         existing_paths_lower = set()
-        for f in (read_files or []) + (consulted_files or []) + (edited_files or []):
+        for f in norm_read_files + norm_consulted_files + norm_edited_files:
             existing_paths_lower.add(to_portable_path(f).lower())
 
-        actual_read_files = list(read_files) if read_files is not None else []
+        actual_read_files = list(norm_read_files)
         if portable_main_lower not in existing_paths_lower:
             actual_read_files.append(str(resolved_path))
 
@@ -355,12 +381,12 @@ class SemanticEngine:
             journal=journal,
             tasks=tasks,
             user_items=user_items,
-            edited_files=edited_files,
+            edited_files=norm_edited_files,
             read_files=actual_read_files,
             urls=urls,
             note=note,
             machine_id=machine_id,
-            consulted_files=consulted_files,
+            consulted_files=norm_consulted_files,
             roadmap_items=roadmap_items,
             main_project_file=portable_main,
         )
