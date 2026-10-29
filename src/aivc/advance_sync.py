@@ -154,6 +154,11 @@ def is_obsidian_related_memory(memory: Any) -> bool:
     return False
 
 
+def normalize_advance_tldr_title(title: str) -> str:
+    """Normalizes project title for advance_tldr notes by stripping leading robot emojis."""
+    return re.sub(r"^(?:🤖\s*)+", "", title).strip()
+
+
 def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> list[str]:
     """Auto-restores files under .gemini/antigravity/brain/ referenced by memory if missing locally.
     Remaps any foreign machine paths to current PC's Path.home() / .gemini/antigravity/brain/...
@@ -205,7 +210,7 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
             candidate_subpaths.add(sub)
 
     brain_regex = re.compile(
-        r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
+        r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
         re.IGNORECASE,
     )
 

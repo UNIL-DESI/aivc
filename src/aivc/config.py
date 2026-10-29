@@ -193,11 +193,11 @@ def extract_brain_subpath(raw_path: str | Path) -> str | None:
     if ":L" in s or re.search(r":\d+", s):
         s = re.split(r":L?\d+", s)[0]
 
-    marker = ".gemini/antigravity/brain/"
-    idx = s.lower().find(marker)
-    if idx != -1:
-        rel = s[idx + len(marker):].strip().strip("/")
-        return rel if rel else None
+    for marker in (".gemini/antigravity-cli/brain/", ".gemini/antigravity/brain/"):
+        idx = s.lower().find(marker)
+        if idx != -1:
+            rel = s[idx + len(marker):].strip().strip("/")
+            return rel if rel else None
     return None
 
 

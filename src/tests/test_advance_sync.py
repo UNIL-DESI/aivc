@@ -148,6 +148,7 @@ def test_real_end_to_end_advance_tldr_sync_on_disk():
         title="[Advance] Le Conseil des Voleurs — E2E Test",
         note="Note",
         parent_id=None,
+        main_project_file="~/Documents/VoiceNotes/notes/Le Conseil des Voleurs.md",
         changes=[FileChange(path="~/Documents/VoiceNotes/notes/Le Conseil des Voleurs.md", action="consulted")],
         user_items=[{"id": "r-efe056-4", "task": "Session 9", "task_status": "await_validation"}],
     )
@@ -159,4 +160,50 @@ def test_real_end_to_end_advance_tldr_sync_on_disk():
     content = tldr_path.read_text(encoding="utf-8")
     assert "# 🤖 Le Conseil des Voleurs" in content
     assert "Session 9" in content
+
+
+def test_normalize_advance_tldr_title():
+    from aivc.advance_sync import normalize_advance_tldr_title
+    assert normalize_advance_tldr_title("🤖 Consolidation et Exploration Dream") == "Consolidation et Exploration Dream"
+    assert normalize_advance_tldr_title("🤖 🤖 Double Robot") == "Double Robot"
+    assert normalize_advance_tldr_title("Standard Project") == "Standard Project"
+
+
+def test_extract_brain_subpath_with_cli_and_gui():
+    from aivc.config import extract_brain_subpath
+    p_gui = "file:///C:/Users/Jamet/.gemini/antigravity/brain/conv-123/doc.md"
+    p_cli = "file:///C:/Users/Jamet/.gemini/antigravity-cli/brain/c56d3473-5382-403a-bf60-4151776c89b5/dream_report.md"
+    assert extract_brain_subpath(p_gui) == "conv-123/doc.md"
+    assert extract_brain_subpath(p_cli) == "c56d3473-5382-403a-bf60-4151776c89b5/dream_report.md"
+
+
+def test_real_end_to_end_no_double_robot_sync():
+    """Verify notes starting with 🤖 do not generate double 🤖 🤖 advance_tldr files."""
+    cli_path = find_project_memory_cli_path()
+    if not cli_path or not cli_path.is_file():
+        pytest.skip("VoiceNotes project_memory_cli.py not found on this machine.")
+    from aivc.advance_sync import _load_project_memory_module
+    mod = _load_project_memory_module()
+    if not hasattr(mod, "sync_advance_tldr_for_memory"):
+        pytest.skip("sync_advance_tldr_for_memory not yet implemented in project_memory_cli.py")
+
+    mem = Memory(
+        id="test-e2e-no-double-robot",
+        timestamp="2026-10-29T10:00:00Z",
+        title="[Advance] 🤖 Consolidation et Exploration Dream — Test",
+        note="Note",
+        parent_id=None,
+        main_project_file="~/Documents/VoiceNotes/notes/🤖 Consolidation et Exploration Dream.md",
+        changes=[FileChange(path="~/Documents/VoiceNotes/notes/🤖 Consolidation et Exploration Dream.md", action="consulted")],
+        user_items=[{"id": "r-dream-1", "task": "Test Double Robot Eradication", "task_status": "await_validation"}],
+    )
+    synced = sync_advance_tldr(mem)
+    assert len(synced) >= 1
+    tldr_path = Path(synced[0])
+    assert tldr_path.is_file()
+    assert tldr_path.name == "🤖 Consolidation et Exploration Dream.md"
+    content = tldr_path.read_text(encoding="utf-8")
+    assert "# 🤖 Consolidation et Exploration Dream" in content
+    assert "# 🤖 🤖" not in content
+
 
