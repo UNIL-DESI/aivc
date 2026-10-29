@@ -9,6 +9,13 @@ import os
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Set mission-critical environment variables before heavy ML imports
 # This completely bypasses the 5-minute atexit/thread deadlock on Windows
 # caused by ChromaDB PostHog telemetry failing on corporate firewalls.
@@ -379,6 +386,153 @@ def cmd_sync_semantic(args: argparse.Namespace) -> None:
     else:
         print(f"{RED}Error during semantic export: {result.get('error', 'Unknown error')}{RESET}")
 
+def cmd_dream_inbox(args: argparse.Namespace) -> None:
+    """Inspect and manage Google Drive Dream_Inbox files for the /dream skill."""
+    import subprocess
+    import json
+    import tempfile
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import sys
+
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    action = args.inbox_action
+
+    if action == "list":
+        print(f"{CYAN}{BOLD}Google Drive Dream_Inbox Listing:{RESET}")
+        try:
+            out = subprocess.check_output(
+                ["rclone", "lsjson", "gdrive:Dream_Inbox"],
+                stderr=subprocess.DEVNULL,
+                encoding="utf-8"
+            )
+            files = json.loads(out)
+            if not files:
+                print(f"  {GREEN}{CHECK_MARK} Dream_Inbox est vide (0 fichier).{RESET}")
+                return
+            print(f"  {len(files)} fichier(s) trouvé(s) dans Dream_Inbox :")
+            for i, f in enumerate(files, 1):
+                f_name = f.get("Name")
+                f_id = f.get("ID")
+                f_mod = f.get("ModTime", "")[:19]
+                print(f"  {i}. {BOLD}{f_name}{RESET} (ID: {f_id}, Date: {f_mod})")
+        except Exception as e:
+            print(f"{RED}Error listing Dream_Inbox: {e}{RESET}")
+
+    elif action == "read":
+        target = args.target
+        if not target:
+            print(f"{RED}Error: please specify a document name or ID to read.{RESET}")
+            return
+        print(f"{DIM}Reading '{target}' from Dream_Inbox...{RESET}\n")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_target = Path(tmp_dir) / "doc.docx"
+            try:
+                remote_path = f"Dream_Inbox/{target}"
+                subprocess.check_call(
+                    ["rclone", "copyto", f"gdrive:{remote_path}", str(local_target)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                if zipfile.is_zipfile(local_target):
+                    with zipfile.ZipFile(local_target) as z:
+                        xml_content = z.read("word/document.xml")
+                    tree = ET.fromstring(xml_content)
+                    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                    paras = []
+                    for p in tree.iterfind(".//w:p", ns):
+                        t_parts = [t.text for t in p.iterfind(".//w:t", ns) if t.text]
+                        if t_parts:
+                            paras.append("".join(t_parts))
+                    print("\n".join(paras))
+                else:
+                    print(local_target.read_text(encoding="utf-8", errors="replace"))
+            except Exception as e:
+                print(f"{RED}Error reading file from Dream_Inbox: {e}{RESET}")
+
+    elif action == "trash":
+        target = args.target
+        if not target:
+            print(f"{RED}Error: please specify a document name or ID to trash.{RESET}")
+            return
+        print(f"{DIM}Attempting to trash '{target}' from Dream_Inbox...{RESET}")
+
+        doc_id = None
+        try:
+            out = subprocess.check_output(
+                ["rclone", "lsjson", "gdrive:Dream_Inbox"],
+                stderr=subprocess.DEVNULL,
+                encoding="utf-8"
+            )
+            files = json.loads(out)
+            for f in files:
+                if f.get("Name") == target or f.get("ID") == target:
+                    doc_id = f.get("ID")
+                    break
+        except Exception:
+            pass
+
+        if not doc_id and len(target) > 20:
+            doc_id = target
+
+        trashed = False
+        try:
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
+            from aivc.config import get_token_path
+            t_path = get_token_path()
+            if t_path.exists():
+                creds = Credentials.from_authorized_user_file(str(t_path))
+                svc = build("drive", "v3", credentials=creds)
+                svc.files().update(fileId=doc_id, body={"trashed": True}).execute()
+                trashed = True
+        except Exception:
+            pass
+
+        if not trashed:
+            try:
+                from aivc.config import get_home_dir
+                import urllib.request
+                import urllib.parse
+                data_path = get_home_dir() / "Documents" / "VoiceNotes" / ".obsidian" / "plugins" / "gemini-sync" / "data.json"
+                if data_path.exists():
+                    data = json.loads(data_path.read_text(encoding="utf-8"))
+                    params = {
+                        "client_id": data["clientId"],
+                        "client_secret": data["clientSecret"],
+                        "refresh_token": data["refreshToken"],
+                        "grant_type": "refresh_token"
+                    }
+                    req = urllib.request.Request("https://oauth2.googleapis.com/token", data=urllib.parse.urlencode(params).encode("utf-8"), method="POST")
+                    with urllib.request.urlopen(req) as resp:
+                        tok_resp = json.loads(resp.read().decode("utf-8"))
+                    svc = build("drive", "v3", credentials=Credentials(token=tok_resp["access_token"]))
+                    svc.files().update(fileId=doc_id, body={"trashed": True}).execute()
+                    trashed = True
+            except Exception:
+                pass
+
+        if not trashed and doc_id:
+            try:
+                gdrive_script = Path.home() / ".gemini" / "config" / "plugins" / "gdrive" / "skills" / "gdrive" / "scripts" / "gdrive.cmd"
+                if gdrive_script.exists():
+                    res = subprocess.run([str(gdrive_script), "mutate", "trash", doc_id], capture_output=True, text=True)
+                    if res.returncode == 0:
+                        trashed = True
+            except Exception:
+                pass
+
+        if trashed:
+            print(f"{GREEN}{CHECK_MARK} File '{target}' successfully moved to Google Drive Trash.{RESET}")
+        else:
+            print(f"{YELLOW}Note : Les tokens locaux actuels sont restreints en écriture (scope 'drive.readonly' ou 'drive.file').{RESET}")
+            print(f"Pour purger ce document manuellement ou le mettre à la corbeille en 1 clic :")
+            print(f"  {CYAN}https://drive.google.com/drive/folders/1JsNgV7uD1c981dNQpYEprKdjVgitLDo8{RESET}")
 
 def cmd_sync_status(args: argparse.Namespace) -> None:
     """Show cloud sync status and remote machines."""
@@ -600,6 +754,24 @@ def main() -> None:
         help="Number of tasks per document / archive batch (default: 25, max: 30)"
     )
 
+    # dream-inbox
+    parser_inbox = subparsers.add_parser(
+        "dream-inbox",
+        help="Inspect and manage Google Drive Dream_Inbox for the /dream skill"
+    )
+    parser_inbox.add_argument(
+        "inbox_action",
+        choices=["list", "read", "trash"],
+        help="Action to perform (list, read, trash)"
+    )
+    parser_inbox.add_argument(
+        "target",
+        type=str,
+        nargs="?",
+        default="",
+        help="Target document name or ID (for read or trash)"
+    )
+
     args = parser.parse_args()
 
     if args.command == "migrate":
@@ -617,6 +789,8 @@ def main() -> None:
         cmd_config(args)
     elif args.command == "sync-semantic":
         cmd_sync_semantic(args)
+    elif args.command == "dream-inbox":
+        cmd_dream_inbox(args)
     elif args.command == "sync":
         if args.sync_command == "setup":
             cmd_sync_setup(args)
