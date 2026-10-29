@@ -398,3 +398,48 @@ def test_live_await_validation_retains_active_items(tmp_path: Path):
     assert "[t-await-1]" not in doc
 
 
+def test_guard_blocks_when_storage_env_fake_and_no_pytest_var(monkeypatch, tmp_path: Path):
+    """Hermetic guard test: verify that non-canonical storage or active test runner blocks export."""
+    import threading
+    from unittest.mock import patch
+    from aivc.sync.semantic_export import (
+        SemanticDriveExporter,
+        trigger_semantic_export_async,
+        is_canonical_storage,
+    )
+
+    fake_storage = "/tmp/aivc_test_storage"
+    monkeypatch.setenv("AIVC_STORAGE_ROOT", fake_storage)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    # 1. is_canonical_storage must reject fake storage and tmp_path
+    assert not is_canonical_storage(fake_storage)
+    assert not is_canonical_storage(tmp_path)
+
+    # 2. export_all is blocked when manager is not a Mock
+    class FakeRealManager:
+        enabled = True
+        storage_root = Path(fake_storage)
+
+    exporter = SemanticDriveExporter(drive_sync_manager=FakeRealManager(), storage_root=Path(fake_storage))
+    res = exporter.export_all()
+    assert res["status"] == "blocked"
+    assert res["reason"] in ("pytest_active", "non_canonical_storage")
+
+    # 3. trigger_semantic_export_async is blocked and does not launch thread
+    thread_count_before = threading.active_count()
+    trigger_semantic_export_async(Path(fake_storage))
+    assert threading.active_count() == thread_count_before
+
+    # 4. Even if is_test_environment was False, non-canonical storage blocks both export_all and async thread
+    with patch("aivc.sync.semantic_export.is_test_environment", return_value=False):
+        res_no_test = exporter.export_all()
+        assert res_no_test["status"] == "blocked"
+        assert res_no_test["reason"] == "non_canonical_storage"
+
+        thread_count_before_2 = threading.active_count()
+        trigger_semantic_export_async(Path(fake_storage))
+        assert threading.active_count() == thread_count_before_2
+
+
+

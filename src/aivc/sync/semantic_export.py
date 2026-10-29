@@ -366,6 +366,42 @@ def format_archive_document(status: str, items: list[dict[str, Any]], batch_num:
     return "\n".join(lines)
 
 
+def is_test_environment() -> bool:
+    """Detects if code is executing under pytest or unittest."""
+    import os
+    import sys
+    return bool(
+        os.environ.get("PYTEST_CURRENT_TEST")
+        or ("pytest" in sys.modules)
+        or ("unittest" in sys.modules)
+    )
+
+
+def is_canonical_storage(storage_root: Path | str | None) -> bool:
+    """Verifies that storage_root points strictly to canonical ~/.aivc/storage.
+
+    Explicitly rejects any path containing tmp, temp, test or diverging from Path.home() / .aivc / storage.
+    """
+    if not storage_root:
+        return False
+    try:
+        from aivc.config import get_home_dir
+        home_path = get_home_dir()
+    except Exception:
+        home_path = Path.home()
+
+    canonical_target = (home_path / ".aivc" / "storage").resolve()
+    try:
+        resolved = Path(storage_root).resolve()
+        path_str_lower = str(resolved).lower().replace("\\", "/")
+        for suspect in ["/tmp", "\\tmp", "/temp", "\\temp", "test_storage", "/test", "\\test"]:
+            if suspect in path_str_lower:
+                return False
+        return resolved == canonical_target
+    except Exception:
+        return False
+
+
 class SemanticDriveExporter:
     """Synchronizes semantic state of AIVC tasks to Google Drive native Docs."""
 
@@ -449,14 +485,9 @@ class SemanticDriveExporter:
         import os
         from aivc.config import get_storage_root
 
-        # Strict Guard: prevent exporting to Google Drive if pytest is running OR if storage_root != canonical
-        is_in_test = bool(os.environ.get("PYTEST_CURRENT_TEST"))
-        is_canonical = False
-        try:
-            canonical_root = get_storage_root(allow_fallback=True)
-            is_canonical = (Path(self.storage_root).resolve() == Path(canonical_root).resolve())
-        except Exception:
-            is_canonical = False
+        # Strict Guard: prevent exporting to Google Drive if pytest/unittest is running OR if storage_root != canonical
+        is_in_test = is_test_environment()
+        is_canonical = is_canonical_storage(self.storage_root)
 
         if is_in_test or not is_canonical:
             # Allow mock testing if manager is an explicit Mock/MagicMock
@@ -563,27 +594,33 @@ class SemanticDriveExporter:
 
 def trigger_semantic_export_async(storage_root: Path | None = None) -> None:
     """Fires semantic export in a detached background daemon thread."""
-    import os
     import threading
-    from aivc.config import get_storage_root
 
-    # Strict Guard: do not trigger async export during pytest or for non-canonical storage
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        logger.debug("Skipping async semantic export: running inside pytest.")
+    # Strict Guard: do not trigger async export during pytest or unittest
+    if is_test_environment():
+        logger.debug("Skipping async semantic export: running inside test environment.")
         return
 
-    real_root = get_storage_root(allow_fallback=True)
-    target_root = storage_root or real_root
-    try:
-        if Path(target_root).resolve() != Path(real_root).resolve():
+    # Strict Guard: must point strictly to canonical storage root
+    if not is_canonical_storage(storage_root):
+        if storage_root is None:
+            try:
+                from aivc.config import get_home_dir
+                canonical = (get_home_dir() / ".aivc" / "storage").resolve()
+            except Exception:
+                canonical = (Path.home() / ".aivc" / "storage").resolve()
+            if not is_canonical_storage(canonical):
+                logger.debug("Skipping async semantic export: canonical storage is invalid.")
+                return
+            target_root = canonical
+        else:
             logger.debug(
-                "Skipping async semantic export: target root %s != canonical %s",
-                target_root,
-                real_root,
+                "Skipping async semantic export: target root %s is not canonical.",
+                storage_root,
             )
             return
-    except Exception:
-        return
+    else:
+        target_root = Path(storage_root).resolve()
 
     def _worker():
         try:
