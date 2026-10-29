@@ -843,6 +843,7 @@ class Workspace:
         Returns the list of synchronously restored local file paths.
         """
         import re
+        from urllib.parse import unquote
         from aivc.config import extract_brain_subpath, get_home_dir
 
         restored: list[str] = []
@@ -857,14 +858,18 @@ class Workspace:
             if not path_str:
                 continue
             sub = extract_brain_subpath(path_str)
-            if sub and sub not in candidates:
-                candidates[sub] = getattr(change, "blob_hash", None)
+            if sub:
+                sub = unquote(sub)
+                if sub not in candidates:
+                    candidates[sub] = getattr(change, "blob_hash", None)
 
         # 2. From edited_files and read_files
         for path_str in getattr(memory, "edited_files", []) + getattr(memory, "read_files", []):
             sub = extract_brain_subpath(path_str)
-            if sub and sub not in candidates:
-                candidates[sub] = None
+            if sub:
+                sub = unquote(sub)
+                if sub not in candidates:
+                    candidates[sub] = None
 
         # 3. From user_items (task, details)
         brain_regex = re.compile(
@@ -875,7 +880,7 @@ class Workspace:
             if isinstance(item, dict):
                 text = f"{item.get('task', '')} {item.get('details', '')}"
                 for m in brain_regex.finditer(text):
-                    raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    raw = unquote(m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/"))
                     if raw and raw not in candidates:
                         candidates[raw] = None
 
@@ -883,7 +888,7 @@ class Workspace:
         for text in (getattr(memory, "journal", ""), getattr(memory, "note", "")):
             if text:
                 for m in brain_regex.finditer(text):
-                    raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
+                    raw = unquote(m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/"))
                     if raw and raw not in candidates:
                         candidates[raw] = None
 
@@ -905,8 +910,12 @@ class Workspace:
                 except OSError:
                     pass
 
-            # If file already exists locally on disk, nothing to restore
-            if local_path.is_file():
+            # If path already exists locally on disk (file or directory), nothing to restore
+            if local_path.exists():
+                continue
+
+            # If not tracked in memory.changes and has no extension, skip directory references
+            if blob_hash is None and "." not in Path(sub).name:
                 continue
 
             content: bytes | None = None

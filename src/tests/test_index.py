@@ -87,3 +87,17 @@ def test_migrate_from_json(tmp_path: Path, index: CoreIndex) -> None:
     # Second run should skip
     count2 = index.migrate_from_json(memories_dir)
     assert count2 == 0
+
+
+def test_get_blob_hashes_for_file_filtering(index: CoreIndex) -> None:
+    fc1 = FileChange(path="src/aivc/file.py", action="added", blob_hash="hash_a", bytes_added=10, bytes_removed=0)
+    fc2 = FileChange(path="other/not_file.py", action="added", blob_hash="hash_b", bytes_added=10, bytes_removed=0)
+    fc3 = FileChange(path="prefix_file.py", action="added", blob_hash="hash_c", bytes_added=10, bytes_removed=0)
+    m = Memory.create(title="Multi", note="Note", parent_id=None, changes=[fc1, fc2, fc3])
+    index.add_memory(m)
+
+    assert index.get_blob_hashes_for_file("src/aivc/file.py") == {"hash_a"}
+    assert index.get_blob_hashes_for_file("prefix_file.py") == {"hash_c"}
+    assert index.get_blob_hashes_for_file("file.py") == set()
+    assert index.get_blob_hashes_for_file("") == set()
+

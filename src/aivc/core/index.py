@@ -128,8 +128,15 @@ class CoreIndex:
     def get_blob_hashes_for_file(self, file_path: str) -> set[str]:
         """Return all unique blob hashes ever associated with this file."""
         target_portable = to_portable_path(file_path)
+        if not target_portable:
+            return set()
+        basename = target_portable.rsplit("/", 1)[-1]
+        if not basename:
+            return set()
         rows = self._execute(
-            "SELECT DISTINCT path, blob_hash FROM file_changes WHERE blob_hash IS NOT NULL"
+            "SELECT DISTINCT path, blob_hash FROM file_changes "
+            "WHERE blob_hash IS NOT NULL AND (path = ? OR path LIKE ?)",
+            (target_portable, f"%{basename}"),
         ).fetchall()
         return {h for p, h in rows if to_portable_path(p) == target_portable}
 

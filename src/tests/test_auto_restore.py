@@ -475,3 +475,53 @@ def test_auto_restore_brain_files_background_drive(tmp_path: Path, monkeypatch):
     assert expected_local.read_bytes() == b"# Restored Async Content"
 
 
+def test_auto_restore_unquotes_urls_and_skips_directories(tmp_path: Path, monkeypatch):
+    """Verify auto_restore handles %20 URL decoding and skips existing directories / extensionless references."""
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+
+    storage_root = tmp_path / ".aivc" / "storage"
+    ws = Workspace(storage_root)
+
+    # 1. An existing directory on disk
+    dir_path = tmp_path / ".gemini" / "antigravity" / "brain" / "conv-unquote" / "subfolder"
+    dir_path.mkdir(parents=True, exist_ok=True)
+
+    # 2. File with encoded spaces in URL
+    file_with_spaces = tmp_path / ".gemini" / "antigravity" / "brain" / "conv-unquote" / "Doc With Spaces.md"
+    content = b"# Spaces Content"
+    blob_hash = ws._blob_store.store(content)
+
+    mem = Memory(
+        id="mem-unquote-test",
+        timestamp="2026-10-30T00:00:00Z",
+        title="Unquote test",
+        note="Refers to file:///C:/Users/test/.gemini/antigravity/brain/conv-unquote/Doc%20With%20Spaces.md and subfolder/",
+        parent_id=None,
+        changes=[
+            FileChange(
+                path=str(file_with_spaces),
+                action="added",
+                blob_hash=blob_hash,
+                bytes_added=len(content),
+                bytes_removed=0,
+            )
+        ],
+        user_items=[
+            {
+                "id": "item-1",
+                "task": "Task with dir",
+                "details": "See file:///C:/Users/test/.gemini/antigravity/brain/conv-unquote/subfolder and non_existent_folder",
+                "task_status": "await_validation",
+            }
+        ],
+    )
+
+    restored = ws.auto_restore_brain_files(mem)
+    assert str(file_with_spaces) in restored
+    assert file_with_spaces.is_file()
+    assert file_with_spaces.read_bytes() == content
+    # Ensure directory is still a directory and not overwritten with blob
+    assert dir_path.is_dir()
+
+
+
