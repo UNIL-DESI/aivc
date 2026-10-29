@@ -207,6 +207,12 @@ class TestRecall(unittest.IsolatedAsyncioTestCase):
         await _recall("x", top_n=100)
         _mock_engine.search.assert_called_once_with("x", top_n=20, filter_glob="")
 
+    async def test_recall_does_not_call_auto_restore(self):
+        results = [_make_search_result("m1", "M1")]
+        _mock_engine.search.return_value = results
+        await _recall("test query")
+        _mock_engine.auto_restore_brain_files.assert_not_called()
+
 
 class TestConsultMemory(unittest.TestCase):
     def setUp(self):
@@ -290,6 +296,27 @@ class TestGetFileHistory(unittest.TestCase):
         _mock_engine._workspace.get_file_history.return_value = []
         result = _get_file_history("unknown.txt")
         self.assertIn("Aucun souvenir trouvé", result)
+
+    def test_filters_user_items_by_main_project_file(self):
+        mem_matching = _make_memory(
+            memory_id="mem-1",
+            title="Matching Project Commit",
+            user_items=[{"id": "match-1", "task": "Relevant task", "done": False}],
+        )
+        mem_matching.main_project_file = "~/Documents/VoiceNotes/notes/Project A.md"
+
+        mem_other = _make_memory(
+            memory_id="mem-2",
+            title="Other Project Commit",
+            user_items=[{"id": "parasite-1", "task": "Parasite task", "done": False}],
+        )
+        mem_other.main_project_file = "~/Documents/VoiceNotes/notes/Project B.md"
+
+        _mock_engine._workspace.get_file_history.return_value = [mem_matching, mem_other]
+
+        result = _get_file_history("~/Documents/VoiceNotes/notes/Project A.md")
+        self.assertIn("`[match-1]` Relevant task", result)
+        self.assertNotIn("parasite-1", result)
 
 
 class TestCompleteUserItems(unittest.TestCase):

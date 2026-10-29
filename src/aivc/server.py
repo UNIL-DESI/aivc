@@ -298,7 +298,9 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
     top_n = min(top_n, 20)
 
     import os
-    disable_cross = os.environ.get("AIVC_DISABLE_CROSS_ENCODER", "False").lower() == "true"
+    import sys
+    default_disable = "True" if sys.platform == "win32" else "False"
+    disable_cross = os.environ.get("AIVC_DISABLE_CROSS_ENCODER", default_disable).lower() == "true"
     engine = _get_engine()
     if not disable_cross:
         try:
@@ -306,7 +308,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
             if searcher is not None:
                 _ = searcher._cross_encoder
         except Exception as e:
-            import sys
             print(f"[aivc] Failed to eagerly load CrossEncoder on main thread: {e}", file=sys.stderr)
 
     indexing_queue_size = engine.get_index_queue_size()
@@ -318,13 +319,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
 
     if not results:
         return warning_header + _format_cold_start_payload()
-
-    for r in results:
-        try:
-            mem = engine.get_memory(r.memory_id)
-            engine.auto_restore_brain_files(mem)
-        except Exception:
-            pass
 
     memory_lines = []
     for i, r in enumerate(results, 1):
@@ -458,14 +452,23 @@ def get_file_history(file_path: str) -> str:
     lines = [f"## AIVC History for: `{file_path}`\n"]
     lines.append(f"{len(memories)} memory(ies) have touched this file:\n")
 
+    from aivc.config import to_portable_path
+    target_portable = to_portable_path(file_path).lower()
+
     for mem in memories:
         lines.append(f"- [{mem.timestamp[:10]}] **{mem.title}** (ID: `{mem.id}`)")
-        open_items = [it for it in getattr(mem, "user_items", []) if not it.get("done", False)]
-        if open_items:
-            for it in open_items:
-                it_id = it.get("id", "")
-                task = it.get("task", "")
-                lines.append(f"    - [ ] `[{it_id}]` {task}")
+        mpf = getattr(mem, "main_project_file", None)
+        mpf_portable = to_portable_path(mpf).lower() if mpf else ""
+        if not mpf_portable or mpf_portable == target_portable:
+            open_items = [
+                it for it in getattr(mem, "user_items", [])
+                if not it.get("done", False) and it.get("task_status") != "validated"
+            ]
+            if open_items:
+                for it in open_items:
+                    it_id = it.get("id", "")
+                    task = it.get("task", "")
+                    lines.append(f"    - [ ] `[{it_id}]` {task}")
 
     lines.append(
         "\n💡 Use `consult_memory(memory_id)` to read the full note of a specific memory."

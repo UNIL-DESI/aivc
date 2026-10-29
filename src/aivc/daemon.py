@@ -151,8 +151,8 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/shutdown":
-            self._send_json_response(200, {"status": "shutting_down"})
             self.server.running = False
+            self._send_json_response(200, {"status": "shutting_down"})
             return
 
         if self.path == "/mcp":

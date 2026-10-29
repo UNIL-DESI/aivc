@@ -27,8 +27,12 @@ def get_home_dir() -> Path:
 
 _STORAGE_ROOT_ENV = "AIVC_STORAGE_ROOT"
 _CONFIG_PATH = get_home_dir() / ".aivc" / "config.json"
-_CREDENTIALS_PATH = get_home_dir() / ".aivc" / "credentials.json"
-_TOKEN_PATH = get_home_dir() / ".aivc" / "token.json"
+def get_aivc_dir() -> Path:
+    return get_home_dir() / ".aivc"
+
+_CREDENTIALS_PATH = get_aivc_dir() / "credentials.json"
+_TOKEN_PATH = get_aivc_dir() / "token.json"
+
 
 # Disable network telemetry that causes massive latency spikes on Windows
 os.environ["ANONYMIZED_TELEMETRY"] = "False"  # ChromaDB

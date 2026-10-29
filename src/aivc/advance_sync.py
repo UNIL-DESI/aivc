@@ -247,6 +247,25 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
             return []
 
         vault_str = str(vault_dir) if vault_dir else str(get_vault_dir())
+
+        # Fallback resolution of main_project_file if not set on memory
+        mpf = getattr(memory, "main_project_file", None) if not isinstance(memory, dict) else memory.get("main_project_file")
+        if not mpf:
+            all_c = getattr(memory, "changes", []) or [] if not isinstance(memory, dict) else memory.get("changes", [])
+            for c in all_c:
+                cp = getattr(c, "path", None) if hasattr(c, "path") else (c.get("path") if isinstance(c, dict) else str(c))
+                cp_clean = str(cp).replace("\\", "/")
+                if "voicenotes/" in cp_clean.lower() and cp_clean.lower().endswith(".md"):
+                    if not any(ex in cp_clean.lower() for ex in ("_agents", ".obsidian", ".git")):
+                        if hasattr(memory, "main_project_file"):
+                            try:
+                                setattr(memory, "main_project_file", to_portable_path(cp))
+                            except Exception:
+                                pass
+                        if isinstance(memory, dict):
+                            memory["main_project_file"] = to_portable_path(cp)
+                        break
+
         synced_paths = sync_fn(memory, vault_dir=vault_str)
         setattr(memory, "_tldr_synced", True)
         setattr(memory, "_tldr_synced_paths", synced_paths or [])
@@ -254,3 +273,153 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
     except Exception as e:
         logger.warning("Failed to synchronize advance_tldr for memory %s: %s", getattr(memory, "id", "unknown"), e)
         return []
+
+
+def backfill_missing_main_project_files(
+    storage_dir: Path | str | None = None,
+    vault_dir: Path | str | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Deterministically identifies and backfills missing main_project_file in AIVC commit JSONs.
+
+    Strict rules:
+    - Anchors strictly to existing vault notes (.md in notes/ or root) and explicit known aliases.
+    - Zero guesswork: never falls back to cand_notes[0] or random guessing if ambiguous.
+    """
+    import json
+    from aivc.config import get_home_dir, get_storage_root
+
+    v_dir = Path(vault_dir) if vault_dir else get_vault_dir()
+    if storage_dir:
+        s_dir = Path(storage_dir)
+    else:
+        s_dir = get_storage_root(allow_fallback=True)
+
+    commits_dir = s_dir / "commits" if (s_dir / "commits").is_dir() else s_dir
+
+    # 1. Index all valid vault notes
+    vault_notes = list(v_dir.glob("notes/*.md")) + list(v_dir.glob("*.md"))
+    excluded_dirs = {"_agents", ".obsidian", ".git", "templates", "readwise", "attachments", "thumbnails"}
+
+    note_by_stem_lower: dict[str, str] = {}
+    note_by_rel_lower: dict[str, str] = {}
+
+    for n in vault_notes:
+        try:
+            rel_posix = n.relative_to(v_dir).as_posix()
+        except ValueError:
+            continue
+        if any(ex in rel_posix.lower() for ex in excluded_dirs):
+            continue
+        port = f"~/Documents/VoiceNotes/{rel_posix}"
+        note_by_rel_lower[rel_posix.lower()] = port
+
+        stem = n.stem.lower()
+        clean_stem = re.sub(r"^(?:🤖\s*)+", "", stem).strip()
+        note_by_stem_lower[clean_stem] = port
+        note_by_stem_lower[stem] = port
+
+    # Special known project aliases
+    special_aliases = {
+        "aib 2026": "~/Documents/VoiceNotes/Organisation du cours Artificial Intelligence in Business 2026.md",
+        "aib": "~/Documents/VoiceNotes/Organisation du cours Artificial Intelligence in Business 2026.md",
+        "consolidation et exploration dream": "~/Documents/VoiceNotes/notes/🤖 Consolidation et Exploration Dream.md",
+        "dllp": "~/Documents/VoiceNotes/notes/Digital Language Learning Platform.md",
+        "soumission arxiv": "~/Documents/VoiceNotes/notes/Soumission ArXiv Pipeline Articles.md",
+    }
+
+    updated_count = 0
+    scanned_count = 0
+    skipped_count = 0
+    updated_commits = []
+
+    for p in sorted(commits_dir.glob("*.json")):
+        scanned_count += 1
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        mpf = d.get("main_project_file")
+        if mpf:
+            skipped_count += 1
+            continue
+
+        title = d.get("title", "")
+        target_mpf = None
+
+        # Step A: extract project name from title pattern [Advance|Roadmap|Reviewer|Dream]
+        m_adv = re.match(
+            r"^\[(?:Advance|Roadmap|Advance-Audit|Reviewer|Dream\s*#?\d*)\]\s*(?:🤖\s*)?([^\—\-\–\:]+)(?:[\—\-\–\:].*)?$",
+            title,
+            re.IGNORECASE,
+        )
+        if m_adv:
+            proj_candidate = m_adv.group(1).strip().lower()
+            clean_cand = re.sub(r"^(?:🤖\s*)+", "", proj_candidate).strip()
+            if clean_cand in special_aliases:
+                target_mpf = special_aliases[clean_cand]
+            elif clean_cand in note_by_stem_lower:
+                target_mpf = note_by_stem_lower[clean_cand]
+
+        # Step B: check prefix before dash/colon
+        if not target_mpf and ("—" in title or " - " in title or ":" in title):
+            delim = "—" if "—" in title else (" - " if " - " in title else ":")
+            prefix = title.split(delim)[0].strip().lower()
+            clean_prefix = re.sub(r"^(?:🤖\s*)+", "", prefix).strip()
+            if clean_prefix in special_aliases:
+                target_mpf = special_aliases[clean_prefix]
+            elif clean_prefix in note_by_stem_lower:
+                target_mpf = note_by_stem_lower[clean_prefix]
+
+        # Step B2: check special aliases directly in title
+        if not target_mpf:
+            t_low = title.lower()
+            for alias_key, alias_path in special_aliases.items():
+                if alias_key in t_low:
+                    target_mpf = alias_path
+                    break
+
+        # Step C: inspect read_files, edited_files, changes
+        if not target_mpf:
+            candidate_notes_in_commit: set[str] = set()
+            all_files = (
+                d.get("read_files", [])
+                + d.get("edited_files", [])
+                + [c.get("path") if isinstance(c, dict) else str(c) for c in d.get("changes", [])]
+            )
+            for f in all_files:
+                path_str = f.get("path") if isinstance(f, dict) else str(f)
+                p_clean = path_str.replace("\\", "/").strip()
+                if "voicenotes" in p_clean.lower() and p_clean.lower().endswith(".md"):
+                    idx = p_clean.lower().rfind("voicenotes/")
+                    if idx >= 0:
+                        rel = p_clean[idx + len("voicenotes/"):].strip("/")
+                        if rel.lower() in note_by_rel_lower:
+                            candidate_notes_in_commit.add(note_by_rel_lower[rel.lower()])
+
+            if len(candidate_notes_in_commit) == 1:
+                target_mpf = list(candidate_notes_in_commit)[0]
+            elif len(candidate_notes_in_commit) > 1:
+                for c_note in candidate_notes_in_commit:
+                    stem = Path(c_note).stem.lower()
+                    clean_s = re.sub(r"^(?:🤖\s*)+", "", stem).strip()
+                    if clean_s in title.lower():
+                        target_mpf = c_note
+                        break
+
+        # Step D: persist if determined
+        if target_mpf:
+            d["main_project_file"] = target_mpf
+            if not dry_run:
+                p.write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
+            updated_count += 1
+            updated_commits.append({"id": d.get("id"), "title": title, "main_project_file": target_mpf})
+
+    return {
+        "status": "success",
+        "scanned": scanned_count,
+        "already_had_mpf": skipped_count,
+        "updated": updated_count,
+        "updated_commits": updated_commits,
+    }

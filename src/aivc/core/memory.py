@@ -113,6 +113,9 @@ class Memory:
     journal: str = ""
     """Agent thoughts and activity log."""
 
+    main_project_file: str | None = None
+    """Path to the main project file in Obsidian vault."""
+
     def to_dict(self) -> dict[str, Any]:
         """Serialise to dict."""
         return memory_to_dict(self)
@@ -133,6 +136,7 @@ class Memory:
         urls: list[str] | None = None,
         user_items: list[dict[str, Any]] | None = None,
         journal: str = "",
+        main_project_file: str | None = None,
     ) -> "Memory":
         """Factory: create a new Memory with a fresh UUID and current UTC timestamp."""
         if not title.strip():
@@ -156,6 +160,7 @@ class Memory:
             urls=list(urls) if urls else [],
             user_items=actual_user_items,
             journal=actual_journal or (note if not actual_user_items else ""),
+            main_project_file=main_project_file,
         )
 
 
@@ -176,6 +181,7 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
         "note": memory.note,
         "parent_id": memory.parent_id,
         "machine_id": memory.machine_id,
+        "main_project_file": getattr(memory, "main_project_file", None),
         "urls": list(memory.urls),
         "edited_files": edited_files,
         "read_files": read_files,
@@ -234,6 +240,7 @@ def memory_from_dict(data: dict[str, Any]) -> Memory:
         user_items=user_items,
         journal=journal,
         changes=changes,
+        main_project_file=data.get("main_project_file"),
     )
 
 
