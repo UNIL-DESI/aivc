@@ -348,3 +348,53 @@ def test_upsert_gdoc_and_folder_deduplication(tmp_path: Path):
     # dup1 must be trashed
     mock_files.update.assert_any_call(fileId="d-dup1", body={"trashed": True})
 
+
+def test_live_await_validation_retains_active_items(tmp_path: Path):
+    """Regression test: verify Live_Await_Validation retains all non-validated items and never drops to 0 if items exist."""
+    commits_dir = tmp_path / "commits"
+    commits_dir.mkdir(parents=True)
+
+    # Commit 1: 5 tasks created as await_validation
+    items = [
+        {
+            "id": f"t-await-{i}",
+            "task": f"Livrable {i} en attente",
+            "details": f"Explications livrable {i}",
+            "task_status": "await_validation",
+        }
+        for i in range(1, 6)
+    ]
+    c1 = {
+        "id": "mem-await",
+        "timestamp": "2026-10-28T22:00:00Z",
+        "title": "Session de travail",
+        "journal": "Récit de la session de développement.",
+        "user_items": items,
+    }
+    (commits_dir / "c1.json").write_text(json.dumps(c1), encoding="utf-8")
+
+    # Commit 2: only task 1 is validated
+    c2 = {
+        "id": "mem-val",
+        "timestamp": "2026-10-28T23:00:00Z",
+        "title": "Validation partielle",
+        "user_items": [
+            {"id": "t-await-1", "task": "Livrable 1", "task_status": "validated", "details": "[VALIDÉ PAR HENRI]"}
+        ],
+    }
+    (commits_dir / "c2.json").write_text(json.dumps(c2), encoding="utf-8")
+
+    tasks_current, history = collect_tasks_from_commits(commits_dir)
+    assert len(tasks_current) == 5
+    awaiting = [t for t in tasks_current.values() if t["status"] == "await_validation"]
+    assert len(awaiting) == 4
+    assert tasks_current["t-await-1"]["status"] == "validated"
+
+    # Format live doc
+    doc = format_live_document("await_validation", awaiting)
+    assert "Nombre d'éléments : 4" in doc
+    assert "Aucun élément actif pour ce statut" not in doc
+    assert "[t-await-2] Livrable 2 en attente" in doc
+    assert "[t-await-1]" not in doc
+
+
