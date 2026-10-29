@@ -422,3 +422,56 @@ def test_advance_sync_auto_restore_brain_files(tmp_path: Path, monkeypatch):
     assert brain_file.is_file()
     assert brain_file.read_bytes() == b"# Restored Report Content"
 
+
+def test_auto_restore_brain_files_background_drive(tmp_path: Path, monkeypatch):
+    """Verify background_drive=True returns immediately while Drive pulls complete asynchronously."""
+    import time
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+
+    storage_root = tmp_path / ".aivc" / "storage"
+    ws = Workspace(storage_root)
+
+    expected_local = tmp_path / ".gemini" / "antigravity" / "brain" / "conv-bg" / "slow_file.md"
+    assert not expected_local.exists()
+
+    mem = Memory(
+        id="mem-bg-test",
+        timestamp="2026-10-29T12:00:00Z",
+        title="Async Background Test",
+        note="Note",
+        parent_id=None,
+        changes=[FileChange(path=str(expected_local), action="edited")],
+    )
+
+    mock_sync = MagicMock()
+    mock_sync.enabled = True
+
+    def slow_pull(file_path, target_path=None):
+        time.sleep(0.05)
+        target = Path(target_path) if target_path else from_portable_path(file_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"# Restored Async Content")
+        return target
+
+    mock_sync.pull_latest_file.side_effect = slow_pull
+
+    # Call with background_drive=True -> must return immediately without blocking
+    start_t = time.time()
+    restored = ws.auto_restore_brain_files(mem, sync_manager=mock_sync, background_drive=True)
+    duration = time.time() - start_t
+
+    # Immediate return: synchronous list is empty, duration is minimal
+    assert restored == []
+    assert duration < 0.04
+    assert hasattr(ws, "_last_restore_thread")
+    assert ws._last_restore_thread.is_alive()
+
+    # Wait for background thread to complete
+    ws._last_restore_thread.join(timeout=2.0)
+    assert not ws._last_restore_thread.is_alive()
+
+    # File is now restored on disk
+    assert expected_local.is_file()
+    assert expected_local.read_bytes() == b"# Restored Async Content"
+
+

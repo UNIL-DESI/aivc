@@ -379,7 +379,7 @@ def consult_memory(memory_id: str) -> str:
     engine = _get_engine()
     memory = engine.get_memory(memory_id)
     try:
-        engine.auto_restore_brain_files(memory)
+        engine.auto_restore_brain_files(memory, background_drive=True)
     except Exception:
         pass
 

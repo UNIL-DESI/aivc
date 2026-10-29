@@ -165,3 +165,37 @@ def test_main_project_file_resolves_voicenotes_relative_path(engine, monkeypatch
     expected_portable = to_portable_path(proj)
     assert mem.main_project_file == expected_portable
     assert any(c.path == expected_portable for c in mem.changes)
+
+
+def test_remember_auto_deduplicates_task_ids_by_text(engine, monkeypatch, tmp_path: Path) -> None:
+    """Verify task with identical normalized text reuses existing id for the same project."""
+    vn_dir = tmp_path / "Documents" / "VoiceNotes"
+    notes_dir = vn_dir / "notes"
+    notes_dir.mkdir(parents=True, exist_ok=True)
+    proj = notes_dir / "Project Delta.md"
+    _write(proj, "# Project Delta")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    mpf = "~/Documents/VoiceNotes/notes/Project Delta.md"
+
+    # 1. First commit defines a roadmap task with generated id
+    m1 = engine.remember(
+        title="Commit 1",
+        journal="Journal 1",
+        main_project_file=mpf,
+        tasks=[{"task": "Run cluster benchmark on GPU", "task_status": "new"}],
+    )
+    assigned_id = m1.user_items[0]["id"]
+    assert assigned_id.startswith("r-")
+
+    # 2. Second commit provides same task text with no id and status await_validation
+    m2 = engine.remember(
+        title="Commit 2",
+        journal="Journal 2",
+        main_project_file=mpf,
+        tasks=[{"task": "  run cluster   benchmark on GPU  ", "task_status": "await_validation"}],
+    )
+    assert len(m2.user_items) == 1
+    # Automatically reuses assigned_id
+    assert m2.user_items[0]["id"] == assigned_id
+    assert m2.user_items[0]["task_status"] == "await_validation"

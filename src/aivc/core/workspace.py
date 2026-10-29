@@ -16,6 +16,7 @@ import time
 import uuid
 import shutil
 import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
@@ -378,12 +379,41 @@ class Workspace:
             except Exception:
                 continue
 
+        # Build existing_task_ids mapping normalized task text to latest id for main_project_file
+        existing_task_ids: dict[str, str] = {}
+        norm_main_proj = to_portable_path(main_project_file).lower() if main_project_file else ""
+        if norm_main_proj:
+            sorted_commits = sorted(
+                commits_data.values(),
+                key=lambda c: str(c.get("timestamp", ""))
+            )
+            for c_data in sorted_commits:
+                c_mpf = to_portable_path(str(c_data.get("main_project_file") or "")).lower()
+                if c_mpf and c_mpf == norm_main_proj:
+                    for c_it in c_data.get("user_items", []):
+                        c_id = str(c_it.get("id") or "").strip()
+                        c_task = str(c_it.get("task") or "").strip()
+                        c_key = " ".join(c_task.lower().split())
+                        if c_key and c_id:
+                            existing_task_ids[c_key] = c_id
+
         norm_user_items: list[dict[str, Any]] = []
         status_updates_by_id: dict[str, tuple[str, bool]] = {}
+        processed_task_ids: dict[str, str] = {}
 
         for idx, (item, is_roadmap_arg) in enumerate(raw_task_entries, 1):
             raw_id = str(item.get("id") or "").strip()
-            prior_task = existing_tasks.get(raw_id) if raw_id else None
+            task_title = str(item.get("task", "")).strip()
+            task_key = " ".join(task_title.lower().split())
+
+            candidate_id = raw_id
+            if not candidate_id and task_key:
+                if task_key in processed_task_ids:
+                    candidate_id = processed_task_ids[task_key]
+                elif task_key in existing_task_ids:
+                    candidate_id = existing_task_ids[task_key]
+
+            prior_task = existing_tasks.get(candidate_id) if candidate_id else None
 
             # Resolve task_status
             explicit_status = item.get("task_status")
@@ -395,7 +425,7 @@ class Workspace:
                 is_roadmap_arg
                 or item.get("kind") == "roadmap"
                 or item.get("type") == "roadmap"
-                or (raw_id and raw_id.startswith("r-"))
+                or (candidate_id and candidate_id.startswith("r-"))
             ):
                 task_status = "new"
             elif prior_task and prior_task.get("task_status"):
@@ -407,14 +437,16 @@ class Workspace:
             kind = "roadmap" if task_status == "new" else "deliverable"
 
             # Resolve id
-            if raw_id:
-                final_id = raw_id
+            if candidate_id:
+                final_id = candidate_id
             else:
                 prefix = f"r-{memory_id[:6]}" if task_status == "new" else f"{memory_id[:6]}"
                 final_id = f"{prefix}-{idx}"
 
+            if task_key:
+                processed_task_ids[task_key] = final_id
+
             # Resolve task title (fallback to prior commit if empty)
-            task_title = str(item.get("task", "")).strip()
             if not task_title and prior_task:
                 task_title = str(prior_task.get("task", "")).strip()
 
@@ -433,8 +465,8 @@ class Workspace:
             }
             norm_user_items.append(norm_item)
 
-            if raw_id and prior_task:
-                status_updates_by_id[raw_id] = (task_status, done)
+            if final_id and prior_task:
+                status_updates_by_id[final_id] = (task_status, done)
 
         # Event-sourcing update on previous commits if status changed
         if status_updates_by_id:
@@ -796,12 +828,19 @@ class Workspace:
             f"File {file_path!r} was not found in the history up to memory {memory_id!r}."
         )
 
-    def auto_restore_brain_files(self, memory: Memory, sync_manager: Any = None) -> list[str]:
+    def auto_restore_brain_files(
+        self,
+        memory: Memory,
+        sync_manager: Any = None,
+        background_drive: bool = False,
+    ) -> list[str]:
         """Automatically restore files under .gemini/antigravity/brain/ linked to this memory.
 
         If a file does not exist locally and its blob is available in BlobStore
         (or recoverable via other commits or sync_manager), it is restored to disk.
-        Returns the list of restored local file paths.
+        When background_drive=True, Drive pulls run in a detached daemon thread
+        to prevent blocking caller / MCP timeout.
+        Returns the list of synchronously restored local file paths.
         """
         import re
         from aivc.config import extract_brain_subpath, get_home_dir
@@ -849,6 +888,9 @@ class Workspace:
                         candidates[raw] = None
 
         temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
+        cache_file = self._root / "missing_blobs_cache.json"
+        drive_candidates_to_pull: list[tuple[str, Path, Path, list[str]]] = []
+
         for sub, blob_hash in candidates.items():
             local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
             temp_artifact_path = temp_artifacts_dir / Path(sub)
@@ -890,10 +932,8 @@ class Workspace:
                 except Exception:
                     pass
 
-
-            # 3. If still not found, try sync_manager (Google Drive) if available
+            # 3. If still not found, check sync_manager (Google Drive) if available
             if content is None and sync_manager is not None:
-                cache_file = self._root / "missing_blobs_cache.json"
                 missing_cache: dict[str, float] = {}
                 if cache_file.exists():
                     try:
@@ -914,40 +954,44 @@ class Workspace:
                             break
 
                 if not is_neg_cached:
-                    try:
-                        if getattr(sync_manager, "enabled", False):
-                            dest = sync_manager.pull_latest_file(portable, target_path=local_path)
-                            if dest and dest.is_file():
-                                restored.append(str(local_path))
-                                try:
-                                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                                    shutil.copy2(local_path, temp_artifact_path)
-                                except OSError:
-                                    pass
-                                # Clean up cache if previously marked missing
-                                updated = False
-                                for key in cache_keys:
-                                    if key in missing_cache:
-                                        del missing_cache[key]
-                                        updated = True
-                                if updated:
-                                    try:
-                                        cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
-                                    except Exception:
-                                        pass
-                                continue
-                            else:
-                                is_neg_cached = True
-                    except Exception:
-                        is_neg_cached = True
-
-                    if is_neg_cached:
-                        for key in cache_keys:
-                            missing_cache[key] = now
+                    if background_drive:
+                        drive_candidates_to_pull.append((portable, local_path, temp_artifact_path, cache_keys))
+                    else:
                         try:
-                            cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
+                            if getattr(sync_manager, "enabled", False):
+                                dest = sync_manager.pull_latest_file(portable, target_path=local_path)
+                                if dest and dest.is_file():
+                                    restored.append(str(local_path))
+                                    try:
+                                        temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(local_path, temp_artifact_path)
+                                    except OSError:
+                                        pass
+                                    # Clean up cache if previously marked missing
+                                    updated = False
+                                    for key in cache_keys:
+                                        if key in missing_cache:
+                                            del missing_cache[key]
+                                            updated = True
+                                    if updated:
+                                        try:
+                                            cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
+                                        except Exception:
+                                            pass
+                                    continue
+                                else:
+                                    is_neg_cached = True
                         except Exception:
-                            pass
+                            is_neg_cached = True
+
+                        if is_neg_cached:
+                            for key in cache_keys:
+                                missing_cache[key] = now
+                            try:
+                                cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
+                            except Exception:
+                                pass
+
             # Write content retrieved from blob_store to disk
             if content is not None:
                 try:
@@ -961,6 +1005,59 @@ class Workspace:
                         pass
                 except Exception:
                     pass
+
+        # If any Drive candidates were deferred for background restore, start daemon worker
+        if drive_candidates_to_pull and background_drive and sync_manager is not None:
+            def _async_drive_worker(
+                candidates_to_pull: list[tuple[str, Path, Path, list[str]]],
+                mgr: Any,
+                c_file: Path,
+            ) -> None:
+                import json
+                import time
+                import shutil
+                cache_now = time.time()
+                m_cache: dict[str, float] = {}
+                if c_file.exists():
+                    try:
+                        m_cache = json.loads(c_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        m_cache = {}
+
+                for port_path, l_path, t_path, c_keys in candidates_to_pull:
+                    pull_ok = False
+                    try:
+                        if getattr(mgr, "enabled", False):
+                            dest = mgr.pull_latest_file(port_path, target_path=l_path)
+                            if dest and dest.is_file():
+                                pull_ok = True
+                                try:
+                                    t_path.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(l_path, t_path)
+                                except OSError:
+                                    pass
+                                for k in c_keys:
+                                    m_cache.pop(k, None)
+                    except Exception:
+                        pull_ok = False
+
+                    if not pull_ok:
+                        for k in c_keys:
+                            m_cache[k] = cache_now
+
+                try:
+                    c_file.write_text(json.dumps(m_cache, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+
+            t = threading.Thread(
+                target=_async_drive_worker,
+                args=(list(drive_candidates_to_pull), sync_manager, cache_file),
+                daemon=True,
+                name="AivcAutoRestoreDrivePull",
+            )
+            self._last_restore_thread = t
+            t.start()
 
         return restored
 

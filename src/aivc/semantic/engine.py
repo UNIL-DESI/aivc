@@ -634,9 +634,9 @@ class SemanticEngine:
         """Explicitly migrate JSON memories to SQLite index."""
         self._workspace.migrate_index()
 
-    def auto_restore_brain_files(self, memory: Memory) -> list[str]:
+    def auto_restore_brain_files(self, memory: Memory, background_drive: bool = False) -> list[str]:
         """Auto-restore missing brain files for a given memory from BlobStore or Drive."""
-        return self._workspace.auto_restore_brain_files(memory, self._sync_manager)
+        return self._workspace.auto_restore_brain_files(memory, self._sync_manager, background_drive=background_drive)
 
     def _get_local_hints_index(self) -> dict[str, list[str]]:
         """Lazy-build an inverted index {basename: [paths]} for fast lookups."""
