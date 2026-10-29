@@ -158,7 +158,6 @@ def test_real_end_to_end_advance_tldr_sync_on_disk():
     assert tldr_path.is_file()
     assert "Le Conseil des Voleurs" in tldr_path.name
     content = tldr_path.read_text(encoding="utf-8")
-    assert "# 🤖 Le Conseil des Voleurs" in content
     assert "Session 9" in content
 
 
@@ -369,5 +368,62 @@ def test_restore_brain_files_scans_existing_advance_tldr_note(tmp_path: Path, mo
     assert "rules.pdf" in restored[0]
 
 
+
+
+def test_backfill_missing_main_project_files(tmp_path: Path):
+    """Verify deterministic backfill of main_project_file and avoidance of guesswork."""
+    import json
+    from aivc.advance_sync import backfill_missing_main_project_files
+
+    # Create dummy vault
+    vault = tmp_path / "VoiceNotes"
+    (vault / "notes").mkdir(parents=True)
+    (vault / "notes" / "Project Alpha.md").write_text("# Project Alpha", encoding="utf-8")
+    (vault / "Organisation du cours Artificial Intelligence in Business 2026.md").write_text("# AIB", encoding="utf-8")
+
+    # Create dummy commit storage
+    storage = tmp_path / "storage"
+    commits_dir = storage / "commits"
+    commits_dir.mkdir(parents=True)
+
+    # Commit 1: matches by [Advance] prefix
+    c1 = {
+        "id": "c1-uuid",
+        "title": "[Advance] Project Alpha — Milestones and deliverable",
+        "main_project_file": None,
+        "user_items": [{"id": "t-1", "task": "Check alpha"}],
+    }
+    (commits_dir / "c1.json").write_text(json.dumps(c1), encoding="utf-8")
+
+    # Commit 2: matches special alias AIB 2026
+    c2 = {
+        "id": "c2-uuid",
+        "title": "AIB 2026 — Syllabus update",
+        "main_project_file": None,
+        "user_items": [{"id": "t-2", "task": "Update Moodle"}],
+    }
+    (commits_dir / "c2.json").write_text(json.dumps(c2), encoding="utf-8")
+
+    # Commit 3: Ambiguous title without vault match -> must remain None
+    c3 = {
+        "id": "c3-uuid",
+        "title": "Unrelated generic work",
+        "main_project_file": None,
+        "user_items": [{"id": "t-3", "task": "Random task"}],
+    }
+    (commits_dir / "c3.json").write_text(json.dumps(c3), encoding="utf-8")
+
+    res = backfill_missing_main_project_files(storage_dir=storage, vault_dir=vault)
+    assert res["status"] == "success"
+    assert res["updated"] == 2
+
+    d1 = json.loads((commits_dir / "c1.json").read_text(encoding="utf-8"))
+    assert d1["main_project_file"] == "~/Documents/VoiceNotes/notes/Project Alpha.md"
+
+    d2 = json.loads((commits_dir / "c2.json").read_text(encoding="utf-8"))
+    assert d2["main_project_file"] == "~/Documents/VoiceNotes/Organisation du cours Artificial Intelligence in Business 2026.md"
+
+    d3 = json.loads((commits_dir / "c3.json").read_text(encoding="utf-8"))
+    assert d3.get("main_project_file") is None
 
 

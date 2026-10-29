@@ -114,7 +114,7 @@ class Memory:
     """Agent thoughts and activity log."""
 
     main_project_file: str = ""
-    """Main project file identifying the project/topic of this memory."""
+    """Main project file identifying the project/topic of this memory in Obsidian vault."""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to dict."""
@@ -160,7 +160,7 @@ class Memory:
             urls=list(urls) if urls else [],
             user_items=actual_user_items,
             journal=actual_journal or (note if not actual_user_items else ""),
-            main_project_file=main_project_file,
+            main_project_file=str(main_project_file or ""),
         )
 
 
@@ -177,7 +177,7 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
         "timestamp": memory.timestamp,
         "title": memory.title,
         "journal": memory.journal,
-        "main_project_file": memory.main_project_file,
+        "main_project_file": getattr(memory, "main_project_file", "") or "",
         "user_items": memory.user_items,
         "note": memory.note,
         "parent_id": memory.parent_id,

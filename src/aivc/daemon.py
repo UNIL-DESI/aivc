@@ -13,8 +13,15 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -127,9 +134,11 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
+        self.close_connection = True
 
     def do_GET(self) -> None:
         self.server.touch()
@@ -156,8 +165,8 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/shutdown":
-            self._send_json_response(200, {"status": "shutting_down"})
             self.server.running = False
+            self._send_json_response(200, {"status": "shutting_down"})
             return
 
         if self.path == "/mcp":
@@ -176,7 +185,9 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
             if "id" not in msg:
                 self.send_response(204)
                 self.send_header("Content-Length", "0")
+                self.send_header("Connection", "close")
                 self.end_headers()
+                self.close_connection = True
                 return
 
             req_id = msg["id"]
@@ -276,7 +287,19 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
             self._send_json_response(404, {"error": "Not Found"})
 
 
-class DaemonHTTPServer(HTTPServer):
+class DaemonHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = False
+
+    def server_bind(self) -> None:
+        if sys.platform == "win32":
+            try:
+                import socket
+                if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            except Exception:
+                pass
+        super().server_bind()
+
     def __init__(self, server_address: tuple[str, int], RequestHandlerClass: type[BaseHTTPRequestHandler]):
         super().__init__(server_address, RequestHandlerClass)
         self.running = True
@@ -310,23 +333,24 @@ def run_daemon(port: int | None = None, idle_timeout: int | None = None) -> None
     if sys.platform == "win32":
         os.environ["AIVC_DISABLE_CROSS_ENCODER"] = "True"
 
-    # Pre-warm server and engine components on the main thread
-    from aivc import server as aivc_server
+    # Start HTTP server immediately so /health responds within < 1s
     try:
-        engine = aivc_server._get_engine()
-        _ = engine._indexer._collection
-    except Exception as e:
-        print(f"[aivc.daemon] Warning during indexer pre-warming: {e}", file=sys.stderr)
+        server = DaemonHTTPServer(("127.0.0.1", port), DaemonHTTPRequestHandler)
+    except OSError as e:
+        # Check if another daemon instance is already healthy on this port
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/health")
+            with urllib.request.urlopen(req, timeout=0.5) as resp:
+                if resp.status == 200:
+                    print(f"[aivc.daemon] Daemon already running and healthy on port {port}. Exiting.", flush=True)
+                    return
+        except Exception:
+            pass
+        print(f"[aivc.daemon] Failed to bind port {port}: {e}", file=sys.stderr, flush=True)
+        raise
 
-    try:
-        syncer = aivc_server._get_syncer()
-        if syncer and syncer.manager.enabled:
-            syncer.start()
-    except Exception as e:
-        print(f"[aivc.daemon] Warning during syncer start: {e}", file=sys.stderr)
-
-    server = DaemonHTTPServer(("127.0.0.1", port), DaemonHTTPRequestHandler)
-    server.timeout = 10.0  # Periodic wakeup for idle timeout check and shutdown flag
+    server.timeout = 1.0  # Periodic wakeup for idle timeout check and shutdown flag
 
     # Record daemon state
     daemon_path = _get_daemon_json_path()
@@ -339,6 +363,27 @@ def run_daemon(port: int | None = None, idle_timeout: int | None = None) -> None
     daemon_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
     print(f"[aivc.daemon] Daemon listening on http://127.0.0.1:{port} (PID: {os.getpid()})", flush=True)
+
+    # Pre-warm server and engine components in a non-blocking background thread
+    def _warmup_worker() -> None:
+        from aivc import server as aivc_server
+        try:
+            engine = aivc_server._get_engine()
+            _ = engine._indexer._collection
+            print("[aivc.daemon] Semantic indexer pre-warmed successfully.", flush=True)
+        except Exception as e:
+            print(f"[aivc.daemon] Warning during indexer pre-warming: {e}", file=sys.stderr, flush=True)
+
+        try:
+            syncer = aivc_server._get_syncer()
+            if syncer and syncer.manager.enabled:
+                syncer.start()
+                print("[aivc.daemon] Background syncer started successfully.", flush=True)
+        except Exception as e:
+            print(f"[aivc.daemon] Warning during syncer start: {e}", file=sys.stderr, flush=True)
+
+    warmup_thread = threading.Thread(target=_warmup_worker, daemon=True, name="AivcDaemonWarmup")
+    warmup_thread.start()
 
     try:
         while server.running:
