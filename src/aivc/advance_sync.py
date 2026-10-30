@@ -334,6 +334,68 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None, backgr
     return restored
 
 
+def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = None) -> str:
+    r"""Rewrites references to brain artifacts in markdown text to <temp>/aivc/artifacts/<subpath>.
+
+    Handles:
+    1. Repair of corrupted links: filC:\Users\... -> file:///C:/Users/...
+    2. URLs: file:///.../(.gemini/antigravity/brain|aivc/artifacts)/<subpath> -> file:///<temp>/aivc/artifacts/<subpath>
+    3. Bare local paths: C:\...\brain\<subpath> -> <temp>\aivc\artifacts\<subpath>
+       Strict lookbehind prevents rewriting inside file:/// URLs (avoiding 'filC:' corruption).
+    """
+    if not text:
+        return text
+
+    from aivc.config import get_aivc_temp_dir
+
+    base_temp = temp_dir if temp_dir is not None else get_aivc_temp_dir()
+    artifacts_dir = Path(base_temp) / "artifacts"
+    artifacts_posix = artifacts_dir.as_posix().replace("\\", "/").lstrip("/")
+
+    # Step 1: Repair any existing corrupted 'filC:\...'
+    def _fix_corrupted_fil(m: re.Match) -> str:
+        raw_p = m.group(1).replace("\\", "/")
+        return f"file:///{raw_p}"
+
+    text = re.sub(
+        r"(?<![A-Za-z0-9_])fil([A-Za-z]:[\\/][^\s\[\]\(\)\"\'\`<>]+)",
+        _fix_corrupted_fil,
+        text,
+    )
+
+    # Step 2: Rewrite URLs to file:///<temp>/aivc/artifacts/<subpath>
+    url_pattern = re.compile(
+        r"file://+(?:[A-Za-z]:)?[^\s\[\]\(\)\"\'\`<>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\[\]\(\)\"\'\`<>:]+)",
+        re.IGNORECASE,
+    )
+
+    def _replace_url(m: re.Match) -> str:
+        raw_sub = m.group(1).replace("\\", "/").strip("/")
+        return f"file:///{artifacts_posix}/{raw_sub}"
+
+    text = url_pattern.sub(_replace_url, text)
+
+    # Step 3: Rewrite bare local paths with strict lookbehind to avoid touching inside file:///
+    local_pattern = re.compile(
+        r"(?<![A-Za-z0-9_:/])(?<!file://)(?<!file:///)(?:[A-Za-z]:[\\/]|/(?:Users|home)[\\/]|~[\\/])[^\s\[\]\(\)\"\'\`<>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\[\]\(\)\"\'\`<>:]+)",
+        re.IGNORECASE,
+    )
+
+    def _replace_local(m: re.Match) -> str:
+        raw_sub = m.group(1)
+        suffix = ""
+        line_m = re.search(r"(:L?\d+(?:-L?\d+)?)$", raw_sub)
+        if line_m:
+            suffix = line_m.group(1)
+            raw_sub = raw_sub[:-len(suffix)]
+        sub_clean = raw_sub.replace("/", "\\").strip("\\")
+        native_path = str(artifacts_dir / Path(sub_clean))
+        return native_path + suffix
+
+    text = local_pattern.sub(_replace_local, text)
+    return text
+
+
 def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[str]:
     """Synchronizes advance_tldr/🤖 <Titre>.md for the given memory.
 

@@ -457,4 +457,33 @@ def test_sync_advance_tldr_mirrors_to_legacy_location(tmp_path: Path, monkeypatc
         set_custom_sync_handler(None)
 
 
+def test_rewrite_brain_paths_to_temp_artifacts():
+    from aivc.advance_sync import rewrite_brain_paths_to_temp_artifacts
+
+    fixed_temp = Path("C:/Users/Jamet/AppData/Local/Temp/aivc")
+
+    # 1. Standard brain artifact link rewritten to temp artifacts
+    input_url = "[📄 script.ps1](file:///C:/Users/Jamet/.gemini/antigravity/brain/59bb502e-fd05/script.ps1)"
+    expected_url = "[📄 script.ps1](file:///C:/Users/Jamet/AppData/Local/Temp/aivc/artifacts/59bb502e-fd05/script.ps1)"
+    assert rewrite_brain_paths_to_temp_artifacts(input_url, temp_dir=fixed_temp) == expected_url
+
+    # 2. Link already on aivc/artifacts remains intact (zero filC:, zero file:///file:///)
+    already_art = "[📄 script.ps1](file:///C:/Users/Jamet/AppData/Local/Temp/aivc/artifacts/59bb502e-fd05/script.ps1)"
+    res_already = rewrite_brain_paths_to_temp_artifacts(already_art, temp_dir=fixed_temp)
+    assert res_already == already_art
+    assert "filC:" not in res_already
+    assert "file:///file:///" not in res_already
+
+    # 3. Bare local path in command rewritten to native temp artifacts path
+    input_cmd = r"pytest C:\Users\Jamet\.gemini\antigravity-cli\brain\59bb502e-fd05\test_x.py"
+    expected_local = r"pytest " + str(fixed_temp / "artifacts" / "59bb502e-fd05" / "test_x.py")
+    assert rewrite_brain_paths_to_temp_artifacts(input_cmd, temp_dir=fixed_temp) == expected_local
+
+    # 4. Corrupted link filC:\... is repaired to file:///C:/...
+    corrupted = r"filC:\Users\Jamet\AppData\Local\Temp\aivc\artifacts\59bb502e-fd05\script.ps1"
+    expected_repaired = "file:///C:/Users/Jamet/AppData/Local/Temp/aivc/artifacts/59bb502e-fd05/script.ps1"
+    assert rewrite_brain_paths_to_temp_artifacts(corrupted, temp_dir=fixed_temp) == expected_repaired
+
+
+
 
