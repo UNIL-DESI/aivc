@@ -427,3 +427,34 @@ def test_backfill_missing_main_project_files(tmp_path: Path):
     assert d3.get("main_project_file") is None
 
 
+def test_sync_advance_tldr_mirrors_to_legacy_location(tmp_path: Path, monkeypatch):
+    """Verify sync_advance_tldr automatically mirrors generated tldr notes to ~/.gemini/antigravity/brain/advance_tldr/."""
+    from aivc.advance_sync import sync_advance_tldr, set_custom_sync_handler
+
+    monkeypatch.setattr("aivc.advance_sync.get_home_dir", lambda: tmp_path)
+
+    # Fake custom handler returning a note in a temp location
+    temp_note = tmp_path / "temp_advance_tldr" / "🤖 Project X.md"
+    temp_note.parent.mkdir(parents=True, exist_ok=True)
+    temp_note.write_text("# 🤖 Project X\n\nContent", encoding="utf-8")
+
+    # Set custom handler
+    set_custom_sync_handler(lambda mem, vault_dir=None: [str(temp_note)])
+    try:
+        mem = {
+            "id": "mem-mirror-test",
+            "title": "[Advance] Project X",
+            "main_project_file": "~/Documents/VoiceNotes/notes/Project X.md",
+            "user_items": [],
+        }
+        synced = sync_advance_tldr(mem)
+        assert synced == [str(temp_note)]
+
+        legacy_expected = tmp_path / ".gemini" / "antigravity" / "brain" / "advance_tldr" / "🤖 Project X.md"
+        assert legacy_expected.is_file()
+        assert legacy_expected.read_text(encoding="utf-8") == "# 🤖 Project X\n\nContent"
+    finally:
+        set_custom_sync_handler(None)
+
+
+

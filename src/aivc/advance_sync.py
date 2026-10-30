@@ -161,7 +161,7 @@ def normalize_advance_tldr_title(title: str) -> str:
     return re.sub(r"^(?:🤖\s*)+", "", title).strip()
 
 
-def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> list[str]:
+def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None, background_drive: bool = False) -> list[str]:
     """Auto-restores files under .gemini/antigravity/brain/ referenced by memory if missing locally.
     Remaps any foreign machine paths to current PC's Path.home() / .gemini/antigravity/brain/...
     Supports memory objects, dicts, file paths, or advance_tldr notes.
@@ -274,6 +274,8 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
                 pass
 
     temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
+    drive_candidates: list[tuple[str, Path, Path]] = []
+
     for sub in candidate_subpaths:
         local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
         temp_artifact_path = temp_artifacts_dir / Path(sub)
@@ -290,17 +292,44 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
             continue
         sub_posix = sub.replace("\\", "/")
         portable = f"~/.gemini/antigravity/brain/{sub_posix}"
-        try:
-            dest = mgr.pull_latest_file(portable, target_path=local_path)
-            if dest and dest.is_file():
-                restored.append(str(local_path))
+        drive_candidates.append((portable, local_path, temp_artifact_path))
+
+    if drive_candidates:
+        if background_drive:
+            def _async_advance_drive_worker(candidates: list[tuple[str, Path, Path]], d_mgr: Any) -> None:
+                for port_p, l_p, t_p in candidates:
+                    try:
+                        dest = d_mgr.pull_latest_file(port_p, target_path=l_p)
+                        if dest and dest.is_file():
+                            try:
+                                t_p.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(l_p, t_p)
+                            except OSError:
+                                pass
+                    except Exception:
+                        pass
+
+            import threading
+            t = threading.Thread(
+                target=_async_advance_drive_worker,
+                args=(list(drive_candidates), mgr),
+                daemon=True,
+                name="AivcAdvanceSyncDrivePull",
+            )
+            t.start()
+        else:
+            for portable, local_path, temp_artifact_path in drive_candidates:
                 try:
-                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(local_path, temp_artifact_path)
-                except OSError:
+                    dest = mgr.pull_latest_file(portable, target_path=local_path)
+                    if dest and dest.is_file():
+                        restored.append(str(local_path))
+                        try:
+                            temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(local_path, temp_artifact_path)
+                        except OSError:
+                            pass
+                except Exception:
                     pass
-        except Exception:
-            pass
 
     return restored
 
@@ -310,6 +339,7 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
     Returns the list of generated or updated advance_tldr file paths.
     """
+    home = get_home_dir()
     is_dict = isinstance(memory, dict)
     if is_dict:
         if memory.get("_tldr_synced", False):
@@ -320,7 +350,7 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
     # Restore missing brain files referenced by this memory or active tasks
     try:
-        restore_brain_files_for_memory(memory)
+        restore_brain_files_for_memory(memory, background_drive=True)
     except Exception as e:
         logger.debug("auto-restore in sync_advance_tldr skipped: %s", e)
 
@@ -336,7 +366,17 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
             if res:
                 for sp in res:
                     try:
-                        restore_brain_files_for_memory(sp)
+                        p_sp = Path(sp)
+                        stem = p_sp.stem
+                        title = normalize_advance_tldr_title(stem)
+                        legacy_dest = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
+                        if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
+                            legacy_dest.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(p_sp, legacy_dest)
+                    except Exception:
+                        pass
+                    try:
+                        restore_brain_files_for_memory(sp, background_drive=True)
                     except Exception:
                         pass
             return res or []
@@ -380,11 +420,21 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
         synced_paths = sync_fn(memory, vault_dir=vault_str)
 
-        # Restore missing brain files referenced in newly generated/updated advance_tldr files
+        # Restore missing brain files and mirror to legacy advance_tldr for backwards compatibility
         if synced_paths:
             for sp in synced_paths:
                 try:
-                    restore_brain_files_for_memory(sp)
+                    p_sp = Path(sp)
+                    stem = p_sp.stem
+                    title = normalize_advance_tldr_title(stem)
+                    legacy_dest = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
+                    if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
+                        legacy_dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(p_sp, legacy_dest)
+                except Exception:
+                    pass
+                try:
+                    restore_brain_files_for_memory(sp, background_drive=True)
                 except Exception:
                     pass
 
