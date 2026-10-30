@@ -140,6 +140,25 @@ class NativeDriveSyncManager:
         self._save_sync_state()
         return folder_id
 
+    def _find_folder_readonly(self, name: str, parent_id: str | None = None) -> str | None:
+        """Find an existing folder in Google Drive without creating it if missing."""
+        cache_key = f"{parent_id or 'root'}/{name}"
+        if cache_key in self._folder_cache:
+            return self._folder_cache[cache_key]
+
+        service = self._get_service()
+        query = f"name = '{name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        if parent_id:
+            query += f" and '{parent_id}' in parents"
+
+        results = service.files().list(q=query, spaces="drive", fields="files(id, name)").execute()
+        files = results.get("files", [])
+        if files:
+            folder_id = files[0]["id"]
+            self._folder_cache[cache_key] = folder_id
+            return folder_id
+        return None
+
     def _get_root_folder_id(self) -> str:
         """Get (or create) the AIVC_Sync root folder."""
         return self._find_or_create_folder(_ROOT_FOLDER_NAME)
@@ -336,6 +355,76 @@ class NativeDriveSyncManager:
         destination = from_portable_path(target_path or file_path)
         self._download_file(file_id, destination)
         return destination
+
+    def delete_remote_file(self, file_path: str | Path) -> bool:
+        """Deletes a file from AIVC_Sync/files/ on Google Drive.
+
+        Returns:
+            True if at least one remote file was successfully deleted or trashed, False otherwise.
+        """
+        if not self.enabled:
+            return False
+
+        try:
+            import re
+            service = self._get_service()
+            norm_str = str(file_path).replace("\\", "/")
+            candidates = [to_portable_path(file_path)]
+
+            # Brain / Temp variants
+            m = re.search(r"(?:brain|artifacts)[\\/]([0-9a-fA-F-]+)[\\/](.+)", norm_str)
+            if m:
+                conv_id = m.group(1)
+                subpath = m.group(2).lstrip("/\\")
+                candidates.append(f"~/.gemini/antigravity/brain/{conv_id}/{subpath}")
+                candidates.append(f"~/.gemini/antigravity-cli/brain/{conv_id}/{subpath}")
+                candidates.append(f"~/AppData/Local/Temp/aivc/artifacts/{conv_id}/{subpath}")
+
+            unique_cands = list(dict.fromkeys(candidates))
+            deleted_any = False
+
+            for cand in unique_cands:
+                rel_drive_path = cand[2:] if cand.startswith("~/") else cand.lstrip("/")
+                parts = Path(rel_drive_path).parts
+                if not parts:
+                    continue
+
+                parent_folders = parts[:-1]
+                filename = parts[-1]
+
+                current_parent_id = self.files_folder_id
+                folder_exists = True
+                for folder_name in parent_folders:
+                    fid = self._find_folder_readonly(folder_name, current_parent_id)
+                    if not fid:
+                        folder_exists = False
+                        break
+                    current_parent_id = fid
+
+                if not folder_exists:
+                    continue
+
+                query = f"name = '{filename}' and '{current_parent_id}' in parents and trashed = false"
+                results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
+                files = results.get("files", [])
+
+                for f in files:
+                    try:
+                        service.files().delete(fileId=f["id"]).execute()
+                        deleted_any = True
+                        logger.info("Deleted remote file %s (id=%s) from Drive.", filename, f["id"])
+                    except Exception:
+                        try:
+                            service.files().update(fileId=f["id"], body={"trashed": True}).execute()
+                            deleted_any = True
+                            logger.info("Trashed remote file %s (id=%s) on Drive.", filename, f["id"])
+                        except Exception as e:
+                            logger.warning("Failed to trash remote file %s: %s", filename, e)
+
+            return deleted_any
+        except Exception as e:
+            logger.warning("Failed to delete remote file %s: %s", file_path, e)
+            return False
 
     def push_missing(self) -> dict:
         """Finds all local memories and pushes those missing from Google Drive.
@@ -610,3 +699,7 @@ class NativeDriveSyncManager:
                 break
 
         return [f["name"] for f in folders if f["name"] != "blobs" and f["name"] != self.machine_id]
+
+
+# Backward-compatibility alias
+DriveSyncManager = NativeDriveSyncManager

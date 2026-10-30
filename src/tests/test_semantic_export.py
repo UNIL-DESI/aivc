@@ -268,10 +268,11 @@ def test_semantic_drive_exporter_mock(tmp_path: Path):
 
     assert result["status"] == "success"
     assert result["synced_live"] == 3
-    # 35 items paginated by 25: Archives_New should have 2 batches (001 and 002)
-    # Archives_Await_Validation: 1 batch (empty list produces 1 empty/initial doc)
-    # Archives_Validated: 1 batch
-    assert result["synced_archives"] >= 4
+    # 35 items paginated by 25:
+    # Live_New gets the 25 most recent items
+    # Archives_New gets the 10 oldest items in 1 batch (Archive_New_001)
+    # Statuses with no overflow produce 0 archive docs
+    assert result["synced_archives"] == 1
 
 
 def test_format_live_and_archive_document_validated_details():
@@ -448,6 +449,54 @@ def test_guard_blocks_when_storage_env_fake_and_no_pytest_var(monkeypatch, tmp_p
         thread_count_before_2 = threading.active_count()
         trigger_semantic_export_async(Path(fake_storage))
         assert threading.active_count() == thread_count_before_2
+
+
+def test_upsert_gdoc_sha256_caching_skips_unchanged_content(tmp_path: Path):
+    """Volet A: Verify that _upsert_gdoc skips update API call if content hash is identical."""
+    mock_service = MagicMock()
+    mock_files = mock_service.files.return_value
+    mock_files.list.return_value.execute.return_value = {"files": []}
+    mock_files.create.return_value.execute.return_value = {"id": "doc-initial-id"}
+    mock_files.update.return_value.execute.return_value = {"id": "doc-initial-id"}
+
+    mock_manager = MagicMock()
+    mock_manager.enabled = True
+    mock_manager._get_service.return_value = mock_service
+
+    exporter = SemanticDriveExporter(drive_sync_manager=mock_manager, storage_root=tmp_path)
+    cache_file = tmp_path / "semantic_export_cache.json"
+
+    # Call 1: New file -> triggers create
+    doc_id1 = exporter._upsert_gdoc("Doc_A", "root-id", "Version 1 content")
+    assert doc_id1 == "doc-initial-id"
+    assert mock_files.create.call_count == 1
+    assert mock_files.update.call_count == 0
+    assert cache_file.is_file()
+
+    # Call 2: Same content -> should return cached doc_id with 0 API calls
+    doc_id2 = exporter._upsert_gdoc("Doc_A", "root-id", "Version 1 content")
+    assert doc_id2 == "doc-initial-id"
+    # Call counts must NOT increase
+    assert mock_files.create.call_count == 1
+    assert mock_files.update.call_count == 0
+
+    # Call 3: Changed content -> triggers update
+    doc_id3 = exporter._upsert_gdoc("Doc_A", "root-id", "Version 2 new content")
+    assert doc_id3 == "doc-initial-id"
+    assert mock_files.update.call_count == 1
+
+
+def test_archive_document_immutability_across_batches():
+    """Volet A: Verify that archive doc formatting is independent of total_batches for immutability."""
+    items = [{"id": "t1", "task": "Task 1", "project": "Projet A", "timestamp": "2026-10-28", "status": "new"}]
+    # Calling with total_batches=1 vs total_batches=5 produces identical text
+    doc_b1_t1 = format_archive_document("new", items, batch_index=1, total_batches=1)
+    doc_b1_t5 = format_archive_document("new", items, batch_index=1, total_batches=5)
+    assert doc_b1_t1 == doc_b1_t5
+    assert "Tranche d'archive 001" in doc_b1_t1
+    assert "1 / 1" not in doc_b1_t1
+    assert "1 / 5" not in doc_b1_t5
+
 
 
 

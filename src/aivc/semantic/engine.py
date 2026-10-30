@@ -117,10 +117,17 @@ class SemanticEngine:
             try:
                 # Cloud Sync push (Memory JSON)
                 self._sync_manager.push_memory(memory.id)
-                # Push latest versions of changed/consulted files
+                # Push latest versions of changed files (excluding consulted)
                 for c in getattr(memory, "changes", []):
-                    if c.action in ("edited", "consulted", "added", "modified"):
+                    if c.action in ("edited", "added", "modified"):
                         self._sync_manager.push_latest_file(c.path)
+                # Volet C: GC Drive files for tasks validated in this cycle
+                gc_files = getattr(self._workspace, "_last_gc_drive_files", [])
+                for p_gc in gc_files:
+                    try:
+                        self._sync_manager.delete_remote_file(p_gc)
+                    except Exception as e:
+                        logger.debug("Failed to GC remote file %s: %s", p_gc, e)
             except Exception as e:
                 import sys
                 print(f"Error in async sync for memory {memory.id}: {e}", file=sys.stderr)

@@ -172,14 +172,13 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
     """Serialise a Memory to a JSON-compatible dict."""
     edited_files = [c.path for c in memory.changes if c.action in ("edited", "added", "modified")]
     read_files = [c.path for c in memory.changes if c.action == "consulted"]
-    return {
+    d: dict[str, Any] = {
         "id": memory.id,
         "timestamp": memory.timestamp,
         "title": memory.title,
         "journal": memory.journal,
         "main_project_file": getattr(memory, "main_project_file", "") or "",
         "user_items": memory.user_items,
-        "note": memory.note,
         "parent_id": memory.parent_id,
         "machine_id": memory.machine_id,
         "urls": list(memory.urls),
@@ -194,6 +193,13 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
             for c in memory.changes
         ],
     }
+    # Non-duplication de note : n'inclure "note" que si legacy (aucun journal ni user_items)
+    has_journal = bool(memory.journal and memory.journal.strip())
+    has_user_items = bool(memory.user_items)
+    if not has_journal and not has_user_items:
+        d["note"] = memory.note
+
+    return d
 
 
 
@@ -208,7 +214,7 @@ def memory_from_dict(data: dict[str, Any]) -> Memory:
         )
 
     user_items = data.get("user_items", [])
-    journal = data.get("journal") or data.get("note", "")
+    journal = data.get("journal") if "journal" in data else data.get("note", "")
     note = data.get("note", "")
     full_note = _compose_note(journal, user_items, fallback_note=note)
 

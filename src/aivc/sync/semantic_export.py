@@ -9,6 +9,7 @@ Ensures 100% semantic text filtering: strips raw filesystem paths for audio read
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -353,8 +354,16 @@ def format_live_document(status: str, items: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def format_archive_document(status: str, items: list[dict[str, Any]], batch_num: int, total_batches: int) -> str:
+def format_archive_document(
+    status: str,
+    items: list[dict[str, Any]],
+    batch_index: int = 1,
+    total_batches: int | None = None,
+    **kwargs: Any,
+) -> str:
     """Formats the text of an Archive Google Doc."""
+    if "batch_num" in kwargs:
+        batch_index = kwargs["batch_num"]
     status_labels = {
         "new": "Archives des Tâches Créées (Archives_New)",
         "await_validation": "Archives des Livrables en Attente (Archives_Await_Validation)",
@@ -363,7 +372,7 @@ def format_archive_document(status: str, items: list[dict[str, Any]], batch_num:
     label = status_labels.get(status, f"Archives {status}")
 
     lines = [
-        f"# AIVC — {label} — Partie {batch_num:03d} / {total_batches:03d}",
+        f"# AIVC — {label} — Tranche d'archive {batch_index:03d} ({len(items)} éléments)",
         f"Nombre d'éléments : {len(items)}",
         "---",
         "",
@@ -442,6 +451,34 @@ class SemanticDriveExporter:
         self.storage_root = storage_root or get_storage_root(allow_fallback=True)
         self.manager = drive_sync_manager or NativeDriveSyncManager(self.storage_root)
         self._doc_id_cache: dict[str, str] = {}
+        self._content_hashes: dict[str, str] = {}
+        self._cache_file = self.storage_root / "semantic_export_cache.json"
+        self._load_export_cache()
+
+    def _load_export_cache(self) -> None:
+        """Loads cached Google Doc IDs and SHA-256 hashes from disk."""
+        if self._cache_file.is_file():
+            try:
+                data = json.loads(self._cache_file.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    self._doc_id_cache.update(data.get("doc_ids", {}))
+                    self._content_hashes.update(data.get("content_hashes", {}))
+            except Exception as e:
+                logger.debug("Failed to load semantic export cache: %s", e)
+
+    def _save_export_cache(self) -> None:
+        """Persists Google Doc IDs and SHA-256 hashes safely to disk."""
+        try:
+            self._cache_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp_file = self._cache_file.with_suffix(".tmp")
+            payload = {
+                "doc_ids": self._doc_id_cache,
+                "content_hashes": self._content_hashes,
+            }
+            tmp_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            tmp_file.replace(self._cache_file)
+        except Exception as e:
+            logger.debug("Failed to save semantic export cache: %s", e)
 
     def _get_or_create_folder(self, name: str, parent_id: str) -> str:
         """Finds or creates a subfolder under parent_id, cleaning up duplicate folders if any."""
@@ -466,11 +503,16 @@ class SemanticDriveExporter:
         return created["id"]
 
     def _upsert_gdoc(self, title: str, parent_id: str, content: str) -> str:
-        """Creates or updates a native Google Doc by complete content replacement, deduplicating if needed."""
+        """Creates or updates a native Google Doc by complete content replacement, deduplicating if needed.
+
+        Skips update if content SHA-256 hash matches the cached hash for this doc.
+        """
         from googleapiclient.http import MediaInMemoryUpload
+        from googleapiclient.errors import HttpError
 
         service = self.manager._get_service()
         cache_key = f"{parent_id}/{title}"
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
         file_id = self._doc_id_cache.get(cache_key)
         if not file_id:
@@ -489,22 +531,41 @@ class SemanticDriveExporter:
                         except Exception as e:
                             logger.warning("Failed to trash duplicate doc %s: %s", dup["id"], e)
 
+        # Skip update if content hash is unchanged
+        if file_id and self._content_hashes.get(cache_key) == content_hash:
+            logger.debug("SemanticDriveExporter: %s unchanged (hash %s), skipping update.", cache_key, content_hash[:8])
+            return file_id
+
         media = MediaInMemoryUpload(content.encode("utf-8"), mimetype="text/plain", resumable=True)
 
         if file_id:
             # Overwrite existing Google Doc via PATCH
-            updated = service.files().update(fileId=file_id, media_body=media, fields="id").execute()
-            return updated["id"]
-        else:
-            # Create new native Google Doc
-            body = {
-                "name": title,
-                "mimeType": MIME_GDOC,
-                "parents": [parent_id],
-            }
-            created = service.files().create(body=body, media_body=media, fields="id").execute()
-            self._doc_id_cache[cache_key] = created["id"]
-            return created["id"]
+            try:
+                updated = service.files().update(fileId=file_id, media_body=media, fields="id").execute()
+                self._doc_id_cache[cache_key] = updated["id"]
+                self._content_hashes[cache_key] = content_hash
+                self._save_export_cache()
+                return updated["id"]
+            except HttpError as e:
+                if getattr(e, "resp", None) and getattr(e.resp, "status", None) == 404:
+                    # Document was deleted remotely, re-create
+                    file_id = None
+                    self._doc_id_cache.pop(cache_key, None)
+                    self._content_hashes.pop(cache_key, None)
+                else:
+                    raise
+
+        # Create new native Google Doc
+        body = {
+            "name": title,
+            "mimeType": MIME_GDOC,
+            "parents": [parent_id],
+        }
+        created = service.files().create(body=body, media_body=media, fields="id").execute()
+        self._doc_id_cache[cache_key] = created["id"]
+        self._content_hashes[cache_key] = content_hash
+        self._save_export_cache()
+        return created["id"]
 
     def export_all(self, batch_size: int = BATCH_SIZE) -> dict[str, Any]:
         """Main export method: generates Live docs and paginated archives on Google Drive.
@@ -559,10 +620,12 @@ class SemanticDriveExporter:
             ("validated", "Live_Validated"),
         ]
 
+        matching_by_status: dict[str, list[dict[str, Any]]] = {}
         for status_key, doc_name in live_specs:
             # Current tasks filtered by status, sorted reverse chronologically (most recent first)
             matching = [t for t in tasks_current.values() if t["status"] == status_key]
             matching.sort(key=lambda x: x["timestamp"], reverse=True)
+            matching_by_status[status_key] = matching
             top_items = matching[:batch_size]
 
             text_content = format_live_document(status_key, top_items)
@@ -581,21 +644,24 @@ class SemanticDriveExporter:
 
         archives_synced = 0
         for status_key, folder_name, file_prefix in archive_specs:
+            matching = matching_by_status.get(status_key, [])
+            overflow = matching[batch_size:]
+            overflow_chronological = list(reversed(overflow))
+            batches = [
+                overflow_chronological[i : i + batch_size]
+                for i in range(0, len(overflow_chronological), batch_size)
+            ]
+
+            if not batches:
+                continue
+
             try:
                 folder_id = self._get_or_create_folder(folder_name, root_id)
             except Exception as e:
                 logger.warning("Failed to get/create archive folder %s: %s", folder_name, e)
                 continue
 
-            history_items = history_by_status.get(status_key, [])
-            # Split into batches of batch_size
-            total_items = len(history_items)
-            batches = [
-                history_items[i : i + batch_size]
-                for i in range(0, max(total_items, 1), batch_size)
-            ]
             total_batches = len(batches)
-
             for b_idx, batch_items in enumerate(batches, 1):
                 doc_title = f"{file_prefix}_{b_idx:03d}"
                 text_content = format_archive_document(status_key, batch_items, b_idx, total_batches)

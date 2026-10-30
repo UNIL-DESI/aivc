@@ -17,6 +17,8 @@ import uuid
 import shutil
 import tempfile
 import threading
+import re
+import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
@@ -27,6 +29,40 @@ from aivc.core.memory import Memory, FileChange, memory_from_dict, memory_to_dic
 from aivc.core.diff import compute_diff
 from aivc.core.index import CoreIndex
 from aivc.config import get_machine_id, to_portable_path, from_portable_path, get_aivc_temp_dir
+
+
+def _extract_linked_file_paths(text: str) -> list[str]:
+    """Extracts local file paths from text (file:/// URLs, Windows drive letters, ~/, AppData)."""
+    if not text or not isinstance(text, str):
+        return []
+
+    paths: list[str] = []
+    # 1. file:/// links (e.g. [name](file:///C:/...))
+    for m in re.finditer(r"file:///(?:[A-Za-z]:[\\/]|/)?([^\s\)\"\'\`\<\>]+)", text):
+        raw = m.group(0)
+        raw = re.sub(r":L\d+(?:-L\d+)?$", "", raw)
+        clean = raw[8:] if raw.startswith("file:///") else raw
+        decoded = urllib.parse.unquote(clean)
+        paths.append(decoded)
+
+    # 2. Windows drive letters C:\... or C:/...
+    for m in re.finditer(r"[A-Za-z]:[\\/][^\s\)\"\'\`\<\>]+", text):
+        p = re.sub(r":L\d+(?:-L\d+)?$", "", m.group(0))
+        paths.append(p)
+
+    # 3. ~/ or .gemini or AppData paths
+    for m in re.finditer(r"(?:~|\.gemini|AppData)[\\/][^\s\)\"\'\`\<\>]+", text):
+        p = re.sub(r":L\d+(?:-L\d+)?$", "", m.group(0))
+        paths.append(p)
+
+    seen = set()
+    unique_paths = []
+    for p in paths:
+        norm = p.replace("\\", "/").rstrip(".,;:)")
+        if norm not in seen:
+            seen.add(norm)
+            unique_paths.append(p.rstrip(".,;:)"))
+    return unique_paths
 
 
 @dataclass
@@ -67,6 +103,8 @@ class Workspace:
         self._index = CoreIndex(self._root)
         self._last_mtime = 0.0
         self._on_reload_callbacks = []
+        self._last_modified_commit_ids: list[str] = []
+        self._last_gc_drive_files: list[str] = []
 
         if self._workspace_path.exists():
             self._state = self._load_state()
@@ -346,7 +384,8 @@ class Workspace:
         actual_edited_files = list(dict.fromkeys([self._resolve_tracked_path(f, allow_basename_fallback=False) for f in actual_edited_files]))
 
         memory_id = str(uuid.uuid4())
-        self._last_modified_commit_ids: list[str] = []
+        self._last_modified_commit_ids = []
+        self._last_gc_drive_files = []
 
         # Merge input task collections
         raw_task_entries: list[tuple[dict[str, Any], bool]] = []
@@ -483,16 +522,82 @@ class Workspace:
                             c_modified = True
                 if c_modified:
                     c_data["user_items"] = c_items
-                    c_data["note"] = _compose_note(
-                        c_data.get("journal", ""),
-                        c_items,
-                        fallback_note=c_data.get("note", ""),
-                    )
+                    if c_data.get("journal") or c_data.get("user_items"):
+                        c_data.pop("note", None)
+                    else:
+                        c_data["note"] = _compose_note(
+                            c_data.get("journal", ""),
+                            c_items,
+                            fallback_note=c_data.get("note", ""),
+                        )
                     try:
                         p.write_text(json.dumps(c_data, indent=2), encoding="utf-8")
                         self._last_modified_commit_ids.append(p.stem)
                     except Exception:
                         pass
+
+        # Collect validated task ids from this update for Drive Garbage Collection
+        validated_ids = {tid for tid, (st, _) in status_updates_by_id.items() if st == "validated"}
+        for it in norm_user_items:
+            if it.get("task_status") == "validated" and it.get("id"):
+                validated_ids.add(it.get("id"))
+
+        if validated_ids:
+            # 1. Map all currently active paths across the workspace
+            active_paths: set[str] = set()
+            for p_c, c_data in commits_data.items():
+                for c_it in c_data.get("user_items", []):
+                    c_id = c_it.get("id")
+                    st = status_updates_by_id.get(c_id, (c_it.get("task_status"), False))[0]
+                    if st in ("new", "await_validation"):
+                        for lp in _extract_linked_file_paths(c_it.get("details", "")):
+                            active_paths.add(to_portable_path(lp).lower())
+
+            for it in norm_user_items:
+                if it.get("task_status") in ("new", "await_validation"):
+                    for lp in _extract_linked_file_paths(it.get("details", "")):
+                        active_paths.add(to_portable_path(lp).lower())
+
+            # 2. Gather candidate paths from validated tasks
+            candidate_paths: list[str] = []
+
+            for it in norm_user_items:
+                if it.get("id") in validated_ids:
+                    candidate_paths.extend(_extract_linked_file_paths(it.get("details", "")))
+
+            for p_c, c_data in commits_data.items():
+                commit_task_ids = {c_it.get("id") for c_it in c_data.get("user_items", []) if c_it.get("id")}
+                if commit_task_ids & validated_ids:
+                    for c_it in c_data.get("user_items", []):
+                        if c_it.get("id") in validated_ids:
+                            candidate_paths.extend(_extract_linked_file_paths(c_it.get("details", "")))
+
+                    # If this commit has no other tasks still in 'new' or 'await_validation'
+                    commit_has_active_tasks = False
+                    for c_it in c_data.get("user_items", []):
+                        c_id = c_it.get("id")
+                        st = status_updates_by_id.get(c_id, (c_it.get("task_status"), False))[0]
+                        if st in ("new", "await_validation"):
+                            commit_has_active_tasks = True
+                            break
+
+                    if not commit_has_active_tasks:
+                        for ch in c_data.get("changes", []):
+                            if isinstance(ch, dict) and ch.get("action") in ("edited", "added", "modified"):
+                                if ch.get("path"):
+                                    candidate_paths.append(ch.get("path"))
+
+            # 3. Filter out VoiceNotes (sanctuarisé) and active paths
+            seen_gc = set()
+            for cand in candidate_paths:
+                p_norm = to_portable_path(cand).lower()
+                if "voicenotes" in p_norm:
+                    continue
+                if p_norm in active_paths:
+                    continue
+                if p_norm not in seen_gc:
+                    seen_gc.add(p_norm)
+                    self._last_gc_drive_files.append(cand)
 
         # Strict validation
         for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
@@ -650,14 +755,52 @@ class Workspace:
 
             if modified:
                 data["user_items"] = user_items
-                data["note"] = _compose_note(
-                    data.get("journal", ""),
-                    user_items,
-                    fallback_note=data.get("note", ""),
-                )
+                if data.get("journal") or data.get("user_items"):
+                    data.pop("note", None)
+                else:
+                    data["note"] = _compose_note(
+                        data.get("journal", ""),
+                        user_items,
+                        fallback_note=data.get("note", ""),
+                    )
                 p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
         return marked_done
+
+    @property
+    def commits_dir(self) -> Path:
+        """Directory where commit JSON files are stored."""
+        return self._commits_dir
+
+    def compact_commits_json(self) -> int:
+        """Removes the redundant 'note' key from on-disk commit JSONs that have journal or user_items.
+
+        Returns:
+            The number of commit JSON files compacted.
+        """
+        compacted = 0
+        if not self._commits_dir.is_dir():
+            return 0
+
+        for p in self._commits_dir.glob("*.json"):
+            if p.stat().st_size == 0:
+                continue
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            has_journal = bool(data.get("journal") and str(data.get("journal")).strip())
+            has_user_items = bool(data.get("user_items"))
+            if (has_journal or has_user_items) and "note" in data:
+                data.pop("note", None)
+                try:
+                    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                    compacted += 1
+                except Exception:
+                    pass
+
+        return compacted
 
     def get_file_history(self, file_path: str) -> list[Memory]:
         """Return chronological list of memories touching file_path (portable match)."""
