@@ -484,6 +484,23 @@ def test_rewrite_brain_paths_to_temp_artifacts():
     expected_repaired = "file:///C:/Users/Jamet/AppData/Local/Temp/aivc/artifacts/59bb502e-fd05/script.ps1"
     assert rewrite_brain_paths_to_temp_artifacts(corrupted, temp_dir=fixed_temp) == expected_repaired
 
+    # 5. Link to Obsidian vault outside brain/ remains strictly intact after multiple calls
+    vault_link = "[📄 Note Maîtresse](file:///C:/Users/Jamet/Documents/VoiceNotes/notes/Test.md)"
+    res_v1 = rewrite_brain_paths_to_temp_artifacts(vault_link, temp_dir=fixed_temp)
+    res_v2 = rewrite_brain_paths_to_temp_artifacts(res_v1, temp_dir=fixed_temp)
+    assert res_v1 == vault_link
+    assert res_v2 == vault_link
+    assert "file:///e:///" not in res_v2
+    assert r"C:\Users" not in res_v2
+    assert "filC:" not in res_v2
+
+    # 6. Accidental file:///e:///e:/// corruption is cleanly repaired
+    corrupted_e = "[📄 Note Maîtresse](file:///e:///e:///C:\\Users\\Jamet\\Documents/VoiceNotes/notes/Test.md)"
+    res_repaired_e = rewrite_brain_paths_to_temp_artifacts(corrupted_e, temp_dir=fixed_temp)
+    assert res_repaired_e == vault_link
+    assert "file:///e:///" not in res_repaired_e
+    assert r"C:\Users" not in res_repaired_e
+
 
 
 

@@ -352,14 +352,24 @@ def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = Non
     artifacts_dir = Path(base_temp) / "artifacts"
     artifacts_posix = artifacts_dir.as_posix().replace("\\", "/").lstrip("/")
 
-    # Step 1: Repair any existing corrupted 'filC:\...'
+    # Step 1a: Clean any accidental 'file:///e:///...' prefix corruption
+    text = re.sub(r"file://+(?:e://+)+", "file:///", text, flags=re.IGNORECASE)
+
+    # Step 1b: Repair corrupted 'filC:\...' (excluding 'file://' via (?![eE]://) and requiring single slash after drive colon)
     def _fix_corrupted_fil(m: re.Match) -> str:
         raw_p = m.group(1).replace("\\", "/")
         return f"file:///{raw_p}"
 
     text = re.sub(
-        r"(?<![A-Za-z0-9_])fil([A-Za-z]:[\\/][^\s\[\]\(\)\"\'\`<>]+)",
+        r"(?<![A-Za-z0-9_])fil(?![eE]://)([A-Za-z]:[\\/](?![\\/])[^\s\[\]\(\)\"\'\`<>]+)",
         _fix_corrupted_fil,
+        text,
+    )
+
+    # Step 1c: Normalize any backslashes inside file:/// URLs to forward slashes
+    text = re.sub(
+        r"(file://+[A-Za-z]:[^\s\[\]\(\)\"\'\`<>]+)",
+        lambda m: m.group(1).replace("\\", "/"),
         text,
     )
 
