@@ -326,30 +326,19 @@ class CooccurrenceGraph:
             - ``edges``: each edge has ``source`` (memory_id) and
               ``target`` (file_path).
         """
-        nodes = []
-        edges_list = []
-
-        for row in self._execute(
-            "SELECT commit_id, title, timestamp FROM commit_nodes"
-        ).fetchall():
-            nodes.append(
-                {
-                    "id": row[0],
-                    "label": row[1],
-                    "type": "memory",
-                    "timestamp": row[2],
-                }
-            )
-
-        for row in self._execute("SELECT file_path FROM file_nodes").fetchall():
-            nodes.append({"id": row[0], "label": row[0], "type": "file"})
-
-        for row in self._execute(
-            "SELECT commit_id, file_path FROM edges"
-        ).fetchall():
-            edges_list.append({"source": row[0], "target": row[1]})
-
-        return {"nodes": nodes, "edges": edges_list}
+        return {
+            "nodes": [
+                {"id": r[0], "label": r[1], "type": "memory", "timestamp": r[2]}
+                for r in self._execute("SELECT commit_id, title, timestamp FROM commit_nodes")
+            ] + [
+                {"id": r[0], "label": r[0], "type": "file"}
+                for r in self._execute("SELECT file_path FROM file_nodes")
+            ],
+            "edges": [
+                {"source": r[0], "target": r[1]}
+                for r in self._execute("SELECT commit_id, file_path FROM edges")
+            ]
+        }
 
     def get_file_node_data(self, connected_files: set[str] | None = None) -> list[dict]:
         """Return enriched data for file nodes (documents) for visualisation.
