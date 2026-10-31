@@ -1054,28 +1054,41 @@ class Workspace:
 
         temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
         cache_file = self._root / "missing_blobs_cache.json"
-        drive_candidates_to_pull: list[tuple[str, Path, Path, list[str]]] = []
+        drive_candidates_to_pull: list[tuple[str, Path, list[Path], list[str]]] = []
 
         for sub, blob_hash in candidates.items():
-            local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
-            temp_artifact_path = temp_artifacts_dir / Path(sub)
+            sub_p = Path(sub)
+            local_path = home / ".gemini" / "antigravity" / "brain" / sub_p
+            cli_path = home / ".gemini" / "antigravity-cli" / "brain" / sub_p
+            temp_artifact_path = temp_artifacts_dir / sub_p
             sub_posix = sub.replace("\\", "/")
             portable = f"~/.gemini/antigravity/brain/{sub_posix}"
 
-            # Mirror to temp_artifacts_dir if local_path already exists
-            if local_path.is_file() and not temp_artifact_path.is_file():
-                try:
-                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(local_path, temp_artifact_path)
-                except OSError:
-                    pass
+            local_files = [local_path, cli_path]
+            existing_file = next((p for p in local_files + [temp_artifact_path] if p.is_file()), None)
+
+            if existing_file:
+                # Sync across local brain roots and temp_artifacts_dir
+                mirrored_to_local_path = False
+                for target in local_files + [temp_artifact_path]:
+                    if not target.is_file():
+                        try:
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(existing_file, target)
+                            if target == local_path:
+                                mirrored_to_local_path = True
+                        except OSError:
+                            pass
+                if mirrored_to_local_path:
+                    restored.append(str(local_path))
+                continue
 
             # If path already exists locally on disk (file or directory), nothing to restore
-            if local_path.exists():
+            if local_path.exists() or cli_path.exists():
                 continue
 
             # If not tracked in memory.changes and has no extension, skip directory references
-            if blob_hash is None and "." not in Path(sub).name:
+            if blob_hash is None and "." not in sub_p.name:
                 continue
 
             content: bytes | None = None
@@ -1124,18 +1137,19 @@ class Workspace:
 
                 if not is_neg_cached:
                     if background_drive:
-                        drive_candidates_to_pull.append((portable, local_path, temp_artifact_path, cache_keys))
+                        drive_candidates_to_pull.append((portable, local_path, [temp_artifact_path, cli_path], cache_keys))
                     else:
                         try:
                             if getattr(sync_manager, "enabled", False):
                                 dest = sync_manager.pull_latest_file(portable, target_path=local_path)
                                 if dest and dest.is_file():
                                     restored.append(str(local_path))
-                                    try:
-                                        temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copy2(local_path, temp_artifact_path)
-                                    except OSError:
-                                        pass
+                                    for t in (temp_artifact_path, cli_path):
+                                        try:
+                                            t.parent.mkdir(parents=True, exist_ok=True)
+                                            shutil.copy2(local_path, t)
+                                        except OSError:
+                                            pass
                                     # Clean up cache if previously marked missing
                                     updated = False
                                     for key in cache_keys:
@@ -1167,18 +1181,19 @@ class Workspace:
                     local_path.parent.mkdir(parents=True, exist_ok=True)
                     local_path.write_bytes(content)
                     restored.append(str(local_path))
-                    try:
-                        temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(local_path, temp_artifact_path)
-                    except OSError:
-                        pass
+                    for t in (temp_artifact_path, cli_path):
+                        try:
+                            t.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(local_path, t)
+                        except OSError:
+                            pass
                 except Exception:
                     pass
 
         # If any Drive candidates were deferred for background restore, start daemon worker
         if drive_candidates_to_pull and background_drive and sync_manager is not None:
             def _async_drive_worker(
-                candidates_to_pull: list[tuple[str, Path, Path, list[str]]],
+                candidates_to_pull: list[tuple[str, Path, list[Path], list[str]]],
                 mgr: Any,
                 c_file: Path,
             ) -> None:
@@ -1193,18 +1208,19 @@ class Workspace:
                     except Exception:
                         m_cache = {}
 
-                for port_path, l_path, t_path, c_keys in candidates_to_pull:
+                for port_path, l_path, extra_targets, c_keys in candidates_to_pull:
                     pull_ok = False
                     try:
                         if getattr(mgr, "enabled", False):
                             dest = mgr.pull_latest_file(port_path, target_path=l_path)
                             if dest and dest.is_file():
                                 pull_ok = True
-                                try:
-                                    t_path.parent.mkdir(parents=True, exist_ok=True)
-                                    shutil.copy2(l_path, t_path)
-                                except OSError:
-                                    pass
+                                for t_path in extra_targets:
+                                    try:
+                                        t_path.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(l_path, t_path)
+                                    except OSError:
+                                        pass
                                 for k in c_keys:
                                     m_cache.pop(k, None)
                     except Exception:

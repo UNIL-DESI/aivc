@@ -427,6 +427,7 @@ def test_auto_restore_brain_files_background_drive(tmp_path: Path, monkeypatch):
     """Verify background_drive=True returns immediately while Drive pulls complete asynchronously."""
     import time
     monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+    monkeypatch.setattr("aivc.core.workspace.get_aivc_temp_dir", lambda: tmp_path / "temp_aivc")
 
     storage_root = tmp_path / ".aivc" / "storage"
     ws = Workspace(storage_root)
@@ -522,6 +523,78 @@ def test_auto_restore_unquotes_urls_and_skips_directories(tmp_path: Path, monkey
     assert file_with_spaces.read_bytes() == content
     # Ensure directory is still a directory and not overwritten with blob
     assert dir_path.is_dir()
+
+
+def test_auto_restore_brain_files_cli_path_mirror(tmp_path: Path, monkeypatch):
+    """Verify auto_restore_brain_files syncs across cli_path, local_path, and temp_artifacts."""
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+    temp_dir = tmp_path / "temp_aivc"
+    monkeypatch.setattr("aivc.core.workspace.get_aivc_temp_dir", lambda: temp_dir)
+
+    ws = Workspace(tmp_path / "workspace")
+
+    # 1. Test mirror from cli_path when local_path and temp are missing
+    cli_file = tmp_path / ".gemini" / "antigravity-cli" / "brain" / "task-1" / "cli_artifact.md"
+    cli_file.parent.mkdir(parents=True, exist_ok=True)
+    cli_file.write_text("CLI Content", encoding="utf-8")
+
+    local_file = tmp_path / ".gemini" / "antigravity" / "brain" / "task-1" / "cli_artifact.md"
+    temp_file = temp_dir / "artifacts" / "task-1" / "cli_artifact.md"
+
+    mem = Memory(
+        id="mem-cli-mirror",
+        timestamp="2026-10-31T00:00:00Z",
+        title="CLI Mirror Test",
+        note="",
+        parent_id=None,
+        changes=[
+            FileChange(
+                path=str(cli_file),
+                action="edited",
+            )
+        ],
+    )
+
+    restored = ws.auto_restore_brain_files(mem)
+    assert str(local_file) in restored
+    assert local_file.is_file()
+    assert local_file.read_text(encoding="utf-8") == "CLI Content"
+    assert temp_file.is_file()
+    assert temp_file.read_text(encoding="utf-8") == "CLI Content"
+
+    # 2. Test blob_store restore writes to local_path, temp_file, and cli_file
+    blob_content = b"Blob Content For Both"
+    blob_hash = ws._blob_store.store(blob_content)
+    blob_target_local = tmp_path / ".gemini" / "antigravity" / "brain" / "task-2" / "blob_artifact.md"
+    blob_target_cli = tmp_path / ".gemini" / "antigravity-cli" / "brain" / "task-2" / "blob_artifact.md"
+    blob_target_temp = temp_dir / "artifacts" / "task-2" / "blob_artifact.md"
+
+    mem_blob = Memory(
+        id="mem-blob-mirror",
+        timestamp="2026-10-31T00:00:00Z",
+        title="Blob Mirror Test",
+        note="",
+        parent_id=None,
+        changes=[
+            FileChange(
+                path=str(blob_target_local),
+                action="added",
+                blob_hash=blob_hash,
+                bytes_added=len(blob_content),
+                bytes_removed=0,
+            )
+        ],
+    )
+
+    restored_blob = ws.auto_restore_brain_files(mem_blob)
+    assert str(blob_target_local) in restored_blob
+    assert blob_target_local.is_file()
+    assert blob_target_local.read_bytes() == blob_content
+    assert blob_target_cli.is_file()
+    assert blob_target_cli.read_bytes() == blob_content
+    assert blob_target_temp.is_file()
+    assert blob_target_temp.read_bytes() == blob_content
+
 
 
 
