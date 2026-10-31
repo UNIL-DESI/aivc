@@ -169,3 +169,40 @@ def test_dream_inbox_registry_and_filtering(tmp_path: Path, monkeypatch, capsys)
     assert "Fresh.docx" in out2
     assert "Notes.docx" in out2
     assert "[déjà traité]" in out2
+
+
+def test_dream_inbox_read_and_trash_by_id(tmp_path: Path, monkeypatch, capsys):
+    """Verify dream inbox read and trash commands resolve ID correctly."""
+    import argparse
+    import json
+    import subprocess
+    from aivc.cli import _load_dream_inbox_processed, cmd_dream_inbox
+
+    monkeypatch.setattr("aivc.config.get_aivc_dir", lambda: tmp_path)
+
+    mock_files = [
+        {"Name": "Fresh.docx", "ID": "1AbCdEfGhIjKlMnOpQrStUvWxYz", "ModTime": "2026-10-29T11:00:00Z"},
+    ]
+    monkeypatch.setattr(subprocess, "check_output", lambda *args, **kwargs: json.dumps(mock_files))
+
+    def mock_check_call(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.write_text("Hello dream inbox content", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(subprocess, "check_call", mock_check_call)
+
+    args_read = argparse.Namespace(inbox_action="read", target="1AbCdEfGhIjKlMnOpQrStUvWxYz")
+    cmd_dream_inbox(args_read)
+    out_read = capsys.readouterr().out
+    assert "Hello dream inbox content" in out_read
+
+    args_trash = argparse.Namespace(inbox_action="trash", target="1AbCdEfGhIjKlMnOpQrStUvWxYz")
+    cmd_dream_inbox(args_trash)
+    out_trash = capsys.readouterr().out
+    assert "1AbCdEfGhIjKlMnOpQrStUvWxYz" in out_trash
+
+    reg = _load_dream_inbox_processed()
+    assert "1AbCdEfGhIjKlMnOpQrStUvWxYz" in reg["processed"]
+    assert reg["processed"]["1AbCdEfGhIjKlMnOpQrStUvWxYz"]["name"] == "Fresh.docx"
+

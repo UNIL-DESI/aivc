@@ -34,7 +34,7 @@ _LOCAL_PATH_REGEX = re.compile(
 )
 
 GENERIC_PROJECT_NAMES = {
-    "roadmap", "advance", "projet general", "projet général", "task",
+    "roadmap", "advance", "session", "project", "projet general", "projet général", "task",
     "scratch", "memoire_principale", "index_principal", "home",
     "general", "général"
 }
@@ -115,7 +115,7 @@ def extract_project_name(
     """Converts main_project_file or read_files notes reference into a readable project title.
 
     Examples:
-        'notes/Améliorer le système Antigravity Obsidian.md' -> 'Projet : Améliorer le système Antigravity Obsidian'
+        'notes/Améliorer le système Antigravity.md' -> 'Projet : Améliorer le système Antigravity'
         '[Asharde] Session 12' in title -> 'Projet : Asharde'
     """
     # 0. Priority: From main_project_file (absolute priority)
@@ -124,7 +124,7 @@ def extract_project_name(
         name = None
         if "notes/" in p and p.endswith(".md"):
             name = p.split("notes/")[-1][:-3].strip()
-        elif p.endswith(".md") and "voicenotes" in p.lower():
+        elif p.endswith(".md") and not any(k in p.lower() for k in ("/brain/", "/temp/", "appdata", "scratch", "sources_")):
             name = p.split("/")[-1][:-3].strip()
         elif p.endswith(".md"):
             name = p.split("/")[-1][:-3].strip()
@@ -146,7 +146,7 @@ def extract_project_name(
             name = None
             if "notes/" in p and p.endswith(".md"):
                 name = p.split("notes/")[-1][:-3].strip()
-            elif p.endswith(".md") and "voicenotes" in p.lower():
+            elif p.endswith(".md") and not any(k in p.lower() for k in ("/brain/", "/temp/", "appdata", "scratch", "sources_")):
                 name = p.split("/")[-1][:-3].strip()
 
             if name and not _is_generic_project_name(name):
@@ -155,10 +155,13 @@ def extract_project_name(
     # 2. From memory_title
     if memory_title:
         title = memory_title.strip()
-        # Pattern 1: [Advance] <Projet> — ... or [Roadmap] <Projet> — ...
-        m = re.match(r"^\[(?:Advance|Roadmap|Session|Project)\]\s*([^—–\:\n]+?)(?:\s+[-—–:]\s+.*|$)", title)
-        if m and m.group(1).strip() and not _is_generic_project_name(m.group(1).strip()):
-            return f"Projet : {m.group(1).strip()}"
+        # Pattern 1: [GenericTag] <Projet> — ... or [GenericTag] <Projet> : ...
+        m = re.match(r"^\[([^\]]+)\]\s*([^—–\:\n]+?)(?:\s+[-—–:]\s+.*|$)", title)
+        if m:
+            tag = m.group(1).strip()
+            after = m.group(2).strip()
+            if _is_generic_project_name(tag) and after and not _is_generic_project_name(after):
+                return f"Projet : {after}"
 
         # Pattern 2: [Project Name] ...
         m = re.match(r"^\[([^\]]+)\]\s*(.*)$", title)

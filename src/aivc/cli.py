@@ -476,6 +476,25 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
 
     action = args.inbox_action
 
+    def _resolve_dream_inbox_target(target_str: str) -> tuple[str | None, str | None]:
+        doc_id = None
+        doc_name = None
+        try:
+            out = subprocess.check_output(
+                ["rclone", "lsjson", "gdrive:Dream_Inbox"],
+                stderr=subprocess.DEVNULL,
+                encoding="utf-8"
+            )
+            files = json.loads(out)
+            for f in files:
+                if f.get("Name") == target_str or f.get("ID") == target_str:
+                    return f.get("ID"), f.get("Name")
+        except Exception:
+            pass
+        if len(target_str) > 20 and "." not in target_str:
+            return target_str, None
+        return None, target_str
+
     if action == "list":
         print(f"{CYAN}{BOLD}Google Drive Dream_Inbox Listing:{RESET}")
         try:
@@ -522,15 +541,39 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             print(f"{RED}Error: please specify a document name or ID to read.{RESET}")
             return
         print(f"{DIM}Reading '{target}' from Dream_Inbox...{RESET}\n")
+
+        doc_id, doc_name = _resolve_dream_inbox_target(target)
+        target_filename = doc_name or (f"{target}.docx" if len(target) > 20 and "." not in target else target)
+
         with tempfile.TemporaryDirectory() as tmp_dir:
-            local_target = Path(tmp_dir) / "doc.docx"
+            local_target = Path(tmp_dir) / target_filename
+            downloaded = False
             try:
-                remote_path = f"Dream_Inbox/{target}"
+                remote_name = doc_name or target
+                remote_path = f"Dream_Inbox/{remote_name}"
                 subprocess.check_call(
                     ["rclone", "copyto", f"gdrive:{remote_path}", str(local_target)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
+                downloaded = local_target.exists() and local_target.stat().st_size > 0
+            except Exception:
+                pass
+
+            if not downloaded and doc_id:
+                try:
+                    from aivc.config import get_storage_root
+                    from aivc.sync.drive import NativeDriveSyncManager
+                    mgr = NativeDriveSyncManager(get_storage_root())
+                    if getattr(mgr, "enabled", False):
+                        service = mgr._get_service()
+                        content = service.files().get_media(fileId=doc_id).execute()
+                        local_target.write_bytes(content)
+                        downloaded = True
+                except Exception:
+                    pass
+
+            if downloaded:
                 if zipfile.is_zipfile(local_target):
                     with zipfile.ZipFile(local_target) as z:
                         xml_content = z.read("word/document.xml")
@@ -544,8 +587,8 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
                     print("\n".join(paras))
                 else:
                     print(local_target.read_text(encoding="utf-8", errors="replace"))
-            except Exception as e:
-                print(f"{RED}Error reading file from Dream_Inbox: {e}{RESET}")
+            else:
+                print(f"{RED}Error reading file from Dream_Inbox: could not download '{target}'.{RESET}")
 
     elif action == "trash":
         target = args.target
@@ -554,22 +597,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             return
         print(f"{DIM}Attempting to trash '{target}' from Dream_Inbox...{RESET}")
 
-        doc_id = None
-        doc_name = None
-        try:
-            out = subprocess.check_output(
-                ["rclone", "lsjson", "gdrive:Dream_Inbox"],
-                stderr=subprocess.DEVNULL,
-                encoding="utf-8"
-            )
-            files = json.loads(out)
-            for f in files:
-                if f.get("Name") == target or f.get("ID") == target:
-                    doc_id = f.get("ID")
-                    doc_name = f.get("Name")
-                    break
-        except Exception:
-            pass
+        doc_id, doc_name = _resolve_dream_inbox_target(target)
 
         if not doc_id and len(target) > 20:
             doc_id = target
@@ -590,11 +618,11 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
 
         if not trashed:
             try:
-                from aivc.config import get_home_dir
+                from aivc.config import resolve_workspace_path
                 import urllib.request
                 import urllib.parse
-                data_path = get_home_dir() / "Documents" / "VoiceNotes" / ".obsidian" / "plugins" / "gemini-sync" / "data.json"
-                if data_path.exists():
+                data_path = resolve_workspace_path(".obsidian/plugins/gemini-sync/data.json")
+                if data_path and data_path.exists():
                     data = json.loads(data_path.read_text(encoding="utf-8"))
                     params = {
                         "client_id": data["clientId"],
@@ -666,7 +694,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
 
 def cmd_backfill_main_project(args: argparse.Namespace) -> None:
     """Deterministically backfills missing main_project_file in AIVC commit JSONs."""
-    from aivc.advance_sync import backfill_missing_main_project_files
+    from aivc.project_sync import backfill_missing_main_project_files
     print(f"{CYAN}{BOLD}Starting deterministic main_project_file backfill...{RESET}")
     res = backfill_missing_main_project_files(dry_run=getattr(args, "dry_run", False))
     print(f"{GREEN}{CHECK_MARK} Backfill complete!{RESET}")

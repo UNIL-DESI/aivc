@@ -312,7 +312,7 @@ class SemanticEngine:
     # Commit lifecycle
     # ------------------------------------------------------------------
 
-    def remember(
+    def task_commit(
         self,
         title: str,
         journal: str = "",
@@ -339,13 +339,16 @@ class SemanticEngine:
             cand = Path(raw_s)
             if cand.is_absolute():
                 return raw_s
+            if (Path.cwd() / cand).exists():
+                return str((Path.cwd() / cand).resolve())
             ws_root = getattr(self, "workspace_root", None) or getattr(self._workspace, "_root", None) or Path.cwd()
             candidate = Path(ws_root) / cand
             if candidate.exists():
-                return str(candidate)
-            vn_cand = Path.home() / "Documents" / "VoiceNotes" / cand
-            if vn_cand.exists():
-                return str(vn_cand)
+                return str(candidate.resolve())
+            from aivc.config import resolve_workspace_path
+            ws_cand = resolve_workspace_path(cand, cwd=Path.cwd())
+            if ws_cand and ws_cand.exists():
+                return str(ws_cand)
             return raw_s
 
         p_str = str(main_project_file).strip()
@@ -355,13 +358,16 @@ class SemanticEngine:
             raw_p = Path(p_str)
             if raw_p.is_absolute():
                 resolved_path = raw_p
+            elif (Path.cwd() / raw_p).exists():
+                resolved_path = (Path.cwd() / raw_p).resolve()
             else:
                 ws_root = getattr(self, "workspace_root", None) or getattr(self._workspace, "_root", None) or Path.cwd()
                 resolved_path = Path(ws_root) / raw_p
                 if not resolved_path.exists():
-                    vn_candidate = Path.home() / "Documents" / "VoiceNotes" / raw_p
-                    if vn_candidate.exists():
-                        resolved_path = vn_candidate
+                    from aivc.config import resolve_workspace_path
+                    ws_candidate = resolve_workspace_path(raw_p, cwd=Path.cwd())
+                    if ws_candidate and ws_candidate.exists():
+                        resolved_path = ws_candidate
 
         if not resolved_path.exists():
             raise ValueError(f"main_project_file does not exist on disk: {main_project_file}")
@@ -416,14 +422,16 @@ class SemanticEngine:
         # Step 4: Invalidate hints cache
         self._local_hints_index = None
 
-        # Step 5: Auto-sync advance_tldr notes for Obsidian projects
+        # Step 5: Auto-sync project views
         try:
-            from aivc.advance_sync import sync_advance_tldr
-            sync_advance_tldr(memory)
+            from aivc.project_sync import sync_project_views
+            sync_project_views(memory)
         except Exception as e:
-            logger.warning("Failed to auto-sync advance_tldr in engine.remember: %s", e)
+            logger.warning("Failed to auto-sync project views in engine.task_commit: %s", e)
 
         return memory
+
+    remember = task_commit
 
     def create_memory(
         self,

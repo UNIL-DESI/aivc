@@ -86,7 +86,7 @@ def _resolve_relative_args(arguments: dict[str, Any], client_cwd: str | None) ->
     if not cwd_path.is_dir():
         return arguments
 
-    vn_root = Path.home() / "Documents" / "VoiceNotes"
+    from aivc.config import resolve_workspace_path
 
     resolved = dict(arguments)
     for k in ("file_path", "target_path", "main_project_file"):
@@ -100,8 +100,10 @@ def _resolve_relative_args(arguments: dict[str, Any], client_cwd: str | None) ->
                 else:
                     if candidate.exists():
                         resolved[k] = str(candidate.resolve())
-                    elif (vn_root / val.strip()).exists():
-                        resolved[k] = str((vn_root / val.strip()).resolve())
+                    else:
+                        ws_cand = resolve_workspace_path(val.strip(), cwd=cwd_path)
+                        if ws_cand and ws_cand.exists():
+                            resolved[k] = str(ws_cand.resolve())
 
     for k in ("read_files", "edited_files"):
         if k in resolved and isinstance(resolved[k], list):
@@ -111,10 +113,12 @@ def _resolve_relative_args(arguments: dict[str, Any], client_cwd: str | None) ->
                     candidate = cwd_path / item
                     if candidate.exists():
                         new_list.append(str(candidate.resolve()))
-                    elif (vn_root / item.strip()).exists():
-                        new_list.append(str((vn_root / item.strip()).resolve()))
                     else:
-                        new_list.append(item)
+                        ws_cand = resolve_workspace_path(item.strip(), cwd=cwd_path)
+                        if ws_cand and ws_cand.exists():
+                            new_list.append(str(ws_cand.resolve()))
+                        else:
+                            new_list.append(item)
                 else:
                     new_list.append(item)
             resolved[k] = new_list
@@ -229,6 +233,8 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
                     from aivc import server as aivc_server
                     params = msg.get("params", {})
                     name = params.get("name", "")
+                    if name == "remember":
+                        name = "task_commit"
                     arguments = params.get("arguments", {})
                     client_cwd = self.headers.get("X-AIVC-Cwd")
                     arguments = _resolve_relative_args(arguments, client_cwd)

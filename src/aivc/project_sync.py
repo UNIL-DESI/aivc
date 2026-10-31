@@ -1,16 +1,17 @@
 """
-Automatic synchronization of advance_tldr notes from AIVC remember events.
-Integrates AIVC with project_memory_cli to keep advance_tldr/🤖 <Titre>.md updated.
+Automatic synchronization of project notes and views from AIVC task_commit events.
+Integrates AIVC with external project sync handlers to keep project views updated.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import logging
 import os
 import re
-import sys
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -29,32 +30,34 @@ def set_custom_sync_handler(handler: Any) -> None:
     _CUSTOM_SYNC_HANDLER = handler
 
 
-def get_vault_dir() -> Path:
-    """Returns the Obsidian vault directory (VoiceNotes)."""
-    env_vault = os.environ.get("PROJECT_MEMORY_VAULT_DIR")
-    if env_vault:
-        return Path(env_vault)
-    home = get_home_dir()
-    candidate = home / "Documents" / "VoiceNotes"
-    return candidate
+def get_workspace_dir() -> Path:
+    """Returns the project workspace or vault directory."""
+    from aivc.config import get_workspace_dir as _get_ws_dir
+    return _get_ws_dir()
 
 
-def find_project_memory_cli_path() -> Path | None:
-    """Locates project_memory_cli.py script."""
-    env_cli = os.environ.get("PROJECT_MEMORY_CLI_PATH")
+get_vault_dir = get_workspace_dir
+
+
+def find_project_sync_cli_path() -> Path | None:
+    """Locates project sync CLI script."""
+    env_cli = os.environ.get("AIVC_PROJECT_SYNC_CLI_PATH") or os.environ.get("PROJECT_MEMORY_CLI_PATH")
     if env_cli and Path(env_cli).is_file():
         return Path(env_cli)
 
-    vault = get_vault_dir()
-    candidate = vault / "_agents" / "scripts-for-skills" / "project_memory_cli.py"
+    ws_dir = get_workspace_dir()
+    candidate = ws_dir / "_agents" / "scripts-for-skills" / "project_memory_cli.py"
     if candidate.is_file():
         return candidate
 
     return None
 
 
+find_project_memory_cli_path = find_project_sync_cli_path
+
+
 def _load_project_memory_module() -> Any:
-    """Loads and caches the project_memory_cli module."""
+    """Loads and caches the project sync module."""
     global _PROJECT_MEMORY_MODULE
     if _PROJECT_MEMORY_MODULE is not None:
         return _PROJECT_MEMORY_MODULE
@@ -63,7 +66,7 @@ def _load_project_memory_module() -> Any:
         _PROJECT_MEMORY_MODULE = sys.modules["project_memory_cli"]
         return _PROJECT_MEMORY_MODULE
 
-    cli_path = find_project_memory_cli_path()
+    cli_path = find_project_sync_cli_path()
     if not cli_path or not cli_path.is_file():
         return None
 
@@ -80,8 +83,8 @@ def _load_project_memory_module() -> Any:
     return None
 
 
-def extract_obsidian_project_notes(memory: Any) -> list[str]:
-    """Extracts Obsidian project note paths from a memory.
+def extract_project_notes(memory: Any) -> list[str]:
+    """Extracts project note paths from a memory.
 
     If main_project_file is present, uses it exclusively.
     Otherwise scans read_files, edited_files, and changes for markdown notes.
@@ -113,15 +116,20 @@ def extract_obsidian_project_notes(memory: Any) -> list[str]:
 
     for p in all_paths:
         p_clean = str(p).strip().replace("\\", "/").lower()
-        if p_clean.endswith(".md") or "voicenotes" in p_clean:
-            if str(p) not in notes:
-                notes.append(str(p))
+        if p_clean.endswith(".md"):
+            # Exclude temporary artifact directories
+            if not any(k in p_clean for k in ("/brain/", "/temp/", "appdata", "scratch", ".aivc/artifacts")):
+                if str(p) not in notes:
+                    notes.append(str(p))
 
     return notes
 
 
-def is_obsidian_related_memory(memory: Any) -> bool:
-    """Determines if a memory relates to the Obsidian vault or contains task items."""
+extract_obsidian_project_notes = extract_project_notes
+
+
+def is_project_related_memory(memory: Any) -> bool:
+    """Determines if a memory relates to a project workspace or contains task items."""
     if isinstance(memory, dict):
         mpf = memory.get("main_project_file") or ""
         user_items = memory.get("user_items") or memory.get("tasks") or []
@@ -134,7 +142,7 @@ def is_obsidian_related_memory(memory: Any) -> bool:
     # If main_project_file is present, inspect it exclusively
     if mpf and str(mpf).strip():
         p_clean = str(mpf).strip().replace("\\", "/").lower()
-        if p_clean.endswith(".md") or "voicenotes" in p_clean:
+        if p_clean.endswith(".md") and not any(k in p_clean for k in ("/brain/", "/temp/", "appdata", "scratch", ".aivc/artifacts")):
             return True
 
     # If tasks or user_items are present, synchronization is eligible
@@ -142,12 +150,9 @@ def is_obsidian_related_memory(memory: Any) -> bool:
         return True
 
     # Check extracted notes
-    notes = extract_obsidian_project_notes(memory)
+    notes = extract_project_notes(memory)
     if notes:
-        for p in notes:
-            p_clean = str(p).strip().replace("\\", "/").lower()
-            if p_clean.endswith(".md") or "voicenotes" in p_clean:
-                return True
+        return True
 
     # Check project title pattern [Project Title]
     if title and re.search(r"\[[^\]]+\]", title):
@@ -156,15 +161,21 @@ def is_obsidian_related_memory(memory: Any) -> bool:
     return False
 
 
-def normalize_advance_tldr_title(title: str) -> str:
-    """Normalizes project title for advance_tldr notes by stripping leading robot emojis."""
+is_obsidian_related_memory = is_project_related_memory
+
+
+def normalize_project_tldr_title(title: str) -> str:
+    """Normalizes project title for project view notes by stripping leading robot emojis."""
     return re.sub(r"^(?:🤖\s*)+", "", title).strip()
 
 
-def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None, background_drive: bool = False) -> list[str]:
+normalize_advance_tldr_title = normalize_project_tldr_title
+
+
+def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, background_drive: bool = False) -> list[str]:
     """Auto-restores files under .gemini/antigravity/brain/ referenced by memory if missing locally.
     Remaps any foreign machine paths to current PC's Path.home() / .gemini/antigravity/brain/...
-    Supports memory objects, dicts, file paths, or advance_tldr notes.
+    Supports memory objects, dicts, file paths, or project view notes.
     """
     import urllib.parse
     from aivc.config import get_home_dir, extract_brain_subpath, get_storage_root, get_aivc_temp_dir
@@ -255,7 +266,7 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None, backgr
         if mpf:
             try:
                 stem = Path(str(mpf)).stem
-                title = normalize_advance_tldr_title(stem)
+                title = normalize_project_tldr_title(stem)
                 tldr_temp = get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md"
                 tldr_legacy = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
                 if home != Path.home() and tldr_legacy.is_file():
@@ -314,7 +325,7 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None, backgr
                 target=_async_advance_drive_worker,
                 args=(list(drive_candidates), mgr),
                 daemon=True,
-                name="AivcAdvanceSyncDrivePull",
+                name="AivcProjectSyncDrivePull",
             )
             t.start()
         else:
@@ -334,7 +345,10 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None, backgr
     return restored
 
 
-def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = None) -> str:
+restore_brain_files_for_memory = restore_artifacts_for_memory
+
+
+def rewrite_artifact_paths_to_temp(text: str, temp_dir: Path | None = None) -> str:
     r"""Rewrites references to brain artifacts in markdown text to <temp>/aivc/artifacts/<subpath>.
 
     Handles:
@@ -406,11 +420,19 @@ def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = Non
     return text
 
 
-def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[str]:
-    """Synchronizes advance_tldr/🤖 <Titre>.md for the given memory.
+rewrite_brain_paths_to_temp_artifacts = rewrite_artifact_paths_to_temp
 
-    Returns the list of generated or updated advance_tldr file paths.
+
+def sync_project_views(
+    memory: Any,
+    workspace_dir: str | Path | None = None,
+    vault_dir: str | Path | None = None,
+) -> list[str]:
+    """Synchronizes project view notes for the given memory.
+
+    Returns the list of generated or updated view file paths.
     """
+    effective_ws = workspace_dir or vault_dir
     home = get_home_dir()
     is_dict = isinstance(memory, dict)
     if is_dict:
@@ -422,13 +444,16 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
 
     # Restore missing brain files referenced by this memory or active tasks
     try:
-        restore_brain_files_for_memory(memory, background_drive=True)
+        restore_artifacts_for_memory(memory, background_drive=True)
     except Exception as e:
-        logger.debug("auto-restore in sync_advance_tldr skipped: %s", e)
+        logger.debug("auto-restore in sync_project_views skipped: %s", e)
 
     if _CUSTOM_SYNC_HANDLER is not None:
         try:
-            res = _CUSTOM_SYNC_HANDLER(memory, vault_dir=vault_dir)
+            try:
+                res = _CUSTOM_SYNC_HANDLER(memory, workspace_dir=effective_ws, vault_dir=effective_ws)
+            except TypeError:
+                res = _CUSTOM_SYNC_HANDLER(memory, vault_dir=effective_ws)
             if is_dict:
                 memory["_tldr_synced"] = True
                 memory["_tldr_synced_paths"] = res or []
@@ -439,16 +464,20 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
                 for sp in res:
                     try:
                         p_sp = Path(sp)
+                        view_dir_name = p_sp.parent.name or "advance_tldr"
                         stem = p_sp.stem
-                        title = normalize_advance_tldr_title(stem)
-                        legacy_dest = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
-                        if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
-                            legacy_dest.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(p_sp, legacy_dest)
+                        title = normalize_project_tldr_title(stem)
+                        destinations = [home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"]
+                        if view_dir_name != "advance_tldr":
+                            destinations.append(home / ".gemini" / "antigravity" / "brain" / view_dir_name / f"🤖 {title}.md")
+                        for legacy_dest in destinations:
+                            if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
+                                legacy_dest.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(p_sp, legacy_dest)
                     except Exception:
                         pass
                     try:
-                        restore_brain_files_for_memory(sp, background_drive=True)
+                        restore_artifacts_for_memory(sp, background_drive=True)
                     except Exception:
                         pass
             return res or []
@@ -456,21 +485,21 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
             logger.warning("Custom sync handler failed: %s", e)
             return []
 
-    if not is_obsidian_related_memory(memory):
+    if not is_project_related_memory(memory):
         return []
 
     mod = _load_project_memory_module()
     if mod is None:
-        logger.debug("project_memory_cli module not available; skipping advance_tldr sync.")
+        logger.debug("project sync module not available; skipping project view sync.")
         return []
 
     try:
-        sync_fn = getattr(mod, "sync_advance_tldr_for_memory", None)
+        sync_fn = getattr(mod, "sync_project_views_for_memory", None) or getattr(mod, "sync_advance_tldr_for_memory", None)
         if sync_fn is None:
-            logger.warning("sync_advance_tldr_for_memory function not found in project_memory_cli.")
+            logger.warning("sync function not found in project sync module.")
             return []
 
-        vault_str = str(vault_dir) if vault_dir else str(get_vault_dir())
+        target_ws_str = str(effective_ws) if effective_ws else str(get_workspace_dir())
 
         # Fallback resolution of main_project_file if not set on memory
         mpf = getattr(memory, "main_project_file", None) if not isinstance(memory, dict) else memory.get("main_project_file")
@@ -479,8 +508,8 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
             for c in all_c:
                 cp = getattr(c, "path", None) if hasattr(c, "path") else (c.get("path") if isinstance(c, dict) else str(c))
                 cp_clean = str(cp).replace("\\", "/")
-                if "voicenotes/" in cp_clean.lower() and cp_clean.lower().endswith(".md"):
-                    if not any(ex in cp_clean.lower() for ex in ("_agents", ".obsidian", ".git")):
+                if cp_clean.lower().endswith(".md"):
+                    if not any(ex in cp_clean.lower() for ex in ("/brain/", "/temp/", "appdata", "scratch", ".aivc/artifacts", "_agents", ".git")):
                         if hasattr(memory, "main_project_file"):
                             try:
                                 setattr(memory, "main_project_file", to_portable_path(cp))
@@ -490,23 +519,30 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
                             memory["main_project_file"] = to_portable_path(cp)
                         break
 
-        synced_paths = sync_fn(memory, vault_dir=vault_str)
+        try:
+            synced_paths = sync_fn(memory, workspace_dir=target_ws_str, vault_dir=target_ws_str)
+        except TypeError:
+            synced_paths = sync_fn(memory, vault_dir=target_ws_str)
 
-        # Restore missing brain files and mirror to legacy advance_tldr for backwards compatibility
+        # Restore missing brain files and mirror to legacy view dir for backwards compatibility
         if synced_paths:
             for sp in synced_paths:
                 try:
                     p_sp = Path(sp)
+                    view_dir_name = p_sp.parent.name or "advance_tldr"
                     stem = p_sp.stem
-                    title = normalize_advance_tldr_title(stem)
-                    legacy_dest = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
-                    if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
-                        legacy_dest.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(p_sp, legacy_dest)
+                    title = normalize_project_tldr_title(stem)
+                    destinations = [home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"]
+                    if view_dir_name != "advance_tldr":
+                        destinations.append(home / ".gemini" / "antigravity" / "brain" / view_dir_name / f"🤖 {title}.md")
+                    for legacy_dest in destinations:
+                        if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
+                            legacy_dest.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(p_sp, legacy_dest)
                 except Exception:
                     pass
                 try:
-                    restore_brain_files_for_memory(sp, background_drive=True)
+                    restore_artifacts_for_memory(sp, background_drive=True)
                 except Exception:
                     pass
 
@@ -519,47 +555,55 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
         return synced_paths or []
     except Exception as e:
         mem_id = memory.get("id", "unknown") if is_dict else getattr(memory, "id", "unknown")
-        logger.warning("Failed to synchronize advance_tldr for memory %s: %s", mem_id, e)
+        logger.warning("Failed to synchronize project views for memory %s: %s", mem_id, e)
         return []
+
+
+sync_advance_tldr = sync_project_views
 
 
 def backfill_missing_main_project_files(
     storage_dir: Path | str | None = None,
     vault_dir: Path | str | None = None,
+    workspace_dir: Path | str | None = None,
     dry_run: bool = False,
+    custom_aliases: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Deterministically identifies and backfills missing main_project_file in AIVC commit JSONs.
 
     Strict rules:
-    - Anchors strictly to existing vault notes (.md in notes/ or root) and explicit known aliases.
+    - Anchors strictly to existing workspace notes (.md in notes/ or root) and explicit known aliases.
     - Zero guesswork: never falls back to cand_notes[0] or random guessing if ambiguous.
     """
-    import json
-    from aivc.config import get_home_dir, get_storage_root
-
-    v_dir = Path(vault_dir) if vault_dir else get_vault_dir()
+    effective_ws = workspace_dir or vault_dir
+    ws_dir = Path(effective_ws) if effective_ws else get_workspace_dir()
     if storage_dir:
         s_dir = Path(storage_dir)
     else:
+        from aivc.config import get_storage_root
         s_dir = get_storage_root(allow_fallback=True)
 
     commits_dir = s_dir / "commits" if (s_dir / "commits").is_dir() else s_dir
 
-    # 1. Index all valid vault notes
-    vault_notes = list(v_dir.glob("notes/*.md")) + list(v_dir.glob("*.md"))
+    # 1. Index all valid workspace notes
+    ws_notes = list(ws_dir.glob("notes/*.md")) + list(ws_dir.glob("*.md"))
     excluded_dirs = {"_agents", ".obsidian", ".git", "templates", "readwise", "attachments", "thumbnails"}
 
     note_by_stem_lower: dict[str, str] = {}
     note_by_rel_lower: dict[str, str] = {}
 
-    for n in vault_notes:
+    for n in ws_notes:
         try:
-            rel_posix = n.relative_to(v_dir).as_posix()
+            rel_posix = n.relative_to(ws_dir).as_posix()
         except ValueError:
             continue
         if any(ex in rel_posix.lower() for ex in excluded_dirs):
             continue
-        port = f"~/Documents/VoiceNotes/{rel_posix}"
+        try:
+            rel_to_docs = n.relative_to(get_home_dir() / "Documents").as_posix()
+            port = f"~/Documents/{rel_to_docs}"
+        except ValueError:
+            port = f"~/Documents/{ws_dir.name}/{rel_posix}"
         note_by_rel_lower[rel_posix.lower()] = port
 
         stem = n.stem.lower()
@@ -567,14 +611,18 @@ def backfill_missing_main_project_files(
         note_by_stem_lower[clean_stem] = port
         note_by_stem_lower[stem] = port
 
-    # Special known project aliases
-    special_aliases = {
-        "aib 2026": "~/Documents/VoiceNotes/Organisation du cours Artificial Intelligence in Business 2026.md",
-        "aib": "~/Documents/VoiceNotes/Organisation du cours Artificial Intelligence in Business 2026.md",
-        "consolidation et exploration dream": "~/Documents/VoiceNotes/notes/🤖 Consolidation et Exploration Dream.md",
-        "dllp": "~/Documents/VoiceNotes/notes/Digital Language Learning Platform.md",
-        "soumission arxiv": "~/Documents/VoiceNotes/notes/Soumission ArXiv Pipeline Articles.md",
-    }
+    # Custom aliases from argument or environment variable
+    special_aliases: dict[str, str] = {}
+    if custom_aliases:
+        special_aliases.update({k.lower(): v for k, v in custom_aliases.items()})
+    env_aliases_json = os.environ.get("AIVC_PROJECT_ALIASES_JSON")
+    if env_aliases_json:
+        try:
+            parsed = json.loads(env_aliases_json)
+            if isinstance(parsed, dict):
+                special_aliases.update({k.lower(): str(v) for k, v in parsed.items()})
+        except Exception:
+            pass
 
     updated_count = 0
     scanned_count = 0
@@ -596,14 +644,14 @@ def backfill_missing_main_project_files(
         title = d.get("title", "")
         target_mpf = None
 
-        # Step A: extract project name from title pattern [Advance|Roadmap|Reviewer|Dream]
-        m_adv = re.match(
-            r"^\[(?:Advance|Roadmap|Advance-Audit|Reviewer|Dream\s*#?\d*)\]\s*(?:🤖\s*)?([^\—\-\–\:]+)(?:[\—\-\–\:].*)?$",
+        # Step A: extract project name from title pattern [Tag] Project
+        m_tag = re.match(
+            r"^\[[^\]]+\]\s*(?:🤖\s*)?([^—\-\–\:]+)(?:[—\-\–\:].*)?$",
             title,
             re.IGNORECASE,
         )
-        if m_adv:
-            proj_candidate = m_adv.group(1).strip().lower()
+        if m_tag:
+            proj_candidate = m_tag.group(1).strip().lower()
             clean_cand = re.sub(r"^(?:🤖\s*)+", "", proj_candidate).strip()
             if clean_cand in special_aliases:
                 target_mpf = special_aliases[clean_cand]
@@ -621,7 +669,7 @@ def backfill_missing_main_project_files(
                 target_mpf = note_by_stem_lower[clean_prefix]
 
         # Step B2: check special aliases directly in title
-        if not target_mpf:
+        if not target_mpf and special_aliases:
             t_low = title.lower()
             for alias_key, alias_path in special_aliases.items():
                 if alias_key in t_low:
@@ -639,12 +687,12 @@ def backfill_missing_main_project_files(
             for f in all_files:
                 path_str = f.get("path") if isinstance(f, dict) else str(f)
                 p_clean = path_str.replace("\\", "/").strip()
-                if "voicenotes" in p_clean.lower() and p_clean.lower().endswith(".md"):
-                    idx = p_clean.lower().rfind("voicenotes/")
-                    if idx >= 0:
-                        rel = p_clean[idx + len("voicenotes/"):].strip("/")
-                        if rel.lower() in note_by_rel_lower:
-                            candidate_notes_in_commit.add(note_by_rel_lower[rel.lower()])
+                if p_clean.lower().endswith(".md"):
+                    if not any(ex in p_clean.lower() for ex in ("/brain/", "/temp/", "appdata", "scratch", ".aivc/artifacts")):
+                        stem = Path(p_clean).stem.lower()
+                        clean_s = re.sub(r"^(?:🤖\s*)+", "", stem).strip()
+                        if clean_s in note_by_stem_lower:
+                            candidate_notes_in_commit.add(note_by_stem_lower[clean_s])
 
             if len(candidate_notes_in_commit) == 1:
                 target_mpf = list(candidate_notes_in_commit)[0]

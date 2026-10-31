@@ -142,7 +142,7 @@ def to_portable_path(path_str: str | Path) -> str:
         idx = s.rfind("/~/")
         s = s[idx + 1:]
 
-    # Fix potential missing separator before .gemini: e.g. Users/hjamet.gemini -> Users/hjamet/.gemini
+    # Fix potential missing separator before .gemini: e.g. Users/alice.gemini -> Users/alice/.gemini
     s = re.sub(r"(/Users/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
     s = re.sub(r"(/home/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
 
@@ -197,7 +197,7 @@ def extract_brain_subpath(raw_path: str | Path) -> str | None:
 
     Example:
         'file:///C:/Users/other/.gemini/antigravity/brain/conv-1/doc.md' -> 'conv-1/doc.md'
-        'file:///C:/Users/hjamet/AppData/Local/Temp/aivc/artifacts/conv-1/doc.md' -> 'conv-1/doc.md'
+        'file:///C:/Users/alice/AppData/Local/Temp/aivc/artifacts/conv-1/doc.md' -> 'conv-1/doc.md'
     """
     if not raw_path:
         return None
@@ -243,5 +243,80 @@ def from_portable_path(path_str: str | Path) -> Path:
     if portable == "~":
         return home
     return Path(portable)
+
+
+def get_workspace_dir() -> Path:
+    """Returns the active workspace or project vault directory.
+
+    Checks AIVC_WORKSPACE_DIR, then PROJECT_MEMORY_VAULT_DIR.
+    Otherwise scans direct subdirectories of ~/Documents for a project/notes workspace
+    (e.g. containing 'notes' or '_agents'), falling back to ~/Documents.
+    """
+    env_ws = os.environ.get("AIVC_WORKSPACE_DIR") or os.environ.get("PROJECT_MEMORY_VAULT_DIR")
+    if env_ws and str(env_ws).strip():
+        return Path(env_ws).resolve()
+
+    home = get_home_dir()
+    docs = home / "Documents"
+    if docs.is_dir():
+        try:
+            for sub in docs.iterdir():
+                if sub.is_dir():
+                    if (sub / "notes").is_dir() or (sub / "_agents").is_dir():
+                        return sub.resolve()
+        except Exception:
+            pass
+        return docs.resolve()
+    return home.resolve()
+
+
+def resolve_workspace_path(rel_path: str | Path, cwd: str | Path | None = None) -> Path | None:
+    """Resolves a relative path against cwd, workspace root, or subdirectories of ~/Documents."""
+    if not rel_path:
+        return None
+    raw_s = str(rel_path).strip().replace("\\", "/")
+    if not raw_s:
+        return None
+
+    # If already absolute or portable home path
+    if raw_s.startswith(("~/", "~\\")):
+        p = from_portable_path(raw_s)
+        if p.exists():
+            return p.resolve()
+        return p
+
+    p_raw = Path(rel_path)
+    if p_raw.is_absolute():
+        return p_raw.resolve() if p_raw.exists() else p_raw
+
+    rel_norm = raw_s.lstrip("./")
+
+    # 1. Search in cwd if provided
+    if cwd:
+        try:
+            cwd_path = Path(cwd)
+            if cwd_path.is_dir() and (cwd_path / rel_norm).exists():
+                return (cwd_path / rel_norm).resolve()
+        except Exception:
+            pass
+
+    # 2. Search in workspace dir
+    ws_dir = get_workspace_dir()
+    if (ws_dir / rel_norm).exists():
+        return (ws_dir / rel_norm).resolve()
+
+    # 3. Search in direct subdirectories of ~/Documents
+    docs = get_home_dir() / "Documents"
+    if docs.is_dir():
+        try:
+            for sub in docs.iterdir():
+                if sub.is_dir():
+                    cand = sub / rel_norm
+                    if cand.exists():
+                        return cand.resolve()
+        except Exception:
+            pass
+
+    return None
 
 

@@ -389,7 +389,7 @@ def test_push_latest_file_exclusions(tmp_path: Path, monkeypatch):
 def test_advance_sync_auto_restore_brain_files(tmp_path: Path, monkeypatch):
     """Verify sync_advance_tldr and restore_brain_files_for_memory restore brain files on new PC."""
     monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
-    from aivc.advance_sync import restore_brain_files_for_memory, sync_advance_tldr
+    from aivc.project_sync import restore_brain_files_for_memory, sync_advance_tldr
 
     brain_file = tmp_path / ".gemini" / "antigravity" / "brain" / "conv-adv" / "report.md"
     assert not brain_file.exists()
@@ -447,7 +447,7 @@ def test_auto_restore_brain_files_background_drive(tmp_path: Path, monkeypatch):
     mock_sync.enabled = True
 
     def slow_pull(file_path, target_path=None):
-        time.sleep(0.05)
+        time.sleep(0.15)
         target = Path(target_path) if target_path else from_portable_path(file_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"# Restored Async Content")
@@ -460,9 +460,9 @@ def test_auto_restore_brain_files_background_drive(tmp_path: Path, monkeypatch):
     restored = ws.auto_restore_brain_files(mem, sync_manager=mock_sync, background_drive=True)
     duration = time.time() - start_t
 
-    # Immediate return: synchronous list is empty, duration is minimal
+    # Immediate return: synchronous list is empty, duration is minimal (< 0.1s vs 0.15s slow pull)
     assert restored == []
-    assert duration < 0.04
+    assert duration < 0.1
     assert hasattr(ws, "_last_restore_thread")
     assert ws._last_restore_thread.is_alive()
 

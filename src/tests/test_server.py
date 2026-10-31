@@ -32,14 +32,15 @@ def _import_server():
     import aivc.server as srv
     if hasattr(srv, "_get_engine"):
         srv._get_engine = lambda: _mock_engine
-        
+    _mock_engine.task_commit = _mock_engine.remember
     return srv
 
 
 # We import once for all tests.
 _server = _import_server()
 
-# Grab the 6 active tool functions directly from the server module.
+# Grab the active tool functions directly from the server module.
+_task_commit = _server.task_commit
 _remember = _server.remember
 _recall = _server.recall
 _consult_memory = _server.consult_memory
@@ -105,8 +106,29 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
 
     async def test_returns_memory_id_and_files(self):
         _mock_engine.remember.return_value = _make_memory()
-        result = await _remember("Do something", "Detailed journal.", "main.py")
+        result = await _task_commit("Do something", "Detailed journal.", "main.py")
         self.assertEqual(result, "OK (abc-123)")
+        res_alias = await _remember("Do something", "Detailed journal.", "main.py")
+        self.assertEqual(res_alias, "OK (abc-123)")
+
+    async def test_mcp_list_tools_schema_and_names(self):
+        tools = await _server.mcp.list_tools()
+        tool_names = [t.name for t in tools]
+        self.assertIn("task_commit", tool_names)
+        self.assertNotIn("remember", tool_names)
+        tc_tool = [t for t in tools if t.name == "task_commit"][0]
+        schema = tc_tool.inputSchema
+        self.assertEqual(schema.get("required"), ["title", "journal", "main_project_file"])
+        for p in ("title", "journal", "main_project_file", "tasks", "user_items", "edited_files", "read_files", "urls", "roadmap_items"):
+            self.assertIn(p, schema.get("properties", {}))
+
+    async def test_mcp_call_tool_task_commit_and_remember_transition(self):
+        _mock_engine.remember.return_value = _make_memory()
+        res_tc = await _server.mcp.call_tool("task_commit", {"title": "T1", "journal": "J1", "main_project_file": "main.py"})
+        self.assertTrue(len(res_tc) > 0)
+        _mock_engine.remember.return_value = _make_memory()
+        res_rem = await _server.mcp.call_tool("remember", {"title": "T2", "journal": "J2", "main_project_file": "main.py"})
+        self.assertTrue(len(res_rem) > 0)
 
     async def test_delegates_to_engine(self):
         _mock_engine.remember.return_value = _make_memory()

@@ -17,6 +17,7 @@ import unittest
 import urllib.request
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+import pytest
 
 import tempfile
 
@@ -122,13 +123,50 @@ class TestDaemonAndProxy(unittest.TestCase):
         tools = data.get("result", {}).get("tools", [])
         tool_names = {t["name"] for t in tools}
         expected_tools = {
-            "remember",
+            "task_commit",
             "recall",
             "consult_memory",
             "get_file_history",
             "restore_file",
         }
         self.assertEqual(tool_names, expected_tools)
+
+    def test_05b_tools_call_task_commit_and_remember(self):
+        # Test direct call to task_commit via JSON-RPC
+        status, data = self._post_mcp({
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "tools/call",
+            "params": {
+                "name": "task_commit",
+                "arguments": {
+                    "title": "Daemon task_commit test",
+                    "journal": "Testing daemon task commit",
+                    "main_project_file": "src/aivc/daemon.py",
+                },
+            },
+        })
+        self.assertEqual(status, 200)
+        res = data.get("result", {})
+        self.assertFalse(res.get("isError"))
+
+        # Test transition call to remember via JSON-RPC
+        status, data = self._post_mcp({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "tools/call",
+            "params": {
+                "name": "remember",
+                "arguments": {
+                    "title": "Daemon remember legacy alias test",
+                    "journal": "Testing daemon remember redirection",
+                    "main_project_file": "src/aivc/daemon.py",
+                },
+            },
+        })
+        self.assertEqual(status, 200)
+        res = data.get("result", {})
+        self.assertFalse(res.get("isError"))
 
     def test_04_tools_call_get_file_history(self):
         status, data = self._post_mcp({
@@ -148,6 +186,7 @@ class TestDaemonAndProxy(unittest.TestCase):
         text = content[0].get("text", "")
         self.assertIn("nonexistent_file_test_path.py", text)
 
+    @pytest.mark.requires_ml
     def test_05_tools_call_recall(self):
         status, data = self._post_mcp({
             "jsonrpc": "2.0",

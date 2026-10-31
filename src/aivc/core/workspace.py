@@ -285,9 +285,10 @@ class Workspace:
         rel_norm = raw_s.lstrip("./")
 
         if is_rel and rel_norm:
-            vn_cand = Path.home() / "Documents" / "VoiceNotes" / rel_norm
-            if vn_cand.exists():
-                return str(vn_cand)
+            from aivc.config import resolve_workspace_path
+            ws_cand = resolve_workspace_path(rel_norm)
+            if ws_cand and ws_cand.exists():
+                return str(ws_cand)
 
             for tp in self._state["tracked_files"]:
                 if tp == rel_norm or tp.endswith("/" + rel_norm):
@@ -338,7 +339,7 @@ class Workspace:
         self._reload_state_if_needed()
         return list(self._state["tracked_files"].keys())
 
-    def remember(
+    def task_commit(
         self,
         title: str,
         journal: str = "",
@@ -587,12 +588,26 @@ class Workspace:
                                 if ch.get("path"):
                                     candidate_paths.append(ch.get("path"))
 
-            # 3. Filter out VoiceNotes (sanctuarisé) and active paths
+            # 3. Filter out project workspace files and active paths
+            from aivc.config import get_workspace_dir
+            ws_dir = get_workspace_dir()
             seen_gc = set()
             for cand in candidate_paths:
                 p_norm = to_portable_path(cand).lower()
-                if "voicenotes" in p_norm:
+                cand_str = str(cand).replace("\\", "/").lower()
+                is_temp_artifact = any(k in cand_str for k in ("/brain/", "/temp/", "appdata", ".aivc/artifacts"))
+                if not is_temp_artifact and cand_str.endswith(".md"):
                     continue
+                try:
+                    cand_path = from_portable_path(cand)
+                    if cand_path.is_file() and not is_temp_artifact:
+                        try:
+                            cand_path.relative_to(ws_dir)
+                            continue
+                        except ValueError:
+                            pass
+                except Exception:
+                    pass
                 if p_norm in active_paths:
                     continue
                 if p_norm not in seen_gc:
@@ -692,14 +707,16 @@ class Workspace:
         self._state["head_commit_id"] = memory.id
         self._save_state()
 
-        # Step: Auto-sync advance_tldr notes for Obsidian projects
+        # Step: Auto-sync project views
         try:
-            from aivc.advance_sync import sync_advance_tldr
-            sync_advance_tldr(memory)
+            from aivc.project_sync import sync_project_views
+            sync_project_views(memory)
         except Exception as e:
-            logger.warning("Failed to auto-sync advance_tldr in workspace.remember: %s", e)
+            logger.warning("Failed to auto-sync project views in workspace.task_commit: %s", e)
 
         return memory
+
+    remember = task_commit
 
     def create_memory(
         self,

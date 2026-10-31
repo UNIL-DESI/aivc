@@ -8,12 +8,18 @@ import pytest
 
 from aivc.core.workspace import Workspace
 from aivc.core.memory import Memory, FileChange
-from aivc.advance_sync import (
+from aivc.project_sync import (
     is_obsidian_related_memory,
+    is_project_related_memory,
     sync_advance_tldr,
+    sync_project_views,
     set_custom_sync_handler,
     find_project_memory_cli_path,
+    find_project_sync_cli_path,
     extract_obsidian_project_notes,
+    extract_project_notes,
+    restore_artifacts_for_memory,
+    rewrite_artifact_paths_to_temp,
 )
 
 
@@ -137,7 +143,7 @@ def test_real_end_to_end_advance_tldr_sync_on_disk():
     cli_path = find_project_memory_cli_path()
     if not cli_path or not cli_path.is_file():
         pytest.skip("VoiceNotes project_memory_cli.py not found on this machine.")
-    from aivc.advance_sync import _load_project_memory_module
+    from aivc.project_sync import _load_project_memory_module
     mod = _load_project_memory_module()
     if not hasattr(mod, "sync_advance_tldr_for_memory"):
         pytest.skip("sync_advance_tldr_for_memory not yet implemented in project_memory_cli.py")
@@ -162,7 +168,7 @@ def test_real_end_to_end_advance_tldr_sync_on_disk():
 
 
 def test_normalize_advance_tldr_title():
-    from aivc.advance_sync import normalize_advance_tldr_title
+    from aivc.project_sync import normalize_advance_tldr_title
     assert normalize_advance_tldr_title("🤖 Consolidation et Exploration Dream") == "Consolidation et Exploration Dream"
     assert normalize_advance_tldr_title("🤖 🤖 Double Robot") == "Double Robot"
     assert normalize_advance_tldr_title("Standard Project") == "Standard Project"
@@ -181,7 +187,7 @@ def test_real_end_to_end_no_double_robot_sync():
     cli_path = find_project_memory_cli_path()
     if not cli_path or not cli_path.is_file():
         pytest.skip("VoiceNotes project_memory_cli.py not found on this machine.")
-    from aivc.advance_sync import _load_project_memory_module
+    from aivc.project_sync import _load_project_memory_module
     mod = _load_project_memory_module()
     if not hasattr(mod, "sync_advance_tldr_for_memory"):
         pytest.skip("sync_advance_tldr_for_memory not yet implemented in project_memory_cli.py")
@@ -301,7 +307,7 @@ def test_pull_memories_from_others_triggers_sync_advance_tldr(tmp_path: Path, mo
 
 def test_restore_brain_files_from_tldr_file_path(tmp_path: Path, monkeypatch):
     """Verify restore_brain_files_for_memory accepts a file path, scans it, and decodes %20 URLs."""
-    from aivc.advance_sync import restore_brain_files_for_memory
+    from aivc.project_sync import restore_brain_files_for_memory
 
     monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
 
@@ -332,7 +338,7 @@ def test_restore_brain_files_from_tldr_file_path(tmp_path: Path, monkeypatch):
 
 def test_restore_brain_files_scans_existing_advance_tldr_note(tmp_path: Path, monkeypatch):
     """Verify restore_brain_files_for_memory scans the existing advance_tldr note of a project."""
-    from aivc.advance_sync import restore_brain_files_for_memory
+    from aivc.project_sync import restore_brain_files_for_memory
 
     monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
 
@@ -373,7 +379,7 @@ def test_restore_brain_files_scans_existing_advance_tldr_note(tmp_path: Path, mo
 def test_backfill_missing_main_project_files(tmp_path: Path):
     """Verify deterministic backfill of main_project_file and avoidance of guesswork."""
     import json
-    from aivc.advance_sync import backfill_missing_main_project_files
+    from aivc.project_sync import backfill_missing_main_project_files
 
     # Create dummy vault
     vault = tmp_path / "VoiceNotes"
@@ -395,7 +401,7 @@ def test_backfill_missing_main_project_files(tmp_path: Path):
     }
     (commits_dir / "c1.json").write_text(json.dumps(c1), encoding="utf-8")
 
-    # Commit 2: matches special alias AIB 2026
+    # Commit 2: matches special alias AIB 2026 passed via custom_aliases
     c2 = {
         "id": "c2-uuid",
         "title": "AIB 2026 — Syllabus update",
@@ -413,7 +419,10 @@ def test_backfill_missing_main_project_files(tmp_path: Path):
     }
     (commits_dir / "c3.json").write_text(json.dumps(c3), encoding="utf-8")
 
-    res = backfill_missing_main_project_files(storage_dir=storage, vault_dir=vault)
+    custom_aliases = {
+        "aib 2026": "~/Documents/VoiceNotes/Organisation du cours Artificial Intelligence in Business 2026.md"
+    }
+    res = backfill_missing_main_project_files(storage_dir=storage, vault_dir=vault, custom_aliases=custom_aliases)
     assert res["status"] == "success"
     assert res["updated"] == 2
 
@@ -429,9 +438,9 @@ def test_backfill_missing_main_project_files(tmp_path: Path):
 
 def test_sync_advance_tldr_mirrors_to_legacy_location(tmp_path: Path, monkeypatch):
     """Verify sync_advance_tldr automatically mirrors generated tldr notes to ~/.gemini/antigravity/brain/advance_tldr/."""
-    from aivc.advance_sync import sync_advance_tldr, set_custom_sync_handler
+    from aivc.project_sync import sync_advance_tldr, set_custom_sync_handler
 
-    monkeypatch.setattr("aivc.advance_sync.get_home_dir", lambda: tmp_path)
+    monkeypatch.setattr("aivc.project_sync.get_home_dir", lambda: tmp_path)
 
     # Fake custom handler returning a note in a temp location
     temp_note = tmp_path / "temp_advance_tldr" / "🤖 Project X.md"
@@ -458,7 +467,7 @@ def test_sync_advance_tldr_mirrors_to_legacy_location(tmp_path: Path, monkeypatc
 
 
 def test_rewrite_brain_paths_to_temp_artifacts():
-    from aivc.advance_sync import rewrite_brain_paths_to_temp_artifacts
+    from aivc.project_sync import rewrite_brain_paths_to_temp_artifacts
 
     fixed_temp = Path("C:/Users/Jamet/AppData/Local/Temp/aivc")
 
@@ -502,5 +511,15 @@ def test_rewrite_brain_paths_to_temp_artifacts():
     assert r"C:\Users" not in res_repaired_e
 
 
-
-
+def test_architectural_agnosticism():
+    """Verify that no .py file in src/aivc/ is named advance_sync.py, and none contains VOICENOTES_PROJECT_MAP, VoiceNotes, or hjamet."""
+    aivc_src = Path(__file__).resolve().parent.parent / "aivc"
+    assert aivc_src.is_dir()
+    py_files = list(aivc_src.rglob("*.py"))
+    assert len(py_files) > 0
+    forbidden_terms = ["voicenotes_project_map", "voicenotes", "hjamet"]
+    for pf in py_files:
+        assert pf.name != "advance_sync.py", f"Forbidden file name: {pf}"
+        content = pf.read_text(encoding="utf-8").lower()
+        for term in forbidden_terms:
+            assert term not in content, f"Forbidden term '{term}' found in {pf}"

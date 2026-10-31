@@ -234,7 +234,7 @@ def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_
 
 
 @mcp.tool()
-async def remember(
+async def task_commit(
     title: str,
     journal: str,
     main_project_file: str,
@@ -250,7 +250,7 @@ async def remember(
     Args:
         title: Titre résumant le souvenir.
         journal: Récit détaillé de session.
-        main_project_file: Chemin du fichier principal identifiant le projet ou sujet de ce souvenir (ex. la note maîtresse du projet dans un coffre Obsidian ou le README.md d'un dépôt de code). Doit exister sur le disque. Ajouté automatiquement aux fichiers consultés (read_files) s'il n'est ni dans read_files ni dans edited_files, et utilisé comme cible unique de rattachement des tâches (user_items).
+        main_project_file: Chemin du fichier principal identifiant le projet ou sujet de ce souvenir (ex. la note maîtresse du projet ou le README.md d'un dépôt de code). Doit exister sur le disque. Ajouté automatiquement aux fichiers consultés (read_files) s'il n'est ni dans read_files ni dans edited_files, et utilisé comme cible unique de rattachement des tâches (user_items).
         tasks: Liste unifiée des tâches.
         user_items: Actions utilisateur.
         edited_files: Fichiers édités ou créés.
@@ -283,8 +283,12 @@ async def remember(
     if roadmap_items is not None:
         engine_kwargs["roadmap_items"] = roadmap_items
 
+    if hasattr(engine, "task_commit"):
+        commit_fn = engine.task_commit
+    else:
+        commit_fn = engine.remember
     memory = await asyncio.to_thread(
-        engine.remember,
+        commit_fn,
         **engine_kwargs
     )
 
@@ -309,6 +313,20 @@ async def remember(
 
     short_cid = memory.id[:8] if memory.id else "ok"
     return f"OK ({short_cid})"
+
+
+remember = task_commit
+
+_orig_call_tool = mcp.call_tool
+
+
+async def _wrapped_call_tool(name: str, arguments: dict[str, Any] | None = None) -> Any:
+    if name == "remember":
+        name = "task_commit"
+    return await _orig_call_tool(name, arguments or {})
+
+
+mcp.call_tool = _wrapped_call_tool  # type: ignore[assignment]
 
 
 @mcp.tool()

@@ -114,7 +114,7 @@ class Memory:
     """Agent thoughts and activity log."""
 
     main_project_file: str = ""
-    """Main project file identifying the project/topic of this memory in Obsidian vault."""
+    """Main project file identifying the project/topic of this memory in project workspace."""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to dict."""
