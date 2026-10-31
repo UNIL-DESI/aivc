@@ -523,3 +523,50 @@ def test_architectural_agnosticism():
         content = pf.read_text(encoding="utf-8").lower()
         for term in forbidden_terms:
             assert term not in content, f"Forbidden term '{term}' found in {pf}"
+
+
+def test_restore_brain_files_mirrors_from_antigravity_cli_without_network(tmp_path: Path, monkeypatch):
+    """Verify restore_brain_files_for_memory finds artifact in .gemini/antigravity-cli/brain/ and mirrors locally without network."""
+    from aivc.project_sync import restore_brain_files_for_memory
+    from aivc.config import get_aivc_temp_dir
+
+    monkeypatch.setattr("aivc.project_sync.get_home_dir", lambda: tmp_path)
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+
+    # Place an artifact only in antigravity-cli/brain
+    cli_artifact = tmp_path / ".gemini" / "antigravity-cli" / "brain" / "conv-cli-123" / "scratch" / "result.md"
+    cli_artifact.parent.mkdir(parents=True, exist_ok=True)
+    cli_artifact.write_text("# Result from CLI session", encoding="utf-8")
+
+    # Target in antigravity/brain and temp/aivc/artifacts do NOT exist yet
+    legacy_target = tmp_path / ".gemini" / "antigravity" / "brain" / "conv-cli-123" / "scratch" / "result.md"
+    temp_target = get_aivc_temp_dir() / "artifacts" / "conv-cli-123" / "scratch" / "result.md"
+    if temp_target.exists():
+        temp_target.unlink()
+    assert not legacy_target.exists()
+
+    # Sync manager mock: if network/pull is attempted, raise AssertionError
+    mock_mgr = MagicMock()
+    mock_mgr.enabled = True
+    mock_mgr.pull_latest_file.side_effect = AssertionError("Network/Drive pull should not be called for locally present artifact")
+
+    mem = {
+        "id": "mem-test-cli",
+        "title": "Test memory with CLI artifact",
+        "edited_files": ["~/.gemini/antigravity/brain/conv-cli-123/scratch/result.md"],
+        "user_items": [],
+    }
+
+    restored = restore_brain_files_for_memory(mem, sync_manager=mock_mgr)
+
+    # Verify restored list includes the restored legacy path
+    assert str(legacy_target) in restored
+    # Verify legacy target was copied and contains correct content
+    assert legacy_target.is_file()
+    assert legacy_target.read_text(encoding="utf-8") == "# Result from CLI session"
+    # Verify temp target was also mirrored
+    assert temp_target.is_file()
+    assert temp_target.read_text(encoding="utf-8") == "# Result from CLI session"
+    # Verify mock_mgr was never called
+    mock_mgr.pull_latest_file.assert_not_called()
+
