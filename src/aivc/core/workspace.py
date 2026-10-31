@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fnmatch
 import glob as _glob
+import hashlib
 import json
 import os
 import sys
@@ -1065,13 +1066,33 @@ class Workspace:
             portable = f"~/.gemini/antigravity/brain/{sub_posix}"
 
             local_files = [local_path, cli_path]
-            existing_file = next((p for p in local_files + [temp_artifact_path] if p.is_file()), None)
+            brain_candidates = [p for p in local_files if p.is_file()]
+            if brain_candidates:
+                existing_file = max(brain_candidates, key=lambda p: p.stat().st_mtime)
+            elif temp_artifact_path.is_file():
+                existing_file = temp_artifact_path
+            else:
+                existing_file = None
 
             if existing_file:
                 # Sync across local brain roots and temp_artifacts_dir
                 mirrored_to_local_path = False
                 for target in local_files + [temp_artifact_path]:
+                    if target == existing_file:
+                        continue
+                    needs_copy = False
                     if not target.is_file():
+                        needs_copy = True
+                    else:
+                        try:
+                            if target.stat().st_size != existing_file.stat().st_size:
+                                needs_copy = True
+                            elif hashlib.sha256(target.read_bytes()).hexdigest() != hashlib.sha256(existing_file.read_bytes()).hexdigest():
+                                needs_copy = True
+                        except OSError:
+                            needs_copy = True
+
+                    if needs_copy:
                         try:
                             target.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copy2(existing_file, target)

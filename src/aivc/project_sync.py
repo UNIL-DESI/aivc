@@ -6,6 +6,7 @@ Integrates AIVC with external project sync handlers to keep project views update
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import logging
 import os
@@ -16,7 +17,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from aivc.config import get_home_dir, to_portable_path
+from aivc.config import get_home_dir, to_portable_path, get_aivc_temp_dir
 
 logger = logging.getLogger(__name__)
 
@@ -270,16 +271,8 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
                 tldr_temp = get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md"
                 tldr_legacy = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
                 tldr_cli = home / ".gemini" / "antigravity-cli" / "brain" / "advance_tldr" / f"🤖 {title}.md"
-                if home != Path.home() and tldr_legacy.is_file():
-                    tldr_candidate = tldr_legacy
-                elif tldr_temp.is_file():
-                    tldr_candidate = tldr_temp
-                elif tldr_legacy.is_file():
-                    tldr_candidate = tldr_legacy
-                elif tldr_cli.is_file():
-                    tldr_candidate = tldr_cli
-                else:
-                    tldr_candidate = tldr_legacy
+                tldr_files = [p for p in (tldr_temp, tldr_legacy, tldr_cli) if p.is_file()]
+                tldr_candidate = max(tldr_files, key=lambda p: p.stat().st_mtime) if tldr_files else tldr_legacy
                 if tldr_candidate.is_file():
                     tldr_txt = tldr_candidate.read_text(encoding="utf-8")
                     for m in brain_regex.finditer(tldr_txt):
@@ -304,13 +297,33 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
         temp_artifact_path = temp_artifacts_dir / sub_p
 
         local_files = [local_path, cli_path]
-        existing_file = next((p for p in local_files + [temp_artifact_path] if p.is_file()), None)
+        brain_candidates = [p for p in local_files if p.is_file()]
+        if brain_candidates:
+            existing_file = max(brain_candidates, key=lambda p: p.stat().st_mtime)
+        elif temp_artifact_path.is_file():
+            existing_file = temp_artifact_path
+        else:
+            existing_file = None
 
         if existing_file:
             # Sync across local brain roots and temp_artifacts_dir
             mirrored_to_local_path = False
             for target in local_files + [temp_artifact_path]:
+                if target == existing_file:
+                    continue
+                needs_copy = False
                 if not target.is_file():
+                    needs_copy = True
+                else:
+                    try:
+                        if target.stat().st_size != existing_file.stat().st_size:
+                            needs_copy = True
+                        elif hashlib.sha256(target.read_bytes()).hexdigest() != hashlib.sha256(existing_file.read_bytes()).hexdigest():
+                            needs_copy = True
+                    except OSError:
+                        needs_copy = True
+
+                if needs_copy:
                     try:
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(existing_file, target)
@@ -493,10 +506,12 @@ def sync_project_views(
                         destinations = [
                             home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md",
                             home / ".gemini" / "antigravity-cli" / "brain" / "advance_tldr" / f"🤖 {title}.md",
+                            get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md",
                         ]
                         if view_dir_name != "advance_tldr":
                             destinations.append(home / ".gemini" / "antigravity" / "brain" / view_dir_name / f"🤖 {title}.md")
                             destinations.append(home / ".gemini" / "antigravity-cli" / "brain" / view_dir_name / f"🤖 {title}.md")
+                            destinations.append(get_aivc_temp_dir() / view_dir_name / f"🤖 {title}.md")
                         for legacy_dest in destinations:
                             if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
                                 legacy_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -562,10 +577,12 @@ def sync_project_views(
                     destinations = [
                         home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md",
                         home / ".gemini" / "antigravity-cli" / "brain" / "advance_tldr" / f"🤖 {title}.md",
+                        get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md",
                     ]
                     if view_dir_name != "advance_tldr":
                         destinations.append(home / ".gemini" / "antigravity" / "brain" / view_dir_name / f"🤖 {title}.md")
                         destinations.append(home / ".gemini" / "antigravity-cli" / "brain" / view_dir_name / f"🤖 {title}.md")
+                        destinations.append(get_aivc_temp_dir() / view_dir_name / f"🤖 {title}.md")
                     for legacy_dest in destinations:
                         if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
                             legacy_dest.parent.mkdir(parents=True, exist_ok=True)

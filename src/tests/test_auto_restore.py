@@ -596,5 +596,43 @@ def test_auto_restore_brain_files_cli_path_mirror(tmp_path: Path, monkeypatch):
     assert blob_target_temp.read_bytes() == blob_content
 
 
+def test_auto_restore_overwrites_stale_temp_artifact(tmp_path: Path, monkeypatch):
+    """Verify that auto_restore_brain_files overwrites stale/corrupted temp artifact with fresh brain file."""
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+    test_temp = tmp_path / "custom_temp"
+    monkeypatch.setattr("aivc.config.get_aivc_temp_dir", lambda: test_temp)
+    monkeypatch.setattr("aivc.core.workspace.get_aivc_temp_dir", lambda: test_temp)
+
+    storage_root = tmp_path / ".aivc" / "storage"
+    ws = Workspace(storage_root)
+
+    sub_id = "test-session-uuid-1234"
+    rel_path = Path("scratch") / "notes.md"
+
+    # Canonical source in antigravity/brain
+    canonical = tmp_path / ".gemini" / "antigravity" / "brain" / sub_id / rel_path
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    canonical.write_text("# Fresh Canonical Content", encoding="utf-8")
+
+    # Stale/polluted artifact already in temp
+    stale_temp = test_temp / "artifacts" / sub_id / rel_path
+    stale_temp.parent.mkdir(parents=True, exist_ok=True)
+    stale_temp.write_text("# Outdated Polluted Content", encoding="utf-8")
+
+    mem = Memory(
+        id="mem-overwrite-test",
+        timestamp="2026-10-31T12:00:00Z",
+        title="Overwrite Stale Temp Test",
+        note=f"See [Notes](file:///{canonical.as_posix()})",
+        parent_id=None,
+    )
+
+    ws.auto_restore_brain_files(mem)
+
+    # Verify temp artifact was updated with the fresh content
+    assert stale_temp.read_text(encoding="utf-8") == "# Fresh Canonical Content"
+
+
+
 
 

@@ -22,6 +22,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def isolate_aivc_temp_dir(tmp_path_factory, monkeypatch):
+    """Ensure all test runs use an isolated temporary directory for AIVC runtime files."""
+    test_temp = tmp_path_factory.mktemp("aivc_test_temp")
+    monkeypatch.setenv("AIVC_TEMP_DIR", str(test_temp))
+    return test_temp
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:

@@ -570,3 +570,41 @@ def test_restore_brain_files_mirrors_from_antigravity_cli_without_network(tmp_pa
     # Verify mock_mgr was never called
     mock_mgr.pull_latest_file.assert_not_called()
 
+
+def test_restore_artifacts_overwrites_stale_temp_artifact(tmp_path: Path, monkeypatch):
+    """Verify that restore_artifacts_for_memory overwrites stale temp artifact with fresh brain file."""
+    from aivc.project_sync import restore_brain_files_for_memory
+    from aivc.config import get_aivc_temp_dir
+
+    monkeypatch.setattr("aivc.project_sync.get_home_dir", lambda: tmp_path)
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: tmp_path)
+
+    sub_id = "test-session-uuid-5678"
+    rel_path = Path("scratch") / "output.md"
+
+    # Canonical source in antigravity-cli/brain
+    canonical = tmp_path / ".gemini" / "antigravity-cli" / "brain" / sub_id / rel_path
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    canonical.write_text("# Updated CLI Output", encoding="utf-8")
+
+    # Stale artifact already in temp
+    temp_target = get_aivc_temp_dir() / "artifacts" / sub_id / rel_path
+    temp_target.parent.mkdir(parents=True, exist_ok=True)
+    temp_target.write_text("# Stale Polluted Output", encoding="utf-8")
+
+    mem = {
+        "id": "mem-overwrite-cli",
+        "title": "Test overwrite stale temp artifact",
+        "edited_files": [f"~/.gemini/antigravity/brain/{sub_id}/scratch/output.md"],
+        "user_items": [],
+    }
+
+    mock_mgr = MagicMock()
+    mock_mgr.enabled = True
+
+    restore_brain_files_for_memory(mem, sync_manager=mock_mgr)
+
+    assert temp_target.is_file()
+    assert temp_target.read_text(encoding="utf-8") == "# Updated CLI Output"
+
+

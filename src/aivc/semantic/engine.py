@@ -31,6 +31,14 @@ from aivc.sync.drive import NativeDriveSyncManager
 
 logger = logging.getLogger(__name__)
 
+_GENERIC_PARENT_NAMES = frozenset({
+    "scratch", "artifacts", "brain", "notes", "temp", "tmp",
+    "advance_tldr", "advance_artifacts", "src", "tests", "docs",
+})
+_UUID_SEGMENT_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
 
 class SemanticEngine:
     """High-level facade combining versioning + semantic search.
@@ -680,15 +688,20 @@ class SemanticEngine:
             
         remote_basename = parts[-1]
         remote_parent_name = parts[-2] if len(parts) > 1 else ""
-        
+        remote_uuids = {part.lower() for part in parts if _UUID_SEGMENT_RE.match(part)}
+
         # O(1) lookup in inverted index
         candidates = self._get_local_hints_index().get(remote_basename, [])
         if not candidates:
             return None
-        
+
         final_candidates = []
         for local_path in candidates:
             lp = Path(local_path)
+            local_uuids = {part.lower() for part in lp.parts if _UUID_SEGMENT_RE.match(part)}
+            if remote_uuids and local_uuids != remote_uuids:
+                continue
+
             # 1. Check strong match via blob hash if available
             if remote_blob_hash:
                 # _index is CoreIndex (SQLite) - this is still an I/O hit but 
@@ -696,11 +709,19 @@ class SemanticEngine:
                 local_blobs = self._workspace._index.get_blob_hashes_for_file(local_path)
                 if remote_blob_hash in local_blobs:
                     return local_path
-            
+
             # 2. Parent folder match (depth 1)
+            # Do not allow fallback on generic folder names or cross-UUID / no-UUID confusion
+            if not remote_uuids and local_uuids:
+                continue
+
             local_parent_name = lp.parent.name if lp.parent else ""
-            if local_parent_name == remote_parent_name:
+            if (
+                remote_parent_name
+                and remote_parent_name.lower() not in _GENERIC_PARENT_NAMES
+                and local_parent_name == remote_parent_name
+            ):
                 final_candidates.append(local_path)
-        
+
         return final_candidates[0] if final_candidates else None
 
