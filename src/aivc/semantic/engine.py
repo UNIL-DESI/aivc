@@ -318,6 +318,7 @@ class SemanticEngine:
         consulted_files: list[str] | None = None,
         roadmap_items: list[dict[str, Any]] | None = None,
         main_project_file: str = "",
+        completed_user_items: list[str] | None = None,
     ) -> Memory:
         """Create a versioning memory and index it semantically (asynchronously)."""
         if not main_project_file or not str(main_project_file).strip():
@@ -393,6 +394,7 @@ class SemanticEngine:
             consulted_files=norm_consulted_files,
             roadmap_items=roadmap_items,
             main_project_file=portable_main,
+            completed_user_items=completed_user_items,
         )
         memory.main_project_file = portable_main
 

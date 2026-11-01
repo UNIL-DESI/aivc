@@ -244,6 +244,7 @@ async def remember(
     read_files: list[str] | None = None,
     urls: list[str] | None = None,
     roadmap_items: list[dict[str, Any]] | None = None,
+    completed_user_items: list[str] | None = None,
 ) -> str:
     """Enregistre un souvenir structuré avec journal, tâches (états: new, await_validation, validated) et fichiers.
 
@@ -257,6 +258,7 @@ async def remember(
         read_files: Fichiers consultés.
         urls: URLs consultées.
         roadmap_items: Tâches de roadmap.
+        completed_user_items: IDs des tâches terminées / validées.
     """
     import asyncio
     from pathlib import Path
@@ -282,6 +284,8 @@ async def remember(
         engine_kwargs["tasks"] = tasks
     if roadmap_items is not None:
         engine_kwargs["roadmap_items"] = roadmap_items
+    if completed_user_items is not None:
+        engine_kwargs["completed_user_items"] = completed_user_items
 
     memory = await asyncio.to_thread(
         engine.remember,

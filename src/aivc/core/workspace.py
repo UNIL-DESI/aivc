@@ -320,6 +320,7 @@ class Workspace:
         consulted_files: list[str] | None = None,
         roadmap_items: list[dict[str, Any]] | None = None,
         main_project_file: str = "",
+        completed_user_items: list[str] | None = None,
     ) -> Memory:
         """Create a new memory in 3-part format (title, journal, tasks/user_items) without local diffs/blobs.
 
@@ -390,6 +391,12 @@ class Workspace:
 
         norm_user_items: list[dict[str, Any]] = []
         status_updates_by_id: dict[str, tuple[str, bool]] = {}
+
+        if completed_user_items:
+            for cid in completed_user_items:
+                c_id_clean = str(cid).strip()
+                if c_id_clean:
+                    status_updates_by_id[c_id_clean] = ("validated", True)
 
         for idx, (item, is_roadmap_arg) in enumerate(raw_task_entries, 1):
             raw_id = str(item.get("id") or "").strip()
@@ -549,6 +556,7 @@ class Workspace:
             machine_id=machine_id,
             urls=actual_urls,
             user_items=norm_user_items,
+            completed_user_items=list(completed_user_items) if completed_user_items else [],
             journal=journal or (note if not norm_user_items else ""),
             main_project_file=main_project_file,
         )

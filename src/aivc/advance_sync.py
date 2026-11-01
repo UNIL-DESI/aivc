@@ -171,6 +171,78 @@ def is_corrupt_test_artifact(path: Path) -> bool:
     return False
 
 
+def convert_wikilinks_to_markdown_links(text: str, vault_dir: Path | str | None = None) -> str:
+    """Convert Obsidian wikilinks [[target|label]] or [[target]] to standard markdown links.
+    Ensures no [[...]] syntax remains in advance_tldr notes.
+    """
+    if not text or "[[" not in text:
+        return text
+
+    wikilink_pattern = re.compile(r"\[\[([^\]|\r\n]+)(?:\|([^\]\r\n]+))?\]\]")
+
+    def _replace_wikilink(m: re.Match) -> str:
+        target = m.group(1).strip()
+        label = m.group(2).strip() if m.group(2) else None
+
+        # 1. Already a file:/// URL
+        if target.lower().startswith("file:///"):
+            t_url = target.replace("\\", "/")
+            lbl = label or Path(t_url).name
+            return f"[{lbl}]({t_url})"
+
+        # 2. Windows drive letter path e.g. C:\... or C:/...
+        if re.match(r"^[A-Za-z]:[\\/]", target):
+            posix_path = target.replace("\\", "/").rstrip("/")
+            lbl = label or Path(target).name
+            return f"[{lbl}](file:///{posix_path})"
+
+        # 3. Portable home path ~/ or ~\
+        if target.startswith("~/") or target.startswith("~\\"):
+            posix_home = Path.home().as_posix()
+            sub = target[2:].replace("\\", "/").lstrip("/")
+            lbl = label or Path(target).name
+            return f"[{lbl}](file:///{posix_home}/{sub})"
+
+        # 4. Web URLs
+        if target.lower().startswith(("http://", "https://")):
+            lbl = label or target
+            return f"[{lbl}]({target})"
+
+        # 5. Unix absolute path
+        if target.startswith("/"):
+            posix_path = target.replace("\\", "/").rstrip("/")
+            lbl = label or Path(target).name
+            return f"[{lbl}](file://{posix_path})"
+
+        # 6. Target within Obsidian vault
+        v_dir = Path(vault_dir) if vault_dir else get_vault_dir()
+        matched_file = None
+        for cand_name in (target, f"{target}.md"):
+            cand1 = v_dir / cand_name
+            if cand1.is_file():
+                matched_file = cand1
+                break
+            cand2 = v_dir / "notes" / cand_name
+            if cand2.is_file():
+                matched_file = cand2
+                break
+
+        if matched_file is not None:
+            lbl = label or target
+            return f"[{lbl}](file:///{matched_file.as_posix()})"
+
+        # 7. If target contains path separators or extension
+        if any(sep in target for sep in ("/", "\\", ".")):
+            posix_target = target.replace("\\", "/")
+            lbl = label or target
+            return f"[{lbl}](file:///{posix_target})"
+
+        lbl = label or target
+        return f"[{lbl}]"
+
+    return wikilink_pattern.sub(_replace_wikilink, text)
+
+
 def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = None) -> str:
     """Rewrite brain artifact URLs and local paths to <temp>/aivc/artifacts/<subpath>.
 
@@ -180,6 +252,9 @@ def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = Non
     """
     if not text:
         return text
+
+    # Pre-step 0: convert any wikilinks [[...]] to markdown links
+    text = convert_wikilinks_to_markdown_links(text)
 
     # Pre-step 1: repair any corrupted 'file:///e:///...'
     text = re.sub(r"file://+(?:e://+)+", "file:///", text, flags=re.IGNORECASE)
@@ -229,6 +304,8 @@ def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = Non
         lambda m: f"file:///{m.group(1).replace(chr(92), '/')}",
         rewritten,
     )
+
+    rewritten = convert_wikilinks_to_markdown_links(rewritten)
 
     return rewritten
 
@@ -355,13 +432,23 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
     mirror_user_temp = (user_temp_artifacts_dir.resolve() != temp_artifacts_dir.resolve())
     for sub in candidate_subpaths:
         local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+        local_cli_path = home / ".gemini" / "antigravity-cli" / "brain" / Path(sub)
         temp_artifact_path = temp_artifacts_dir / Path(sub)
         user_temp_artifact_path = user_temp_artifacts_dir / Path(sub) if mirror_user_temp else None
 
-        # Purge corrupt 8-byte 'restored' artifact if present in local_path
-        if is_corrupt_test_artifact(local_path):
+        # Purge corrupt 8-byte 'restored' artifact if present
+        for p_cand in (local_path, local_cli_path, temp_artifact_path):
+            if is_corrupt_test_artifact(p_cand):
+                try:
+                    p_cand.unlink()
+                except OSError:
+                    pass
+
+        # If local_cli_path exists and local_path not, populate local_path
+        if local_cli_path.is_file() and not local_path.is_file():
             try:
-                local_path.unlink()
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(local_cli_path, local_path)
             except OSError:
                 pass
 
@@ -394,25 +481,33 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
                     except OSError:
                         pass
             continue
+
         sub_posix = sub.replace("\\", "/")
-        portable = f"~/.gemini/antigravity/brain/{sub_posix}"
-        try:
-            dest = mgr.pull_latest_file(portable, target_path=local_path)
-            if dest and dest.is_file():
-                restored.append(str(local_path))
+        dest = None
+        for portable in (
+            f"~/.gemini/antigravity/brain/{sub_posix}",
+            f"~/.gemini/antigravity-cli/brain/{sub_posix}",
+        ):
+            try:
+                dest = mgr.pull_latest_file(portable, target_path=local_path)
+                if dest and dest.is_file():
+                    break
+            except Exception:
+                pass
+
+        if dest and dest.is_file():
+            restored.append(str(local_path))
+            try:
+                temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(local_path, temp_artifact_path)
+            except OSError:
+                pass
+            if user_temp_artifact_path is not None:
                 try:
-                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(local_path, temp_artifact_path)
+                    user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(local_path, user_temp_artifact_path)
                 except OSError:
                     pass
-                if user_temp_artifact_path is not None:
-                    try:
-                        user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(local_path, user_temp_artifact_path)
-                    except OSError:
-                        pass
-        except Exception:
-            pass
 
     return restored
 
