@@ -7,12 +7,15 @@ the untrack + GC lifecycle.
 
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import glob as _glob
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 import uuid
 import shutil
 import tempfile
@@ -33,6 +36,122 @@ from aivc.config import (
     get_aivc_user_temp_dir,
     normalize_main_project_file,
 )
+
+_TASK_STOPWORDS = {
+    "pour", "dans", "avec", "sur", "les", "des", "une", "un", "le", "la", "par", "est",
+    "qui", "que", "aux", "son", "ses", "leur", "leurs", "cette", "cet", "ces", "du", "de",
+    "the", "and", "for", "with", "from", "that", "this", "suite", "afin", "tout", "tous",
+    "faire", "fait", "plus", "tres", "bien", "aussi", "comme", "apres", "avant", "ci", "dessus", "dessous"
+}
+
+
+def _strip_accents(text: str) -> str:
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
+def _normalize_task_text(task: str) -> str:
+    if not task:
+        return ""
+    s = str(task).strip()
+    # Strip markdown links [label](url) -> label
+    s = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", s)
+    # Strip HTML tags
+    s = re.sub(r"<[^>]+>", " ", s)
+    # Strip markdown headers, checkboxes, IDs, bold markers
+    s = re.sub(r"^\s*[-*+]\s+\[[ xX]?\]\s*", " ", s)
+    s = re.sub(r"^(?:#+\s*)+", " ", s)
+    s = re.sub(r"\*\*\[[a-zA-Z0-9\-_]+\]\*\*", " ", s)
+    s = re.sub(r"\[[a-zA-Z0-9\-_]+\]", " ", s)
+    # Strip emojis
+    s = re.sub(r"[🤖⚡📋🔴🟢🟡🟠⚪👤✅❌]", " ", s)
+    # Strip dates (e.g. JJ/MM/AAAA, JJ-MM-AAAA, AAAA-MM-JJ)
+    s = re.sub(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", " ", s)
+    s = re.sub(r"\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b", " ", s)
+    # Strip git hashes and issue/ticket numbers (#1234 or commit hex)
+    s = re.sub(r"#[a-zA-Z0-9_]+\b", " ", s)
+    s = re.sub(r"\b[0-9a-fA-F]{6,40}\b", " ", s)
+    # Strip accents & lowercase
+    s = _strip_accents(s).lower()
+    # Replace punctuation / non-alphanumeric characters with spaces
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    return " ".join(s.split())
+
+
+def _extract_task_tokens(norm_text: str) -> set[str]:
+    words = norm_text.split()
+    return {w for w in words if len(w) >= 3 and w not in _TASK_STOPWORDS}
+
+
+def _are_tasks_duplicate(task_a: str, task_b: str) -> bool:
+    """Pure, deterministic heuristic to detect duplicate or reformulated task titles."""
+    if not task_a or not task_b:
+        return False
+    norm_a = _normalize_task_text(task_a)
+    norm_b = _normalize_task_text(task_b)
+    if not norm_a or not norm_b:
+        return False
+    if norm_a == norm_b:
+        return True
+
+    # 1. Shared significant action prefix (>= 28 characters)
+    min_len = min(len(norm_a), len(norm_b))
+    common_len = 0
+    while common_len < min_len and norm_a[common_len] == norm_b[common_len]:
+        common_len += 1
+    if common_len >= 28:
+        return True
+    if len(norm_a) >= 28 and norm_b.startswith(norm_a[:28]):
+        return True
+    if len(norm_b) >= 28 and norm_a.startswith(norm_b[:28]):
+        return True
+
+    # Check prefix without stopwords for short formulations
+    no_stop_a = " ".join([w for w in norm_a.split() if w not in _TASK_STOPWORDS])
+    no_stop_b = " ".join([w for w in norm_b.split() if w not in _TASK_STOPWORDS])
+    if no_stop_a and no_stop_b:
+        if no_stop_a == no_stop_b:
+            return True
+        min_ns = min(len(no_stop_a), len(no_stop_b))
+        common_ns = 0
+        while common_ns < min_ns and no_stop_a[common_ns] == no_stop_b[common_ns]:
+            common_ns += 1
+        if common_ns >= 28:
+            return True
+
+    # 2. Significant tokens Jaccard similarity >= 0.55
+    tok_a = _extract_task_tokens(norm_a)
+    tok_b = _extract_task_tokens(norm_b)
+    if tok_a and tok_b:
+        intersection = tok_a.intersection(tok_b)
+        union = tok_a.union(tok_b)
+        jaccard = len(intersection) / len(union) if union else 0.0
+        if jaccard >= 0.55:
+            return True
+
+    # 3. difflib SequenceMatcher >= 0.70
+    if difflib.SequenceMatcher(None, norm_a, norm_b).ratio() >= 0.70:
+        return True
+
+    return False
+
+
+def _is_same_project(mpf_a: str, mpf_b: str) -> bool:
+    """Check if two main_project_file paths point to the same project."""
+    if not mpf_a or not mpf_b:
+        return False
+    a = to_portable_path(mpf_a).lower().strip()
+    b = to_portable_path(mpf_b).lower().strip()
+    if a == b:
+        return True
+    if a.endswith("/" + b) or b.endswith("/" + a):
+        return True
+    name_a = PurePath(a).name
+    name_b = PurePath(b).name
+    if name_a and name_b and name_a == name_b and name_a.endswith(".md"):
+        return True
+    return False
+
 
 
 @dataclass
@@ -391,8 +510,13 @@ class Workspace:
         raw_commits.sort(key=lambda x: (x[0], x[1]))
 
         first_seen: dict[str, tuple[str, int]] = {}
+        project_active_tasks: dict[str, dict[str, Any]] = {}
+
         for c_ts, p_name, p, c_data in raw_commits:
             commits_data[p] = c_data
+            c_mpf = c_data.get("main_project_file") or ""
+            is_same_proj = bool(main_project_file and c_mpf and _is_same_project(c_mpf, main_project_file))
+
             for c_idx, c_it in enumerate(c_data.get("user_items", []), 1):
                 if isinstance(c_it, dict):
                     c_id = c_it.get("id")
@@ -400,6 +524,18 @@ class Workspace:
                         if c_id not in first_seen:
                             first_seen[c_id] = (c_it.get("created_at") or c_ts, c_idx)
                         existing_tasks[c_id] = c_it
+
+                        if is_same_proj:
+                            c_st = c_it.get("task_status")
+                            c_dn = bool(c_it.get("done", False))
+                            if c_st == "validated" or c_dn:
+                                project_active_tasks.pop(c_id, None)
+                            elif c_st in ("new", "await_validation"):
+                                project_active_tasks[c_id] = c_it
+
+            if is_same_proj:
+                for cid in c_data.get("completed_user_items", []) or []:
+                    project_active_tasks.pop(str(cid).strip(), None)
 
         norm_user_items: list[dict[str, Any]] = []
         status_updates_by_id: dict[str, tuple[str, bool]] = {}
@@ -409,10 +545,47 @@ class Workspace:
                 c_id_clean = str(cid).strip()
                 if c_id_clean:
                     status_updates_by_id[c_id_clean] = ("validated", True)
+                    project_active_tasks.pop(c_id_clean, None)
 
         for idx, (item, is_roadmap_arg) in enumerate(raw_task_entries, 1):
             raw_id = str(item.get("id") or "").strip()
-            prior_task = existing_tasks.get(raw_id) if raw_id else None
+            task_title = str(item.get("task", "")).strip()
+
+            # Inspect active items in prior commits of the same project for deduplication
+            matched_existing_id = None
+            if raw_id and raw_id in existing_tasks:
+                matched_existing_id = raw_id
+            elif project_active_tasks:
+                m_raw = re.search(r'-(\d+)$', raw_id) if raw_id else None
+                new_idx_suffix = m_raw.group(1) if m_raw else str(idx)
+                tok_new = _extract_task_tokens(_normalize_task_text(task_title))
+
+                for ex_id, ex_it in list(project_active_tasks.items()):
+                    ex_task_text = str(ex_it.get("task", "")).strip()
+                    m_ex = re.search(r'-(\d+)$', ex_id)
+                    ex_idx_suffix = m_ex.group(1) if m_ex else ""
+
+                    if _are_tasks_duplicate(ex_task_text, task_title):
+                        matched_existing_id = ex_id
+                        break
+
+                    if new_idx_suffix and ex_idx_suffix and new_idx_suffix == ex_idx_suffix:
+                        tok_ex = _extract_task_tokens(_normalize_task_text(ex_task_text))
+                        if tok_new and tok_ex:
+                            inter = tok_new.intersection(tok_ex)
+                            uni = tok_new.union(tok_ex)
+                            jaccard = len(inter) / len(uni) if uni else 0.0
+                            if jaccard >= 0.40:
+                                matched_existing_id = ex_id
+                                break
+
+            if matched_existing_id:
+                final_id = matched_existing_id
+                prior_task = existing_tasks.get(matched_existing_id) or project_active_tasks.get(matched_existing_id)
+                project_active_tasks.pop(matched_existing_id, None)
+            else:
+                prior_task = existing_tasks.get(raw_id) if raw_id else None
+                final_id = raw_id
 
             # Resolve task_status
             explicit_status = item.get("task_status")
@@ -424,7 +597,7 @@ class Workspace:
                 is_roadmap_arg
                 or item.get("kind") == "roadmap"
                 or item.get("type") == "roadmap"
-                or (raw_id and raw_id.startswith("r-"))
+                or (final_id and final_id.startswith("r-"))
             ):
                 task_status = "new"
             elif prior_task and prior_task.get("task_status"):
@@ -435,15 +608,12 @@ class Workspace:
             done = (task_status == "validated")
             kind = "roadmap" if task_status == "new" else "deliverable"
 
-            # Resolve id
-            if raw_id:
-                final_id = raw_id
-            else:
+            # Assign generated id if still None
+            if not final_id:
                 prefix = f"r-{memory_id[:6]}" if task_status == "new" else f"{memory_id[:6]}"
                 final_id = f"{prefix}-{idx}"
 
             # Resolve task title (fallback to prior commit if empty)
-            task_title = str(item.get("task", "")).strip()
             if not task_title and prior_task:
                 task_title = str(prior_task.get("task", "")).strip()
 
@@ -454,8 +624,8 @@ class Workspace:
 
             # Resolve created_at
             created_at = item.get("created_at")
-            if not created_at and raw_id and raw_id in first_seen:
-                created_at = first_seen[raw_id][0]
+            if not created_at and final_id and final_id in first_seen:
+                created_at = first_seen[final_id][0]
             if not created_at and prior_task and prior_task.get("created_at"):
                 created_at = prior_task["created_at"]
             if not created_at:
@@ -472,7 +642,9 @@ class Workspace:
             }
             norm_user_items.append(norm_item)
 
-            if raw_id and prior_task:
+            if matched_existing_id:
+                status_updates_by_id[final_id] = (task_status, done)
+            elif raw_id and prior_task:
                 status_updates_by_id[raw_id] = (task_status, done)
 
         # Sort user_items chronologically: existing tasks by (first_seen_ts, first_seen_idx), new tasks after in submission order
