@@ -32,6 +32,8 @@ from aivc.config import (
     get_machine_id,
     to_portable_path,
     from_portable_path,
+    get_home_dir,
+    extract_brain_subpath,
     get_aivc_temp_dir,
     get_aivc_user_temp_dir,
     normalize_main_project_file,
@@ -151,6 +153,87 @@ def _is_same_project(mpf_a: str, mpf_b: str) -> bool:
     if name_a and name_b and name_a == name_b and name_a.endswith(".md"):
         return True
     return False
+
+
+def _resolve_file_path(path_str: str | Path) -> Path:
+    """Resolve an input file path (direct path, portable path, or brain/aivc artifact) to an existing local Path.
+
+    If the file exists under an artifact mirror (e.g. C:\\Users\\Public\\aivc\\artifacts\\...),
+    and not yet under ~/.gemini/antigravity/brain/..., it automatically mirrors it to the brain
+    location so that downstream sync and from_portable_path find it consistently.
+    """
+    clean_str = str(path_str).strip()
+    if clean_str.startswith("file:///"):
+        clean_str = clean_str[8:]
+    elif clean_str.startswith("file://"):
+        clean_str = clean_str[7:]
+    clean_str = re.split(r":L?\d+", clean_str)[0]
+
+    # 1. Direct path check on local filesystem
+    direct_p = Path(clean_str)
+    if direct_p.is_file() or direct_p.is_dir():
+        sub = extract_brain_subpath(clean_str)
+        if sub and direct_p.is_file():
+            import aivc.config
+            home = aivc.config.get_home_dir()
+            brain_p = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+            if not brain_p.is_file() or (
+                brain_p.stat().st_size != direct_p.stat().st_size
+                or brain_p.stat().st_mtime < direct_p.stat().st_mtime
+            ):
+                try:
+                    brain_p.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(direct_p, brain_p)
+                except OSError:
+                    pass
+        return direct_p
+
+    # 2. Check from_portable_path resolution
+    try:
+        portable_cand = from_portable_path(path_str)
+        if portable_cand.is_file() or portable_cand.is_dir():
+            return portable_cand
+    except Exception:
+        portable_cand = None
+
+    # 3. Artifact candidates lookup across standard temp and brain locations
+    sub = extract_brain_subpath(clean_str)
+    if not sub:
+        try:
+            sub = extract_brain_subpath(to_portable_path(path_str))
+        except Exception:
+            sub = None
+
+    if sub:
+        import aivc.config
+        home = aivc.config.get_home_dir()
+        temp_dir = aivc.config.get_aivc_temp_dir() / "artifacts"
+        user_temp_dir = aivc.config.get_aivc_user_temp_dir() / "artifacts"
+        brain_dir = home / ".gemini" / "antigravity" / "brain"
+        brain_cli_dir = home / ".gemini" / "antigravity-cli" / "brain"
+
+        candidates = [
+            temp_dir / Path(sub),
+            user_temp_dir / Path(sub),
+            brain_dir / Path(sub),
+            brain_cli_dir / Path(sub),
+        ]
+        for cand in candidates:
+            if cand.is_file() or cand.is_dir():
+                target_brain = brain_dir / Path(sub)
+                if cand.is_file() and (
+                    not target_brain.is_file()
+                    or target_brain.stat().st_size != cand.stat().st_size
+                    or target_brain.stat().st_mtime < cand.stat().st_mtime
+                ):
+                    try:
+                        target_brain.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(cand, target_brain)
+                    except OSError:
+                        pass
+                return cand
+
+    return portable_cand if portable_cand is not None else Path(clean_str)
 
 
 
@@ -361,7 +444,7 @@ class Workspace:
     def _resolve_tracked_path(self, path_str: str, allow_basename_fallback: bool = False) -> str:
         """Resolve a relative or basename path to a known tracked file path."""
         try:
-            if from_portable_path(path_str).exists() or to_portable_path(path_str) in self._state["tracked_files"]:
+            if _resolve_file_path(path_str).exists() or to_portable_path(path_str) in self._state["tracked_files"]:
                 return path_str
         except Exception:
             if to_portable_path(path_str) in self._state["tracked_files"]:
@@ -689,7 +772,7 @@ class Workspace:
         # Strict validation
         for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
             for path_str in files_list:
-                p = from_portable_path(path_str)
+                p = _resolve_file_path(path_str)
                 portable_path = to_portable_path(path_str)
 
                 # Check for directories
@@ -705,7 +788,7 @@ class Workspace:
 
         # edited_files -> FileChange(path=portable_path, action="edited" or "deleted")
         for path_str in actual_edited_files:
-            p = from_portable_path(path_str)
+            p = _resolve_file_path(path_str)
             portable_path = to_portable_path(path_str)
             action = "deleted" if (not p.is_file() and portable_path in self._state["tracked_files"]) else "edited"
             if portable_path not in seen_paths:
@@ -911,7 +994,7 @@ class Workspace:
         blob_size_cache = {}
         
         for tracked_path in self._state["tracked_files"]:
-            p = from_portable_path(tracked_path)
+            p = _resolve_file_path(tracked_path)
             
             # Current size: check disk for correctness (deleted file detection)
             current_size = None
@@ -1012,7 +1095,7 @@ class Workspace:
                     if change.blob_hash is not None:
                         return self._blob_store.retrieve(change.blob_hash)
                     # If blob is None, fallback to local file on disk
-                    local_p = from_portable_path(target_portable)
+                    local_p = _resolve_file_path(target_portable)
                     if local_p.exists():
                         return local_p.read_bytes()
             current_id = memory.parent_id

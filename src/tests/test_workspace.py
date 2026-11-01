@@ -292,4 +292,43 @@ def test_user_items_and_file_memories_chronological_order(tmp_path: Path, ws: Wo
     assert [m.id for m in memories[:2]] == [m1.id, m2.id]
     assert memories[0].timestamp <= memories[1].timestamp
 
+
+def test_remember_artifact_resolution(tmp_path: Path, ws: Workspace, monkeypatch) -> None:
+    """Verify that existing files under aivc/artifacts/ or temp are properly resolved and tracked."""
+    artifact_dir = tmp_path / "public_aivc" / "artifacts" / "proj_x"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    art_file = artifact_dir / "report.pdf"
+    content = b"%PDF-1.4 test report content"
+    art_file.write_bytes(content)
+
+    fake_home = tmp_path / "user_home"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: fake_home)
+
+    # 1. Calling remember with the physical artifact path in edited_files must succeed
+    mem = ws.remember(
+        title="Artifact commit",
+        journal="Recorded artifact",
+        edited_files=[str(art_file)],
+    )
+    assert len(mem.changes) == 1
+    ch = mem.changes[0]
+    assert ch.action == "edited"
+    assert ch.blob_hash is not None
+    assert ws._blob_store.retrieve(ch.blob_hash) == content
+
+    # 2. Mirror file under fake_home/.gemini/antigravity/brain must have been created
+    mirrored = fake_home / ".gemini" / "antigravity" / "brain" / "proj_x" / "report.pdf"
+    assert mirrored.is_file()
+    assert mirrored.read_bytes() == content
+
+    # 3. An untracked non-existent file must still raise ValueError
+    import pytest
+    with pytest.raises(ValueError, match="is an untracked non-existent file"):
+        ws.remember(
+            title="Non-existent",
+            journal="Should fail",
+            edited_files=[str(tmp_path / "does_not_exist.pdf")],
+        )
+
 
