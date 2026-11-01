@@ -160,6 +160,53 @@ def normalize_advance_tldr_title(title: str) -> str:
     """Normalizes project title for advance_tldr notes by stripping leading robot emojis."""
     return re.sub(r"^(?:🤖\s*)+", "", title).strip()
 
+def is_corrupt_test_artifact(path: Path) -> bool:
+    """Detects 8-byte 'restored' corrupt mock files left by un-isolated tests."""
+    try:
+        if path.is_file() and path.stat().st_size == 8:
+            return path.read_bytes() == b"restored"
+    except OSError:
+        pass
+    return False
+
+
+def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = None) -> str:
+    """Rewrite brain artifact URLs and local paths to <temp>/aivc/artifacts/<subpath>.
+
+    Ensures markdown links like [Libellé A/B](file:///...) are not corrupted by forbidding
+    brackets, parentheses and word characters before drive letters, and processing both
+    file:/// URLs and local paths in a single unified pass.
+    """
+    if not text:
+        return text
+
+    from aivc.config import get_aivc_temp_dir
+    base_temp = temp_dir if temp_dir is not None else get_aivc_temp_dir()
+    artifacts_dir = base_temp / "artifacts"
+    artifacts_posix = artifacts_dir.as_posix().replace("\\", "/").lstrip("/")
+
+    combined_pattern = re.compile(
+        r"(file://+)?(?<![A-Za-z0-9_])(?:[A-Za-z]:[\\/]|/(?:Users|home)[\\/]|~[\\/])[^\s\[\]\(\)\"\'\`<>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\[\]\(\)\"\'\`<>:]+)",
+        re.IGNORECASE,
+    )
+
+    def _replace(m: re.Match) -> str:
+        is_url = bool(m.group(1))
+        raw_sub = m.group(2)
+        if is_url:
+            sub = raw_sub.replace("\\", "/").strip("/")
+            return f"file:///{artifacts_posix}/{sub}"
+        else:
+            suffix = ""
+            line_m = re.search(r"(:L?\d+(?:-L?\d+)?)$", raw_sub)
+            if line_m:
+                suffix = line_m.group(1)
+                raw_sub = raw_sub[:-len(suffix)]
+            sub = raw_sub.replace("/", "\\").strip("\\")
+            return str(artifacts_dir / Path(sub)) + suffix
+
+    return combined_pattern.sub(_replace, text)
+
 
 def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> list[str]:
     """Auto-restores files under .gemini/antigravity/brain/ referenced by memory if missing locally.
@@ -278,15 +325,27 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
         local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
         temp_artifact_path = temp_artifacts_dir / Path(sub)
 
-        # Mirror to temp_artifacts_dir if local_path already exists
-        if local_path.is_file() and not temp_artifact_path.is_file():
+        # Purge corrupt 8-byte 'restored' artifact if present in local_path
+        if is_corrupt_test_artifact(local_path):
             try:
-                temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(local_path, temp_artifact_path)
+                local_path.unlink()
             except OSError:
                 pass
 
+        # Mirror to temp_artifacts_dir if local_path already exists and valid
         if local_path.is_file():
+            needs_mirror = (
+                not temp_artifact_path.is_file()
+                or is_corrupt_test_artifact(temp_artifact_path)
+                or temp_artifact_path.stat().st_size != local_path.stat().st_size
+                or temp_artifact_path.stat().st_mtime < local_path.stat().st_mtime
+            )
+            if needs_mirror:
+                try:
+                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(local_path, temp_artifact_path)
+                except OSError:
+                    pass
             continue
         sub_posix = sub.replace("\\", "/")
         portable = f"~/.gemini/antigravity/brain/{sub_posix}"

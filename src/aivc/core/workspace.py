@@ -855,16 +855,35 @@ class Workspace:
             sub_posix = sub.replace("\\", "/")
             portable = f"~/.gemini/antigravity/brain/{sub_posix}"
 
-            # Mirror to temp_artifacts_dir if local_path already exists
-            if local_path.is_file() and not temp_artifact_path.is_file():
+            # Purge corrupt 8-byte 'restored' artifact if present in local_path
+            if local_path.is_file() and local_path.stat().st_size == 8:
                 try:
-                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(local_path, temp_artifact_path)
+                    if local_path.read_bytes() == b"restored":
+                        local_path.unlink()
                 except OSError:
                     pass
 
-            # If file already exists locally on disk, nothing to restore
+            # Mirror to temp_artifacts_dir if local_path already exists and valid
             if local_path.is_file():
+                is_corrupt_temp = False
+                try:
+                    if temp_artifact_path.is_file() and temp_artifact_path.stat().st_size == 8:
+                        is_corrupt_temp = (temp_artifact_path.read_bytes() == b"restored")
+                except OSError:
+                    pass
+
+                needs_mirror = (
+                    not temp_artifact_path.is_file()
+                    or is_corrupt_temp
+                    or temp_artifact_path.stat().st_size != local_path.stat().st_size
+                    or temp_artifact_path.stat().st_mtime < local_path.stat().st_mtime
+                )
+                if needs_mirror:
+                    try:
+                        temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(local_path, temp_artifact_path)
+                    except OSError:
+                        pass
                 continue
 
             content: bytes | None = None

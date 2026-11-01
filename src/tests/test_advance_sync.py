@@ -369,5 +369,33 @@ def test_restore_brain_files_scans_existing_advance_tldr_note(tmp_path: Path, mo
     assert "rules.pdf" in restored[0]
 
 
+def test_rewrite_brain_paths_preserves_slashes_in_markdown_labels():
+    """Verify markdown links with slashes like A/B or Coût/WR are not corrupted."""
+    from aivc.advance_sync import rewrite_brain_paths_to_temp_artifacts
+    from aivc.config import get_aivc_temp_dir
+
+    sample_md = (
+        "Dashboard links:\n"
+        "- [📄 Onglet 1 Galerie & Comparateur A/B](file:///C:/Users/hjamet/.gemini/antigravity/brain/464a4378-48ee-462c-b7b7-5502f1f2b848/playwright_tab1_gallery_ab.png)\n"
+        "- [📄 Onglet 2 Campagne 10k & Coût/WR](file:///C:/Users/hjamet/.gemini/antigravity/brain/464a4378-48ee-462c-b7b7-5502f1f2b848/playwright_tab2_campaign_10k.png)\n"
+        "Local citation: Source: C:\\Users\\hjamet\\.gemini\\antigravity\\brain\\464a4378-48ee-462c-b7b7-5502f1f2b848\\rules.pdf:L10-L20\n"
+    )
+
+    rewritten = rewrite_brain_paths_to_temp_artifacts(sample_md)
+
+    temp_dir = get_aivc_temp_dir()
+    posix_artifacts = (temp_dir / "artifacts").as_posix().lstrip("/")
+
+    # Check that labels are 100% intact
+    assert "[📄 Onglet 1 Galerie & Comparateur A/B](file:///" in rewritten
+    assert "[📄 Onglet 2 Campagne 10k & Coût/WR](file:///" in rewritten
+    assert f"file:///{posix_artifacts}/464a4378-48ee-462c-b7b7-5502f1f2b848/playwright_tab1_gallery_ab.png" in rewritten
+    assert f"file:///{posix_artifacts}/464a4378-48ee-462c-b7b7-5502f1f2b848/playwright_tab2_campaign_10k.png" in rewritten
+
+    # Check local citation is rewritten to native artifacts path with line number suffix
+    expected_local = str(temp_dir / "artifacts" / "464a4378-48ee-462c-b7b7-5502f1f2b848" / "rules.pdf") + ":L10-L20"
+    assert expected_local in rewritten
+
+
 
 
