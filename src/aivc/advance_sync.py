@@ -71,8 +71,9 @@ def _load_project_memory_module() -> Any:
         spec = importlib.util.spec_from_file_location("project_memory_cli", str(cli_path))
         if spec and spec.loader:
             mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
+            sys.modules["project_memory_cli"] = mod
             _PROJECT_MEMORY_MODULE = mod
+            spec.loader.exec_module(mod)
             return mod
     except Exception as e:
         logger.warning("Failed to load project_memory_cli from %s: %s", cli_path, e)
@@ -180,6 +181,21 @@ def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = Non
     if not text:
         return text
 
+    # Pre-step 1: repair any corrupted 'file:///e:///...'
+    text = re.sub(r"file://+(?:e://+)+", "file:///", text, flags=re.IGNORECASE)
+    # Pre-step 2: repair any corrupted 'filC:\...' or 'fil[Letter]:\...' into valid file:/// URL
+    text = re.sub(
+        r"(?<![A-Za-z0-9_])fil(?![eE]://)([A-Za-z]:[\\/](?![\\/])[^\s\[\]\(\)\"\'\`<>]+)",
+        lambda m: f"file:///{m.group(1).replace(chr(92), '/')}",
+        text,
+    )
+    # Pre-step 3: ensure file:/// URLs don't have backslashes
+    text = re.sub(
+        r"(file://+[A-Za-z]:[^\s\[\]\(\)\"\'\`<>]+)",
+        lambda m: m.group(1).replace("\\", "/"),
+        text,
+    )
+
     from aivc.config import get_aivc_temp_dir
     base_temp = temp_dir if temp_dir is not None else get_aivc_temp_dir()
     artifacts_dir = base_temp / "artifacts"
@@ -205,7 +221,16 @@ def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = Non
             sub = raw_sub.replace("/", "\\").strip("\\")
             return str(artifacts_dir / Path(sub)) + suffix
 
-    return combined_pattern.sub(_replace, text)
+    rewritten = combined_pattern.sub(_replace, text)
+
+    # Post-step safety: guarantee no remaining filC:\ can survive
+    rewritten = re.sub(
+        r"(?<![A-Za-z0-9_])fil(?![eE]://)([A-Za-z]:[\\/](?![\\/])[^\s\[\]\(\)\"\'\`<>]+)",
+        lambda m: f"file:///{m.group(1).replace(chr(92), '/')}",
+        rewritten,
+    )
+
+    return rewritten
 
 
 def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> list[str]:
@@ -223,6 +248,8 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
     # Prepare sync_manager if not provided
     mgr = sync_manager
     if mgr is None:
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            return []
         try:
             storage_root = get_storage_root(allow_fallback=True)
             mgr = NativeDriveSyncManager(storage_root)
@@ -364,6 +391,71 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
     return restored
 
 
+def _mirror_advance_tldr_files(synced_paths: list[str]) -> None:
+    """Guarantee all synced advance_tldr notes exist in both Temp and Brain dirs, and are pushed to Drive."""
+    if not synced_paths:
+        return
+
+    from aivc.config import get_aivc_temp_dir, get_storage_root
+    from aivc.sync.drive import NativeDriveSyncManager
+
+    legacy_dir = Path.home() / ".gemini" / "antigravity" / "brain" / "advance_tldr"
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    temp_adv_dir = get_aivc_temp_dir() / "advance_tldr"
+    temp_adv_dir.mkdir(parents=True, exist_ok=True)
+
+    mgr = None
+    try:
+        storage_root = get_storage_root(allow_fallback=True)
+        mgr = NativeDriveSyncManager(storage_root)
+    except Exception:
+        mgr = None
+
+    for sp in synced_paths:
+        p_src = Path(sp)
+        if not p_src.is_file():
+            continue
+
+        filename = p_src.name
+
+        # 1. Clean up any corrupted filC:\ or invalid URLs directly in the file
+        try:
+            content = p_src.read_text(encoding="utf-8")
+            repaired = rewrite_brain_paths_to_temp_artifacts(content)
+            if repaired != content:
+                p_src.write_text(repaired, encoding="utf-8")
+        except Exception:
+            pass
+
+        # 2. Mirror to temp_adv_dir if not identical
+        p_temp = temp_adv_dir / filename
+        if p_temp.resolve() != p_src.resolve():
+            try:
+                shutil.copy2(p_src, p_temp)
+            except Exception:
+                pass
+
+        # 3. Systematically copy to legacy_dir (~/.gemini/antigravity/brain/advance_tldr/)
+        p_legacy = legacy_dir / filename
+        try:
+            shutil.copy2(p_src, p_legacy)
+        except Exception:
+            pass
+
+        # 4. Restore missing brain files referenced in newly generated/updated advance_tldr files
+        try:
+            restore_brain_files_for_memory(p_src)
+        except Exception:
+            pass
+
+        # 5. Push to Google Drive if Drive sync is enabled (skip during automated pytest to avoid network locks)
+        if mgr and getattr(mgr, "enabled", False) and "PYTEST_CURRENT_TEST" not in os.environ:
+            try:
+                mgr.push_latest_file(p_legacy if p_legacy.is_file() else p_src)
+            except Exception as e:
+                logger.debug("Failed to push advance_tldr %s to Drive: %s", filename, e)
+
+
 def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[str]:
     """Synchronizes advance_tldr/🤖 <Titre>.md for the given memory.
 
@@ -386,18 +478,14 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
     if _CUSTOM_SYNC_HANDLER is not None:
         try:
             res = _CUSTOM_SYNC_HANDLER(memory, vault_dir=vault_dir)
+            if res:
+                _mirror_advance_tldr_files(res)
             if is_dict:
                 memory["_tldr_synced"] = True
                 memory["_tldr_synced_paths"] = res or []
             else:
                 setattr(memory, "_tldr_synced", True)
                 setattr(memory, "_tldr_synced_paths", res or [])
-            if res:
-                for sp in res:
-                    try:
-                        restore_brain_files_for_memory(sp)
-                    except Exception:
-                        pass
             return res or []
         except Exception as e:
             logger.warning("Custom sync handler failed: %s", e)
@@ -412,6 +500,15 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
         return []
 
     try:
+        # Invalidate in-memory cache of AIVC memories in project_memory_cli
+        if hasattr(mod, "_AIVC_MEMORIES_CACHE"):
+            mod._AIVC_MEMORIES_CACHE = None
+        if hasattr(mod, "_invalidate_aivc_cache"):
+            try:
+                mod._invalidate_aivc_cache()
+            except Exception:
+                pass
+
         sync_fn = getattr(mod, "sync_advance_tldr_for_memory", None)
         if sync_fn is None:
             logger.warning("sync_advance_tldr_for_memory function not found in project_memory_cli.")
@@ -420,13 +517,9 @@ def sync_advance_tldr(memory: Any, vault_dir: str | Path | None = None) -> list[
         vault_str = str(vault_dir) if vault_dir else str(get_vault_dir())
         synced_paths = sync_fn(memory, vault_dir=vault_str)
 
-        # Restore missing brain files referenced in newly generated/updated advance_tldr files
+        # Guarantee all synced advance_tldr notes exist in both Temp and Brain dirs, and are pushed to Drive
         if synced_paths:
-            for sp in synced_paths:
-                try:
-                    restore_brain_files_for_memory(sp)
-                except Exception:
-                    pass
+            _mirror_advance_tldr_files(synced_paths)
 
         if is_dict:
             memory["_tldr_synced"] = True

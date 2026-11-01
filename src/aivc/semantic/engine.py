@@ -26,7 +26,7 @@ from typing import Any
 from aivc.core.memory import Memory
 from aivc.core.workspace import FileStatus, Workspace
 from aivc.semantic.graph import CooccurrenceGraph
-from aivc.config import get_machine_id, to_portable_path, from_portable_path
+from aivc.config import get_machine_id, to_portable_path, from_portable_path, normalize_main_project_file
 from aivc.sync.drive import NativeDriveSyncManager
 
 logger = logging.getLogger(__name__)
@@ -355,11 +355,15 @@ class SemanticEngine:
                     vn_candidate = Path.home() / "Documents" / "VoiceNotes" / raw_p
                     if vn_candidate.exists():
                         resolved_path = vn_candidate
+                    else:
+                        vn_notes_cand = Path.home() / "Documents" / "VoiceNotes" / "notes" / raw_p
+                        if vn_notes_cand.exists():
+                            resolved_path = vn_notes_cand
 
         if not resolved_path.exists():
             raise ValueError(f"main_project_file does not exist on disk: {main_project_file}")
 
-        portable_main = to_portable_path(resolved_path)
+        portable_main = normalize_main_project_file(resolved_path)
 
         norm_read_files = [_resolve_relative_vn(f) for f in (read_files or [])]
         norm_consulted_files = [_resolve_relative_vn(f) for f in (consulted_files or [])]

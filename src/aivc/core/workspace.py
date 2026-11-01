@@ -25,7 +25,13 @@ from aivc.core.blob_store import BlobStore
 from aivc.core.memory import Memory, FileChange, memory_from_dict, memory_to_dict, _compose_note
 from aivc.core.diff import compute_diff
 from aivc.core.index import CoreIndex
-from aivc.config import get_machine_id, to_portable_path, from_portable_path, get_aivc_temp_dir
+from aivc.config import (
+    get_machine_id,
+    to_portable_path,
+    from_portable_path,
+    get_aivc_temp_dir,
+    normalize_main_project_file,
+)
 
 
 @dataclass
@@ -331,6 +337,9 @@ class Workspace:
             main_project_file: Portable path to the main project note or file.
         """
         self._reload_state_if_needed()
+
+        if main_project_file:
+            main_project_file = normalize_main_project_file(main_project_file)
 
         if not journal and note:
             journal = note

@@ -188,6 +188,49 @@ def to_portable_path(path_str: str | Path) -> str:
     return s
 
 
+def normalize_main_project_file(path_str: str | Path) -> str:
+    """Normalize main_project_file to a canonical portable path.
+
+    Accepts relative paths (e.g. 'notes/Traitement des Mails.md' or 'Traitement des Mails.md'),
+    absolute paths, or portable paths (~/...), and resolves them to ~/Documents/VoiceNotes/...
+    """
+    if not path_str:
+        return ""
+    if isinstance(path_str, Path):
+        s = path_str.as_posix()
+    else:
+        s = str(path_str).strip().replace("\\", "/")
+
+    if not s:
+        return ""
+
+    if s.startswith("~/"):
+        return s
+    if (len(s) >= 2 and s[1] == ":") or s.startswith("/"):
+        return to_portable_path(s)
+
+    clean_rel = s.lstrip("./")
+    clean_lower = clean_rel.lower()
+    if clean_lower.startswith("voicenotes/"):
+        return f"~/Documents/{clean_rel}"
+    if clean_lower.startswith("documents/voicenotes/"):
+        return f"~/{clean_rel}"
+
+    vault = get_home_dir() / "Documents" / "VoiceNotes"
+    cand_direct = vault / clean_rel
+    if cand_direct.exists():
+        return to_portable_path(cand_direct)
+
+    cand_notes = vault / "notes" / clean_rel
+    if cand_notes.exists():
+        return to_portable_path(cand_notes)
+
+    if clean_lower.startswith("notes/"):
+        return f"~/Documents/VoiceNotes/{clean_rel}"
+
+    return f"~/Documents/VoiceNotes/notes/{clean_rel}"
+
+
 def extract_brain_subpath(raw_path: str | Path) -> str | None:
     """Extract relative path after .gemini/antigravity/brain/ from any path, URI, or link.
 
