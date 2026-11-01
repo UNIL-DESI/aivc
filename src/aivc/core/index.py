@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from pathlib import Path, PurePath
 from typing import TYPE_CHECKING
 
@@ -58,6 +59,7 @@ class CoreIndex:
             storage_root: Root directory where the index DB will be stored.
         """
         storage_root.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
         self._db_path = storage_root / _DB_FILE
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL;")
@@ -70,26 +72,28 @@ class CoreIndex:
         self._conn.commit()
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
-        return self._conn.execute(sql, params)
+        with self._lock:
+            return self._conn.execute(sql, params)
 
     def add_memory(self, memory: Memory) -> None:
         """Index a memory and its file changes.
 
         Idempotent: uses INSERT OR REPLACE.
         """
-        self._execute(
-            "INSERT OR REPLACE INTO commits (commit_id, parent_id, timestamp, title, machine_id) VALUES (?, ?, ?, ?, ?)",
-            (memory.id, memory.parent_id, memory.timestamp, memory.title, getattr(memory, "machine_id", "")),
-        )
-
-        for fc in memory.changes:
-            portable_path = to_portable_path(fc.path)
+        with self._lock:
             self._execute(
-                "INSERT OR REPLACE INTO file_changes (commit_id, path, action, blob_hash, bytes_added, bytes_removed) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (memory.id, portable_path, fc.action, fc.blob_hash, fc.bytes_added, fc.bytes_removed),
+                "INSERT OR REPLACE INTO commits (commit_id, parent_id, timestamp, title, machine_id) VALUES (?, ?, ?, ?, ?)",
+                (memory.id, memory.parent_id, memory.timestamp, memory.title, getattr(memory, "machine_id", "")),
             )
-        self._conn.commit()
+
+            for fc in memory.changes:
+                portable_path = to_portable_path(fc.path)
+                self._execute(
+                    "INSERT OR REPLACE INTO file_changes (commit_id, path, action, blob_hash, bytes_added, bytes_removed) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (memory.id, portable_path, fc.action, fc.blob_hash, fc.bytes_added, fc.bytes_removed),
+                )
+            self._conn.commit()
 
     def get_recent_commits(
         self, limit: int = 20, offset: int = 0, only_local_machine_id: str | None = None
@@ -118,12 +122,13 @@ class CoreIndex:
 
     def remove_file_changes(self, file_path: str) -> None:
         """Remove all file_change entries for a specific path (used for untrack)."""
-        target_portable = to_portable_path(file_path)
-        rows = self._execute("SELECT DISTINCT path FROM file_changes").fetchall()
-        for (p,) in rows:
-            if to_portable_path(p) == target_portable:
-                self._execute("DELETE FROM file_changes WHERE path = ?", (p,))
-        self._conn.commit()
+        with self._lock:
+            target_portable = to_portable_path(file_path)
+            rows = self._execute("SELECT DISTINCT path FROM file_changes").fetchall()
+            for (p,) in rows:
+                if to_portable_path(p) == target_portable:
+                    self._execute("DELETE FROM file_changes WHERE path = ?", (p,))
+            self._conn.commit()
 
     def get_blob_hashes_for_file(self, file_path: str) -> set[str]:
         """Return all unique blob hashes ever associated with this file."""
@@ -191,24 +196,26 @@ class CoreIndex:
         """
         from aivc.core.memory import memory_from_dict
 
-        # Optimization: Load all existing commit IDs into a set once
-        existing_commits_rows = self._execute("SELECT commit_id FROM commits").fetchall()
-        existing_commits = {r[0] for r in existing_commits_rows}
+        with self._lock:
+            # Optimization: Load all existing commit IDs into a set once
+            existing_commits_rows = self._execute("SELECT commit_id FROM commits").fetchall()
+            existing_commits = {r[0] for r in existing_commits_rows}
 
-        new_count = 0
-        for p in memories_dir.glob("*.json"):
-            memory_id = p.stem
+            new_count = 0
+            for p in memories_dir.glob("*.json"):
+                memory_id = p.stem
 
-            if memory_id not in existing_commits:
-                try:
-                    memory = memory_from_dict(json.loads(p.read_text(encoding="utf-8")))
-                    self.add_memory(memory)
-                    new_count += 1
-                except Exception:
-                    # Skip corrupted or invalid memories during migration
-                    continue
-        return new_count
+                if memory_id not in existing_commits:
+                    try:
+                        memory = memory_from_dict(json.loads(p.read_text(encoding="utf-8")))
+                        self.add_memory(memory)
+                        new_count += 1
+                    except Exception:
+                        # Skip corrupted or invalid memories during migration
+                        continue
+            return new_count
 
     def close(self) -> None:
         """Close the database connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()

@@ -87,3 +87,41 @@ def test_migrate_from_json(tmp_path: Path, index: CoreIndex) -> None:
     # Second run should skip
     count2 = index.migrate_from_json(memories_dir)
     assert count2 == 0
+
+
+def test_concurrent_index_thread_safety(index: CoreIndex) -> None:
+    import threading
+
+    errors = []
+    memories = [
+        Memory.create(
+            title=f"Mem {i}",
+            note="Valid note",
+            parent_id=None,
+            changes=[
+                FileChange(path=f"file_{i % 3}.txt", action="added", blob_hash=f"hash_{i}", bytes_added=10, bytes_removed=0)
+            ],
+        )
+        for i in range(50)
+    ]
+
+    def worker(items):
+        for m in items:
+            try:
+                index.add_memory(m)
+                _ = index.get_recent_commits(limit=10)
+            except Exception as e:
+                errors.append(e)
+
+    threads = [
+        threading.Thread(target=worker, args=(memories[0:25],)),
+        threading.Thread(target=worker, args=(memories[25:50],)),
+    ]
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Concurrent operations failed with: {errors}"
+    assert len(index.get_recent_commits(limit=100)) == 50
