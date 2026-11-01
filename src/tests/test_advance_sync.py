@@ -467,5 +467,44 @@ def test_sync_advance_tldr_copies_to_temp_and_brain(tmp_path: Path, monkeypatch)
         set_custom_sync_handler(None)
 
 
+def test_to_portable_path_preserves_users_public():
+    """Verify to_portable_path preserves C:/Users/Public/aivc/... and does not replace with ~."""
+    from aivc.config import to_portable_path
+
+    public_tldr = "C:/Users/Public/aivc/advance_tldr/🤖 Test.md"
+    assert to_portable_path(public_tldr) == public_tldr
+
+    public_base = "C:/Users/Public/aivc"
+    assert to_portable_path(public_base) == public_base
+
+    # Meanwhile normal user path is still converted to ~/
+    user_path = "C:/Users/hjamet/Documents/VoiceNotes/notes/Test.md"
+    assert to_portable_path(user_path) == "~/Documents/VoiceNotes/notes/Test.md"
+
+
+def test_public_aivc_temp_dir_and_hermetic_isolation(tmp_path: Path, monkeypatch):
+    """Verify get_aivc_temp_dir uses C:/Users/Public/aivc on Windows when env var is absent,
+    while conftest fixture isolate_aivc_temp_dir provides 100% hermetic isolation.
+    """
+    import os
+    from aivc.config import get_aivc_temp_dir, get_aivc_user_temp_dir
+
+    # 1. Inside pytest, AIVC_TEMP_DIR is set by isolate_aivc_temp_dir
+    env_dir = os.environ.get("AIVC_TEMP_DIR")
+    assert env_dir is not None
+    assert get_aivc_temp_dir() == Path(env_dir)
+    assert get_aivc_user_temp_dir() == Path(env_dir)
+
+    # 2. When AIVC_TEMP_DIR is unset, under Windows it targets PUBLIC / aivc
+    monkeypatch.delenv("AIVC_TEMP_DIR", raising=False)
+    fake_public = tmp_path / "FakePublic"
+    monkeypatch.setenv("PUBLIC", str(fake_public))
+    if os.name == "nt":
+        expected_public = fake_public / "aivc"
+        assert get_aivc_temp_dir() == expected_public
+        assert expected_public.is_dir()
+
+
+
 
 

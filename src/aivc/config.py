@@ -25,7 +25,24 @@ def get_home_dir() -> Path:
 
 
 def get_aivc_temp_dir() -> Path:
-    """Returns the base temp directory for AIVC runtime files (<temp>/aivc)."""
+    """Returns the base temp directory for AIVC runtime files (<temp>/aivc or C:\\Users\\Public\\aivc)."""
+    env_dir = os.environ.get("AIVC_TEMP_DIR")
+    if env_dir:
+        return Path(env_dir)
+    if os.name == "nt":
+        public_var = os.environ.get("PUBLIC", r"C:\Users\Public")
+        public_aivc = Path(public_var) / "aivc"
+        try:
+            public_aivc.mkdir(parents=True, exist_ok=True)
+            return public_aivc
+        except Exception:
+            pass
+    import tempfile
+    return Path(tempfile.gettempdir()) / "aivc"
+
+
+def get_aivc_user_temp_dir() -> Path:
+    """Returns the user-specific temp directory (%TEMP%/aivc) for backward-compatible mirroring."""
     env_dir = os.environ.get("AIVC_TEMP_DIR")
     if env_dir:
         return Path(env_dir)
@@ -167,8 +184,8 @@ def to_portable_path(path_str: str | Path) -> str:
         pass
 
     patterns = [
-        r"^[A-Za-z]:/Users/[^/]+/(.*)$",
-        r"^/?Users/[^/]+/(.*)$",
+        r"^[A-Za-z]:/Users/(?!Public(?:/|$))[^/]+/(.*)$",
+        r"^/?Users/(?!Public(?:/|$))[^/]+/(.*)$",
         r"^/?home/[^/]+/(.*)$",
     ]
     for pattern in patterns:
@@ -177,8 +194,8 @@ def to_portable_path(path_str: str | Path) -> str:
             return f"~/{m.group(1)}"
 
     exact_patterns = [
-        r"^[A-Za-z]:/Users/[^/]+/?$",
-        r"^/?Users/[^/]+/?$",
+        r"^[A-Za-z]:/Users/(?!Public(?:/|$))[^/]+/?$",
+        r"^/?Users/(?!Public(?:/|$))[^/]+/?$",
         r"^/?home/[^/]+/?$",
     ]
     for pattern in exact_patterns:

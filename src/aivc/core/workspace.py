@@ -30,6 +30,7 @@ from aivc.config import (
     to_portable_path,
     from_portable_path,
     get_aivc_temp_dir,
+    get_aivc_user_temp_dir,
     normalize_main_project_file,
 )
 
@@ -858,9 +859,12 @@ class Workspace:
                         candidates[raw] = None
 
         temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
+        user_temp_artifacts_dir = get_aivc_user_temp_dir() / "artifacts"
+        mirror_user_temp = (user_temp_artifacts_dir.resolve() != temp_artifacts_dir.resolve())
         for sub, blob_hash in candidates.items():
             local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
             temp_artifact_path = temp_artifacts_dir / Path(sub)
+            user_temp_artifact_path = user_temp_artifacts_dir / Path(sub) if mirror_user_temp else None
             sub_posix = sub.replace("\\", "/")
             portable = f"~/.gemini/antigravity/brain/{sub_posix}"
 
@@ -893,6 +897,26 @@ class Workspace:
                         shutil.copy2(local_path, temp_artifact_path)
                     except OSError:
                         pass
+
+                if user_temp_artifact_path is not None:
+                    is_corrupt_user_temp = False
+                    try:
+                        if user_temp_artifact_path.is_file() and user_temp_artifact_path.stat().st_size == 8:
+                            is_corrupt_user_temp = (user_temp_artifact_path.read_bytes() == b"restored")
+                    except OSError:
+                        pass
+                    needs_user_mirror = (
+                        not user_temp_artifact_path.is_file()
+                        or is_corrupt_user_temp
+                        or user_temp_artifact_path.stat().st_size != local_path.stat().st_size
+                        or user_temp_artifact_path.stat().st_mtime < local_path.stat().st_mtime
+                    )
+                    if needs_user_mirror:
+                        try:
+                            user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(local_path, user_temp_artifact_path)
+                        except OSError:
+                            pass
                 continue
 
             content: bytes | None = None
@@ -952,6 +976,12 @@ class Workspace:
                                     shutil.copy2(local_path, temp_artifact_path)
                                 except OSError:
                                     pass
+                                if user_temp_artifact_path is not None:
+                                    try:
+                                        user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(local_path, user_temp_artifact_path)
+                                    except OSError:
+                                        pass
                                 # Clean up cache if previously marked missing
                                 updated = False
                                 for key in cache_keys:
@@ -987,6 +1017,12 @@ class Workspace:
                         shutil.copy2(local_path, temp_artifact_path)
                     except OSError:
                         pass
+                    if user_temp_artifact_path is not None:
+                        try:
+                            user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(local_path, user_temp_artifact_path)
+                        except OSError:
+                            pass
                 except Exception:
                     pass
 

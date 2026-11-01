@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from aivc.config import get_home_dir, to_portable_path
+from aivc.config import get_home_dir, to_portable_path, get_aivc_temp_dir, get_aivc_user_temp_dir
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ def rewrite_brain_paths_to_temp_artifacts(text: str, temp_dir: Path | None = Non
     artifacts_posix = artifacts_dir.as_posix().replace("\\", "/").lstrip("/")
 
     combined_pattern = re.compile(
-        r"(file://+)?(?<![A-Za-z0-9_])(?:[A-Za-z]:[\\/]|/(?:Users|home)[\\/]|~[\\/])[^\s\[\]\(\)\"\'\`<>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\[\]\(\)\"\'\`<>:]+)",
+        r"(file://+)?(?<![A-Za-z0-9_])(?:[A-Za-z]:[\\/]|/?(?:Users|home)[\\/]|~[\\/])[^\s\[\]\(\)\"\'\`<>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\[\]\(\)\"\'\`<>:]+)",
         re.IGNORECASE,
     )
 
@@ -331,11 +331,14 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
                 stem = Path(str(mpf)).stem
                 title = normalize_advance_tldr_title(stem)
                 tldr_temp = get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md"
+                tldr_user_temp = get_aivc_user_temp_dir() / "advance_tldr" / f"🤖 {title}.md"
                 tldr_legacy = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
                 if home != Path.home() and tldr_legacy.is_file():
                     tldr_candidate = tldr_legacy
                 elif tldr_temp.is_file():
                     tldr_candidate = tldr_temp
+                elif tldr_user_temp.is_file():
+                    tldr_candidate = tldr_user_temp
                 else:
                     tldr_candidate = tldr_legacy
                 if tldr_candidate.is_file():
@@ -348,9 +351,12 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
                 pass
 
     temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
+    user_temp_artifacts_dir = get_aivc_user_temp_dir() / "artifacts"
+    mirror_user_temp = (user_temp_artifacts_dir.resolve() != temp_artifacts_dir.resolve())
     for sub in candidate_subpaths:
         local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
         temp_artifact_path = temp_artifacts_dir / Path(sub)
+        user_temp_artifact_path = user_temp_artifacts_dir / Path(sub) if mirror_user_temp else None
 
         # Purge corrupt 8-byte 'restored' artifact if present in local_path
         if is_corrupt_test_artifact(local_path):
@@ -373,6 +379,20 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
                     shutil.copy2(local_path, temp_artifact_path)
                 except OSError:
                     pass
+
+            if user_temp_artifact_path is not None:
+                needs_user_mirror = (
+                    not user_temp_artifact_path.is_file()
+                    or is_corrupt_test_artifact(user_temp_artifact_path)
+                    or user_temp_artifact_path.stat().st_size != local_path.stat().st_size
+                    or user_temp_artifact_path.stat().st_mtime < local_path.stat().st_mtime
+                )
+                if needs_user_mirror:
+                    try:
+                        user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(local_path, user_temp_artifact_path)
+                    except OSError:
+                        pass
             continue
         sub_posix = sub.replace("\\", "/")
         portable = f"~/.gemini/antigravity/brain/{sub_posix}"
@@ -385,6 +405,12 @@ def restore_brain_files_for_memory(memory: Any, sync_manager: Any = None) -> lis
                     shutil.copy2(local_path, temp_artifact_path)
                 except OSError:
                     pass
+                if user_temp_artifact_path is not None:
+                    try:
+                        user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(local_path, user_temp_artifact_path)
+                    except OSError:
+                        pass
         except Exception:
             pass
 
@@ -396,13 +422,17 @@ def _mirror_advance_tldr_files(synced_paths: list[str]) -> None:
     if not synced_paths:
         return
 
-    from aivc.config import get_aivc_temp_dir, get_storage_root
+    from aivc.config import get_aivc_temp_dir, get_aivc_user_temp_dir, get_storage_root
     from aivc.sync.drive import NativeDriveSyncManager
 
     legacy_dir = Path.home() / ".gemini" / "antigravity" / "brain" / "advance_tldr"
     legacy_dir.mkdir(parents=True, exist_ok=True)
     temp_adv_dir = get_aivc_temp_dir() / "advance_tldr"
     temp_adv_dir.mkdir(parents=True, exist_ok=True)
+    user_temp_adv_dir = get_aivc_user_temp_dir() / "advance_tldr"
+    mirror_user_temp = (user_temp_adv_dir.resolve() != temp_adv_dir.resolve())
+    if mirror_user_temp:
+        user_temp_adv_dir.mkdir(parents=True, exist_ok=True)
 
     mgr = None
     try:
@@ -434,6 +464,15 @@ def _mirror_advance_tldr_files(synced_paths: list[str]) -> None:
                 shutil.copy2(p_src, p_temp)
             except Exception:
                 pass
+
+        # 2b. Mirror to user_temp_adv_dir if different from temp_adv_dir
+        if mirror_user_temp:
+            p_user_temp = user_temp_adv_dir / filename
+            if p_user_temp.resolve() != p_src.resolve():
+                try:
+                    shutil.copy2(p_src, p_user_temp)
+                except Exception:
+                    pass
 
         # 3. Systematically copy to legacy_dir (~/.gemini/antigravity/brain/advance_tldr/)
         p_legacy = legacy_dir / filename
