@@ -256,4 +256,40 @@ def test_remember_with_roadmap_items(tmp_path: Path, ws: Workspace) -> None:
     reloaded = ws._load_memory(m.id)
     assert reloaded.user_items[2]["done"] is True
 
+
+def test_user_items_and_file_memories_chronological_order(tmp_path: Path, ws: Workspace) -> None:
+    f = _write(tmp_path / "project_note.md", b"Project details")
+
+    # Commit 1 with item-1 and item-2
+    m1 = ws.remember(
+        "Commit 1",
+        journal="First commit",
+        read_files=[str(f)],
+        user_items=[
+            {"id": "item-1", "task": "Task 1", "task_status": "await_validation"},
+            {"id": "item-2", "task": "Task 2", "task_status": "await_validation"},
+        ],
+    )
+    assert [it["id"] for it in m1.user_items] == ["item-1", "item-2"]
+
+    # Commit 2: updates item-1 and adds item-3, passed in mixed order [item-3, item-1]
+    m2 = ws.remember(
+        "Commit 2",
+        journal="Second commit",
+        read_files=[str(f)],
+        user_items=[
+            {"id": "item-3", "task": "Task 3", "task_status": "await_validation"},
+            {"id": "item-1", "task": "Task 1 updated", "task_status": "await_validation"},
+        ],
+    )
+    # Chronological sort should place existing item-1 before newly created item-3
+    assert [it["id"] for it in m2.user_items] == ["item-1", "item-3"]
+    assert m2.user_items[0]["task"] == "Task 1 updated"
+
+    # Verify get_file_history returns memories in chronological ascending order (m1 then m2)
+    memories = ws.get_file_history(str(f))
+    assert len(memories) >= 2
+    assert [m.id for m in memories[:2]] == [m1.id, m2.id]
+    assert memories[0].timestamp <= memories[1].timestamp
+
 

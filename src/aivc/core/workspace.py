@@ -356,6 +356,7 @@ class Workspace:
         actual_edited_files = list(dict.fromkeys([self._resolve_tracked_path(f, allow_basename_fallback=False) for f in actual_edited_files]))
 
         memory_id = str(uuid.uuid4())
+        now_ts = datetime.now(timezone.utc).isoformat()
         self._last_modified_commit_ids: list[str] = []
 
         # Merge input task collections
@@ -375,19 +376,30 @@ class Workspace:
                 elif isinstance(it, str):
                     raw_task_entries.append(({"task": it}, True))
 
-        # Build existing task map across commits for lookup and event-sourcing
+        # Build existing task map across commits for lookup and event-sourcing, sorted chronologically
         existing_tasks: dict[str, dict[str, Any]] = {}
         commits_data: dict[Path, dict[str, Any]] = {}
+        raw_commits: list[tuple[str, str, Path, dict[str, Any]]] = []
         for p in self._commits_dir.glob("*.json"):
             try:
                 c_data = json.loads(p.read_text(encoding="utf-8"))
-                commits_data[p] = c_data
-                for c_it in c_data.get("user_items", []):
-                    c_id = c_it.get("id")
-                    if c_id and c_id not in existing_tasks:
-                        existing_tasks[c_id] = c_it
+                c_ts = str(c_data.get("timestamp") or "")
+                raw_commits.append((c_ts, p.name, p, c_data))
             except Exception:
                 continue
+
+        raw_commits.sort(key=lambda x: (x[0], x[1]))
+
+        first_seen: dict[str, tuple[str, int]] = {}
+        for c_ts, p_name, p, c_data in raw_commits:
+            commits_data[p] = c_data
+            for c_idx, c_it in enumerate(c_data.get("user_items", []), 1):
+                if isinstance(c_it, dict):
+                    c_id = c_it.get("id")
+                    if c_id:
+                        if c_id not in first_seen:
+                            first_seen[c_id] = (c_it.get("created_at") or c_ts, c_idx)
+                        existing_tasks[c_id] = c_it
 
         norm_user_items: list[dict[str, Any]] = []
         status_updates_by_id: dict[str, tuple[str, bool]] = {}
@@ -440,6 +452,15 @@ class Workspace:
             if not details and prior_task and prior_task.get("details"):
                 details = str(prior_task.get("details", "")).strip()
 
+            # Resolve created_at
+            created_at = item.get("created_at")
+            if not created_at and raw_id and raw_id in first_seen:
+                created_at = first_seen[raw_id][0]
+            if not created_at and prior_task and prior_task.get("created_at"):
+                created_at = prior_task["created_at"]
+            if not created_at:
+                created_at = now_ts
+
             norm_item = {
                 "id": final_id,
                 "task": task_title,
@@ -447,11 +468,25 @@ class Workspace:
                 "done": done,
                 "task_status": task_status,
                 "kind": kind,
+                "created_at": created_at,
             }
             norm_user_items.append(norm_item)
 
             if raw_id and prior_task:
                 status_updates_by_id[raw_id] = (task_status, done)
+
+        # Sort user_items chronologically: existing tasks by (first_seen_ts, first_seen_idx), new tasks after in submission order
+        def _task_sort_key(entry: tuple[int, dict[str, Any]]) -> tuple[int, str, int]:
+            submission_idx, t_item = entry
+            t_id = t_item.get("id", "")
+            if t_id in first_seen:
+                fs_ts, fs_idx = first_seen[t_id]
+                return (0, fs_ts, fs_idx)
+            return (1, t_item.get("created_at") or now_ts, submission_idx)
+
+        indexed_items = list(enumerate(norm_user_items, 1))
+        indexed_items.sort(key=_task_sort_key)
+        norm_user_items = [it for _, it in indexed_items]
 
         # Event-sourcing update on previous commits if status changed
         if status_updates_by_id:
@@ -548,7 +583,7 @@ class Workspace:
 
         memory = Memory(
             id=memory_id,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=now_ts,
             title=title,
             note=full_note,
             parent_id=self._state.get("head_commit_id"),
@@ -679,7 +714,7 @@ class Workspace:
                         matching_memories.append(mem)
                         break
 
-        matching_memories.sort(key=lambda m: m.timestamp, reverse=True)
+        matching_memories.sort(key=lambda m: m.timestamp)
         return matching_memories
 
     def get_tracked_files_metadata(self) -> dict[str, dict]:
