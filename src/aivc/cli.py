@@ -5,6 +5,7 @@ AIVC Command Line Interface.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import sys
@@ -458,6 +459,451 @@ def _save_dream_inbox_processed(data: dict) -> None:
             pass
 
 
+_DREAM_INBOX_FOLDER_IDS_CACHE: list[str] | None = None
+
+
+def _get_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
+    """Retrieve all Google Drive folder IDs named 'Dream_Inbox' at root."""
+    global _DREAM_INBOX_FOLDER_IDS_CACHE
+    if use_cache and _DREAM_INBOX_FOLDER_IDS_CACHE:
+        return _DREAM_INBOX_FOLDER_IDS_CACHE
+
+    from aivc.config import get_aivc_dir
+    cache_file = get_aivc_dir() / "dream_inbox_folders.json"
+    if use_cache and cache_file.exists():
+        try:
+            cache_data = json.loads(cache_file.read_text(encoding="utf-8"))
+            if isinstance(cache_data, dict) and "folder_ids" in cache_data:
+                cached_ids = cache_data["folder_ids"]
+                cached_time = cache_data.get("timestamp", 0)
+                import time
+                if time.time() - cached_time < 3600 and cached_ids:
+                    _DREAM_INBOX_FOLDER_IDS_CACHE = cached_ids
+                    return cached_ids
+        except Exception:
+            pass
+
+    import subprocess
+    folder_ids = []
+    try:
+        out = subprocess.check_output(
+            ["rclone", "lsf", "--dirs-only", "--format", "ip", "gdrive:"],
+            stderr=subprocess.DEVNULL,
+            encoding="utf-8"
+        )
+        for line in out.splitlines():
+            line = line.strip()
+            if not line or ";" not in line:
+                continue
+            parts = line.split(";", 1)
+            f_id, f_path = parts[0].strip(), parts[1].strip()
+            if f_path.rstrip("/") == "Dream_Inbox":
+                folder_ids.append(f_id)
+    except Exception as e:
+        print(f"Warning: Failed to list Dream_Inbox folder IDs via rclone lsf: {e}", file=sys.stderr)
+
+    if not folder_ids:
+        folder_ids = ["1ZLsrkwRBhH2Xz82eooQC3ahsePFjm28h", "1JsNgV7uD1c981dNQpYEprKdjVgitLDo8"]
+
+    _DREAM_INBOX_FOLDER_IDS_CACHE = folder_ids
+    try:
+        import time
+        cache_file.write_text(json.dumps({"folder_ids": folder_ids, "timestamp": time.time()}), encoding="utf-8")
+    except Exception:
+        pass
+
+    return folder_ids
+
+
+def _list_all_dream_inbox_files(folder_ids: list[str] | None = None) -> list[dict]:
+    """Scan all Dream_Inbox root folders and return deduplicated list of files with FolderID attached."""
+    import subprocess
+    import json
+    if folder_ids is None:
+        folder_ids = _get_dream_inbox_folder_ids()
+
+    seen_ids = set()
+    all_files = []
+    for fid in folder_ids:
+        try:
+            out = subprocess.check_output(
+                ["rclone", "lsjson", "gdrive:", "--drive-root-folder-id", fid],
+                stderr=subprocess.DEVNULL,
+                encoding="utf-8"
+            )
+            files = json.loads(out)
+            for f in files:
+                f_id = f.get("ID")
+                if f_id and f_id in seen_ids:
+                    continue
+                if f_id:
+                    seen_ids.add(f_id)
+                f["FolderID"] = fid
+                all_files.append(f)
+        except Exception as e:
+            print(f"Warning: Failed to list files in folder {fid}: {e}", file=sys.stderr)
+    return all_files
+
+
+def _get_rclone_config_path() -> Path:
+    """Resolve path to rclone.conf."""
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            p = Path(appdata) / "rclone" / "rclone.conf"
+            if p.exists():
+                return p
+    default_p = Path.home() / ".config" / "rclone" / "rclone.conf"
+    if default_p.exists():
+        return default_p
+    try:
+        import subprocess
+        out = subprocess.check_output(["rclone", "config", "file"], stderr=subprocess.DEVNULL, encoding="utf-8")
+        for line in out.splitlines():
+            line = line.strip()
+            if line and not line.startswith("Configuration"):
+                p = Path(line)
+                if p.exists():
+                    return p
+    except Exception:
+        pass
+    return Path(os.environ.get("APPDATA", "")) / "rclone" / "rclone.conf"
+
+
+def _read_token_from_rclone_conf(conf_path: Path) -> tuple[str, str] | None:
+    """Return (access_token, expiry_iso) from [gdrive] or [gdrive_rw] in rclone.conf."""
+    import configparser
+    cp = configparser.RawConfigParser()
+    try:
+        cp.read(conf_path, encoding="utf-8")
+    except Exception:
+        return None
+    section = None
+    if cp.has_section("gdrive") and cp.has_option("gdrive", "token"):
+        section = "gdrive"
+    elif cp.has_section("gdrive_rw") and cp.has_option("gdrive_rw", "token"):
+        section = "gdrive_rw"
+    if not section:
+        return None
+    raw_tok = cp.get(section, "token")
+    try:
+        tok_data = json.loads(raw_tok)
+        return tok_data.get("access_token"), tok_data.get("expiry")
+    except Exception:
+        return None
+
+
+def _get_rclone_drive_access_token() -> str:
+    """Retrieve active Google Drive OAuth access_token from rclone, refreshing if needed."""
+    import subprocess
+    import datetime
+    conf_path = _get_rclone_config_path()
+    token_info = _read_token_from_rclone_conf(conf_path) if conf_path.exists() else None
+
+    needs_refresh = True
+    if token_info and token_info[0] and token_info[1]:
+        try:
+            exp_str = token_info[1]
+            exp_dt = datetime.datetime.fromisoformat(exp_str)
+            now_dt = datetime.datetime.now(datetime.timezone.utc)
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=datetime.timezone.utc)
+            diff_sec = (exp_dt - now_dt).total_seconds()
+            if diff_sec > 120:
+                needs_refresh = False
+        except Exception:
+            needs_refresh = True
+
+    if needs_refresh:
+        try:
+            subprocess.run(["rclone", "about", "gdrive:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+        except Exception:
+            pass
+        token_info = _read_token_from_rclone_conf(conf_path) if conf_path.exists() else None
+
+    if token_info and token_info[0]:
+        return token_info[0]
+    raise RuntimeError("Failed to obtain Google Drive access token from rclone configuration.")
+
+
+def _drive_get_start_page_token(conn: http.client.HTTPSConnection, access_token: str) -> str:
+    """Fetch initial startPageToken for Drive changes.list."""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Connection": "keep-alive"
+    }
+    conn.request("GET", "/drive/v3/changes/startPageToken?supportsAllDrives=true", headers=headers)
+    resp = conn.getresponse()
+    if resp.status == 401:
+        raise PermissionError("HTTP 401 Unauthorized: access token expired")
+    if resp.status != 200:
+        body = resp.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Failed to get startPageToken (HTTP {resp.status}): {body}")
+    data = json.loads(resp.read().decode("utf-8"))
+    return data["startPageToken"]
+
+
+def _drive_poll_changes(conn: http.client.HTTPSConnection, access_token: str, page_token: str) -> tuple[str, list[dict]]:
+    """Poll Drive changes.list from page_token and return (new_start_page_token, changes)."""
+    import urllib.parse
+    all_changes = []
+    current_token = page_token
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Connection": "keep-alive"
+    }
+    while True:
+        params = {
+            "pageToken": current_token,
+            "includeRemoved": "false",
+            "spaces": "drive",
+            "supportsAllDrives": "true",
+            "includeItemsFromAllDrives": "true",
+            "fields": "newStartPageToken,nextPageToken,changes(fileId,removed,file(id,name,parents,trashed,mimeType,modifiedTime))"
+        }
+        path = f"/drive/v3/changes?{urllib.parse.urlencode(params)}"
+        conn.request("GET", path, headers=headers)
+        resp = conn.getresponse()
+        if resp.status == 401:
+            raise PermissionError("HTTP 401 Unauthorized: access token expired")
+        if resp.status != 200:
+            body = resp.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Failed to poll changes (HTTP {resp.status}): {body}")
+        data = json.loads(resp.read().decode("utf-8"))
+        changes = data.get("changes", [])
+        all_changes.extend(changes)
+        if "nextPageToken" in data and data["nextPageToken"]:
+            current_token = data["nextPageToken"]
+        elif "newStartPageToken" in data and data["newStartPageToken"]:
+            return data["newStartPageToken"], all_changes
+        else:
+            return current_token, all_changes
+
+
+def _extract_dream_inbox_doc_text(folder_id: str, file_name: str) -> str:
+    """Download and extract full text from a document in Dream_Inbox."""
+    import tempfile
+    import zipfile
+    import xml.etree.ElementTree as ET
+    import subprocess
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        cmd = ["rclone", "copy", "--drive-root-folder-id", folder_id, f"gdrive:{file_name}", str(tmp_path)]
+        subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        target_file = tmp_path / file_name
+        if not target_file.exists():
+            candidates = list(tmp_path.iterdir())
+            if candidates:
+                target_file = candidates[0]
+            else:
+                raise FileNotFoundError(f"File {file_name} not found after rclone copy from folder {folder_id}")
+
+        if zipfile.is_zipfile(target_file):
+            with zipfile.ZipFile(target_file) as z:
+                xml_content = z.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            paras = []
+            for p in tree.iterfind(".//w:p", ns):
+                t_parts = [t.text for t in p.iterfind(".//w:t", ns) if t.text]
+                if t_parts:
+                    paras.append("".join(t_parts))
+            return "\n".join(paras)
+        else:
+            return target_file.read_text(encoding="utf-8", errors="replace")
+
+
+def _find_agy_executable() -> Path:
+    """Resolve path to agy executable."""
+    import shutil
+    agy = shutil.which("agy")
+    if agy:
+        return Path(agy)
+    candidates = [
+        Path.home() / "AppData" / "Local" / "agy" / "bin" / "agy.exe",
+        Path.home() / "AppData" / "Local" / "Programs" / "agy" / "bin" / "agy.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Antigravity" / "bin" / "agy.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return Path("agy.exe")
+
+
+def _watch_dream_inbox(args: argparse.Namespace) -> None:
+    """Differential event-driven watcher for Google Drive Dream_Inbox via changes.list."""
+    import subprocess
+    import time
+    import datetime
+
+    interval = getattr(args, "interval", 15)
+    once = getattr(args, "once", False)
+    dry_run = getattr(args, "dry_run", False)
+    workspace = getattr(args, "workspace", r"c:\Users\Jamet\Documents\VoiceNotes")
+
+    print(f"{CYAN}{BOLD}=== AIVC Dream_Inbox Event Watcher ==={RESET}")
+    print(f"  {DIM}Workspace:{RESET} {workspace}")
+    print(f"  {DIM}Interval:{RESET}  {interval}s (mode: {'once' if once else 'continuous'}{', dry-run' if dry_run else ''})")
+
+    folder_ids = _get_dream_inbox_folder_ids()
+    folder_ids_set = set(folder_ids)
+    print(f"  {DIM}Dossiers Dream_Inbox détectés ({len(folder_ids)}) :{RESET} {', '.join(folder_ids)}")
+
+    access_token = _get_rclone_drive_access_token()
+    conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
+    try:
+        page_token = _drive_get_start_page_token(conn, access_token)
+        print(f"  {GREEN}{CHECK_MARK} Connexion API Google Drive établie. startPageToken initial: {page_token}{RESET}\n")
+    except Exception as e:
+        conn.close()
+        raise RuntimeError(f"Échec d'initialisation startPageToken: {e}")
+
+    agy_path = _find_agy_executable()
+
+    def _process_doc(doc_name: str, doc_id: str, fid: str, is_demo: bool = False) -> bool:
+        print(f"{YELLOW}{BOLD}>>> Nouveau document détecté : {doc_name} (ID: {doc_id}, Folder: {fid}){' [DRY-RUN DEMO SUR DERNIER DOC]' if is_demo else ''}{RESET}")
+        try:
+            doc_text = _extract_dream_inbox_doc_text(fid, doc_name)
+        except Exception as ex:
+            print(f"{RED}Erreur lors de l'extraction du document {doc_name}: {ex}{RESET}")
+            return False
+
+        lines = doc_text.splitlines()
+        preview = "\n".join(lines[:10]) + ("\n..." if len(lines) > 10 else "")
+        print(f"{DIM}Extrait du document ({len(doc_text)} caractères, {len(lines)} lignes) :{RESET}")
+        print(f"{DIM}--------------------------------------------------{RESET}")
+        print(preview)
+        print(f"{DIM}--------------------------------------------------{RESET}")
+
+        prompt = (
+            f"Tu es réveillé en mode événementiel par `aivc dream-inbox watch` suite à l'arrivée du document Google Drive `{doc_name}` (ID: `{doc_id}`) dans `Dream_Inbox`.\n"
+            f"Voici le contenu intégral du document :\n"
+            f"================================================================================\n"
+            f"{doc_text}\n"
+            f"================================================================================\n"
+            f"Instructions d'exécution immédiate (mode ciblé type /one-shot multi-projets, sans durée forcée de 45 min) :\n"
+            f"1. Mets à jour sobrement les notes maîtresses Obsidian concernées (avec les citations exactes de la section 'Verbatim Exact d'Henri') et ajuste les scores de priorité via `project_memory_cli.py set-score` si demandé.\n"
+            f"2. Lance en parallèle un sous-agent `superviseur-projet` (`Model: 'inherit'`) par projet mentionné afin de réaliser immédiatement les demandes et tâches décrites dans ce document.\n"
+            f"3. Enregistre chaque livrable, réponse ou clôture de tâche via `mcp-cli call aivc task_commit` sur la note maîtresse de chaque projet concerné afin que les Google Docs `Live_*` dans `AIVC_Sync/` soient mis à jour pour Gemini.\n"
+        )
+
+        agy_cmd = [str(agy_path), "--mode", "auto", "-p", prompt]
+        if dry_run or is_demo:
+            print(f"{CYAN}{BOLD}[DRY-RUN] Commande agy.exe préparée :{RESET}")
+            print(f"  Executable: {agy_path}")
+            print(f"  Working Dir: {workspace}")
+            print(f"  Prompt size: {len(prompt)} caractères")
+            print(f"  Mode: --mode auto -p <prompt>")
+            return True
+
+        print(f"{CYAN}Exécution d'agy.exe pour traiter le document...{RESET}")
+        res = subprocess.run(agy_cmd, cwd=workspace)
+        if res.returncode == 0:
+            print(f"{GREEN}{CHECK_MARK} Traitement agy réussi (returncode 0).{RESET}")
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            reg = _load_dream_inbox_processed()
+            entry = {
+                "trashed_at": now_iso,
+                "method": "watch_event",
+                "name": doc_name,
+                "doc_id": doc_id,
+            }
+            reg.setdefault("processed", {})[doc_id] = entry
+            reg["processed"][doc_name] = entry
+            _save_dream_inbox_processed(reg)
+
+            try:
+                subprocess.run(
+                    ["rclone", "deletefile", "--drive-root-folder-id", fid, f"gdrive:{doc_name}"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=15
+                )
+                print(f"  {GREEN}{CHECK_MARK} Fichier distant supprimé/purgé du dossier {fid}.{RESET}")
+            except Exception as e:
+                print(f"  {YELLOW}Avertissement lors de la suppression rclone: {e}{RESET}")
+            return True
+        else:
+            print(f"{RED}Erreur: agy.exe a échoué avec le code retour {res.returncode}. Document conservé pour un prochain cycle.{RESET}")
+            return False
+
+    reg = _load_dream_inbox_processed()
+    processed_map = reg.get("processed", {})
+    all_existing_files = _list_all_dream_inbox_files(folder_ids)
+
+    unprocessed = []
+    for f in all_existing_files:
+        f_name = f.get("Name", "")
+        f_id = f.get("ID", "")
+        if f_id not in processed_map and f_name not in processed_map:
+            unprocessed.append(f)
+
+    if unprocessed:
+        print(f"{YELLOW}Scan initial : {len(unprocessed)} document(s) non traité(s) détecté(s).{RESET}")
+        for f in unprocessed:
+            _process_doc(f.get("Name"), f.get("ID"), f.get("FolderID", folder_ids[0]))
+    else:
+        print(f"{GREEN}{CHECK_MARK} Scan initial : aucun document non traité en attente.{RESET}")
+        if dry_run and once and all_existing_files:
+            sorted_files = sorted(all_existing_files, key=lambda x: x.get("ModTime", ""), reverse=True)
+            demo_f = sorted_files[0]
+            _process_doc(demo_f.get("Name"), demo_f.get("ID"), demo_f.get("FolderID", folder_ids[0]), is_demo=True)
+
+    if once:
+        print(f"\n{GREEN}{CHECK_MARK} Cycle unique terminé (--once).{RESET}")
+        conn.close()
+        return
+
+    print(f"\n{CYAN}Démarrage de la boucle de surveillance (intervalle: {interval}s)... Pressez Ctrl+C pour arrêter.{RESET}")
+    err_count = 0
+    try:
+        while True:
+            time.sleep(interval)
+            try:
+                try:
+                    new_token, changes = _drive_poll_changes(conn, access_token, page_token)
+                except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError, PermissionError):
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    access_token = _get_rclone_drive_access_token()
+                    conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
+                    new_token, changes = _drive_poll_changes(conn, access_token, page_token)
+
+                page_token = new_token
+                err_count = 0
+
+                for ch in changes:
+                    f_info = ch.get("file", {})
+                    if not f_info or f_info.get("trashed"):
+                        continue
+                    f_name = f_info.get("name", "")
+                    f_id = ch.get("fileId") or f_info.get("id")
+                    f_parents = f_info.get("parents", [])
+
+                    is_inbox = any(p in folder_ids_set for p in f_parents) or f_name.startswith("Dream_Inbox_")
+                    if is_inbox:
+                        reg = _load_dream_inbox_processed()
+                        p_map = reg.get("processed", {})
+                        if f_id not in p_map and f_name not in p_map:
+                            target_fid = next((p for p in f_parents if p in folder_ids_set), folder_ids[0])
+                            _process_doc(f_name, f_id, target_fid)
+
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                err_count += 1
+                backoff = min(interval * (2 ** err_count), 120)
+                print(f"{RED}Erreur lors de l'interrogation Drive ({e}). Attente {backoff}s...{RESET}", file=sys.stderr)
+                time.sleep(backoff)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def cmd_dream_inbox(args: argparse.Namespace) -> None:
     """Inspect and manage Google Drive Dream_Inbox files for the /dream skill."""
     import subprocess
@@ -476,34 +922,25 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
 
     action = args.inbox_action
 
-    def _resolve_dream_inbox_target(target_str: str) -> tuple[str | None, str | None]:
-        doc_id = None
-        doc_name = None
-        try:
-            out = subprocess.check_output(
-                ["rclone", "lsjson", "gdrive:Dream_Inbox"],
-                stderr=subprocess.DEVNULL,
-                encoding="utf-8"
-            )
-            files = json.loads(out)
-            for f in files:
-                if f.get("Name") == target_str or f.get("ID") == target_str:
-                    return f.get("ID"), f.get("Name")
-        except Exception:
-            pass
+    if action == "watch":
+        _watch_dream_inbox(args)
+        return
+
+    folder_ids = _get_dream_inbox_folder_ids()
+
+    def _resolve_dream_inbox_target(target_str: str) -> tuple[str | None, str | None, str | None]:
+        files = _list_all_dream_inbox_files(folder_ids)
+        for f in files:
+            if f.get("Name") == target_str or f.get("ID") == target_str:
+                return f.get("ID"), f.get("Name"), f.get("FolderID")
         if len(target_str) > 20 and "." not in target_str:
-            return target_str, None
-        return None, target_str
+            return target_str, None, None
+        return None, target_str, None
 
     if action == "list":
         print(f"{CYAN}{BOLD}Google Drive Dream_Inbox Listing:{RESET}")
         try:
-            out = subprocess.check_output(
-                ["rclone", "lsjson", "gdrive:Dream_Inbox"],
-                stderr=subprocess.DEVNULL,
-                encoding="utf-8"
-            )
-            files = json.loads(out)
+            files = _list_all_dream_inbox_files(folder_ids)
             registry = _load_dream_inbox_processed()
             processed_map = registry.get("processed", {})
             include_all = getattr(args, "all", False)
@@ -527,11 +964,12 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             for i, f in enumerate(filtered_files, 1):
                 f_name = f.get("Name")
                 f_id = f.get("ID")
+                f_fid = f.get("FolderID", "")[:8]
                 f_mod = f.get("ModTime", "")[:19]
                 status_tag = ""
                 if f_id in processed_map or f_name in processed_map:
                     status_tag = f" {YELLOW}[déjà traité]{RESET}"
-                print(f"  {i}. {BOLD}{f_name}{RESET} (ID: {f_id}, Date: {f_mod}){status_tag}")
+                print(f"  {i}. {BOLD}{f_name}{RESET} (ID: {f_id}, Dossier: {f_fid}..., Date: {f_mod}){status_tag}")
         except Exception as e:
             print(f"{RED}Error listing Dream_Inbox: {e}{RESET}")
 
@@ -542,53 +980,46 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             return
         print(f"{DIM}Reading '{target}' from Dream_Inbox...{RESET}\n")
 
-        doc_id, doc_name = _resolve_dream_inbox_target(target)
-        target_filename = doc_name or (f"{target}.docx" if len(target) > 20 and "." not in target else target)
+        doc_id, doc_name, doc_fid = _resolve_dream_inbox_target(target)
+        target_name = doc_name or (f"{target}.docx" if len(target) > 20 and "." not in target else target)
+        fid = doc_fid or (folder_ids[0] if folder_ids else "1ZLsrkwRBhH2Xz82eooQC3ahsePFjm28h")
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            local_target = Path(tmp_dir) / target_filename
+        try:
+            content = _extract_dream_inbox_doc_text(fid, target_name)
+            print(content)
+        except Exception as e:
+            # Fallback to direct download attempt via doc_id if extraction failed
             downloaded = False
-            try:
-                remote_name = doc_name or target
-                remote_path = f"Dream_Inbox/{remote_name}"
-                subprocess.check_call(
-                    ["rclone", "copyto", f"gdrive:{remote_path}", str(local_target)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                downloaded = local_target.exists() and local_target.stat().st_size > 0
-            except Exception:
-                pass
-
-            if not downloaded and doc_id:
-                try:
-                    from aivc.config import get_storage_root
-                    from aivc.sync.drive import NativeDriveSyncManager
-                    mgr = NativeDriveSyncManager(get_storage_root())
-                    if getattr(mgr, "enabled", False):
-                        service = mgr._get_service()
-                        content = service.files().get_media(fileId=doc_id).execute()
-                        local_target.write_bytes(content)
-                        downloaded = True
-                except Exception:
-                    pass
-
-            if downloaded:
-                if zipfile.is_zipfile(local_target):
-                    with zipfile.ZipFile(local_target) as z:
-                        xml_content = z.read("word/document.xml")
-                    tree = ET.fromstring(xml_content)
-                    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-                    paras = []
-                    for p in tree.iterfind(".//w:p", ns):
-                        t_parts = [t.text for t in p.iterfind(".//w:t", ns) if t.text]
-                        if t_parts:
-                            paras.append("".join(t_parts))
-                    print("\n".join(paras))
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                local_target = Path(tmp_dir) / target_name
+                if doc_id:
+                    try:
+                        from aivc.config import get_storage_root
+                        from aivc.sync.drive import NativeDriveSyncManager
+                        mgr = NativeDriveSyncManager(get_storage_root())
+                        if getattr(mgr, "enabled", False):
+                            service = mgr._get_service()
+                            data = service.files().get_media(fileId=doc_id).execute()
+                            local_target.write_bytes(data)
+                            downloaded = True
+                    except Exception:
+                        pass
+                if downloaded:
+                    if zipfile.is_zipfile(local_target):
+                        with zipfile.ZipFile(local_target) as z:
+                            xml_content = z.read("word/document.xml")
+                        tree = ET.fromstring(xml_content)
+                        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                        paras = []
+                        for p in tree.iterfind(".//w:p", ns):
+                            t_parts = [t.text for t in p.iterfind(".//w:t", ns) if t.text]
+                            if t_parts:
+                                paras.append("".join(t_parts))
+                        print("\n".join(paras))
+                    else:
+                        print(local_target.read_text(encoding="utf-8", errors="replace"))
                 else:
-                    print(local_target.read_text(encoding="utf-8", errors="replace"))
-            else:
-                print(f"{RED}Error reading file from Dream_Inbox: could not download '{target}'.{RESET}")
+                    print(f"{RED}Error reading file from Dream_Inbox: could not download '{target}': {e}{RESET}")
 
     elif action == "trash":
         target = args.target
@@ -597,7 +1028,8 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             return
         print(f"{DIM}Attempting to trash '{target}' from Dream_Inbox...{RESET}")
 
-        doc_id, doc_name = _resolve_dream_inbox_target(target)
+        doc_id, doc_name, doc_fid = _resolve_dream_inbox_target(target)
+        fid = doc_fid or (folder_ids[0] if folder_ids else "1ZLsrkwRBhH2Xz82eooQC3ahsePFjm28h")
 
         if not doc_id and len(target) > 20:
             doc_id = target
@@ -654,17 +1086,16 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
                 fname = doc_name or (target if "." in target else None)
                 if fname:
                     res_rclone = subprocess.run(
-                        ["rclone", "deletefile", f"gdrive:Dream_Inbox/{fname}"],
+                        ["rclone", "deletefile", "--drive-root-folder-id", fid, f"gdrive:{fname}"],
                         capture_output=True,
                         text=True,
-                        timeout=10,
+                        timeout=15,
                     )
                     if res_rclone.returncode == 0:
                         trashed = True
             except Exception:
                 pass
 
-        # Persist to registry (local + Google Drive AIVC_Sync)
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         reg = _load_dream_inbox_processed()
         primary_key = doc_id or target
@@ -689,7 +1120,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             print(f"Il est désormais masqué de 'dream-inbox list' (utiliser 'dream-inbox list --all' pour l'afficher).{RESET}")
             print(f"{YELLOW}Note : Les tokens locaux actuels sont restreints en écriture (scope 'drive.readonly' ou 'drive.file').{RESET}")
             print(f"Pour purger ce document manuellement sur Google Drive si vous le souhaitez :")
-            print(f"  {CYAN}https://drive.google.com/drive/folders/1JsNgV7uD1c981dNQpYEprKdjVgitLDo8{RESET}")
+            print(f"  {CYAN}https://drive.google.com/drive/folders/{fid}{RESET}")
 
 
 def cmd_backfill_main_project(args: argparse.Namespace) -> None:
@@ -930,8 +1361,8 @@ def main() -> None:
     )
     parser_inbox.add_argument(
         "inbox_action",
-        choices=["list", "read", "trash"],
-        help="Action to perform (list, read, trash)"
+        choices=["list", "read", "trash", "watch"],
+        help="Action to perform (list, read, trash, watch)"
     )
     parser_inbox.add_argument(
         "target",
@@ -944,6 +1375,28 @@ def main() -> None:
         "--all",
         action="store_true",
         help="List all files including already processed/trashed documents"
+    )
+    parser_inbox.add_argument(
+        "--interval",
+        type=int,
+        default=15,
+        help="Polling interval in seconds for watch mode (default: 15)"
+    )
+    parser_inbox.add_argument(
+        "--once",
+        action="store_true",
+        help="Run only one scan/detection cycle and exit (useful for CI/test)"
+    )
+    parser_inbox.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate detection and command generation without launching agy or modifying registry"
+    )
+    parser_inbox.add_argument(
+        "--workspace",
+        type=str,
+        default=r"c:\Users\Jamet\Documents\VoiceNotes",
+        help=r"Target workspace directory for agy (default: c:\Users\Jamet\Documents\VoiceNotes)"
     )
 
     # backfill-main-project
