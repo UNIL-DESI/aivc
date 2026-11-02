@@ -80,6 +80,12 @@ class SemanticEngine:
         self._sync_queue = queue.Queue()
         self._sync_manager = NativeDriveSyncManager(storage_root)
         
+        # Pre-initialize ChromaDB indexer on creator thread to avoid Windows Rust bindings threading crash
+        try:
+            _ = self._indexer
+        except Exception:
+            pass
+
         self._indexing_thread = threading.Thread(target=self._indexing_worker_loop, daemon=True)
         self._sync_thread = threading.Thread(target=self._sync_worker_loop, daemon=True)
         

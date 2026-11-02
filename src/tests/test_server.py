@@ -115,12 +115,14 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
         tools = await _server.mcp.list_tools()
         tool_names = [t.name for t in tools]
         self.assertIn("task_commit", tool_names)
-        self.assertNotIn("remember", tool_names)
+        self.assertIn("remember", tool_names)
         tc_tool = [t for t in tools if t.name == "task_commit"][0]
         schema = tc_tool.inputSchema
-        self.assertEqual(schema.get("required"), ["title", "journal", "main_project_file"])
-        for p in ("title", "journal", "main_project_file", "tasks", "user_items", "edited_files", "read_files", "urls", "roadmap_items"):
+        self.assertEqual(schema.get("required"), ["title", "content", "main_project_file"])
+        for p in ("title", "content", "main_project_file", "task_id", "task_status", "edited_files", "read_files", "urls"):
             self.assertIn(p, schema.get("properties", {}))
+        for legacy_p in ("journal", "user_items", "tasks", "roadmap_items", "completed_user_items"):
+            self.assertNotIn(legacy_p, schema.get("properties", {}))
 
     async def test_mcp_call_tool_task_commit_and_remember_transition(self):
         _mock_engine.remember.return_value = _make_memory()
