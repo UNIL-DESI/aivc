@@ -14,6 +14,7 @@ import re
 import shutil
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -171,6 +172,55 @@ def normalize_project_tldr_title(title: str) -> str:
 
 
 normalize_advance_tldr_title = normalize_project_tldr_title
+
+
+def format_french_task_date(ts: Any) -> str:
+    """Format an ISO timestamp, unix timestamp or datetime into a deterministic French string:
+    '(Jour J mois, HHhMM)', e.g. '(Mardi 2 novembre, 14h11)'.
+    Does not depend on locale.setlocale. Converts to local timezone.
+    """
+    if not ts:
+        return ""
+
+    dt: datetime | None = None
+    if isinstance(ts, datetime):
+        dt = ts
+    elif isinstance(ts, (int, float)):
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    elif isinstance(ts, str):
+        raw_s = ts.strip()
+        if not raw_s:
+            return ""
+        try:
+            clean_s = raw_s.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(clean_s)
+        except Exception:
+            try:
+                import dateutil.parser
+                dt = dateutil.parser.parse(raw_s)
+            except Exception:
+                return ""
+
+    if dt is None:
+        return ""
+
+    if dt.tzinfo is not None:
+        dt = dt.astimezone()
+    else:
+        dt = dt.replace(tzinfo=timezone.utc).astimezone()
+
+    days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+    months = [
+        "janvier", "février", "mars", "avril", "mai", "juin",
+        "juillet", "août", "septembre", "octobre", "novembre", "décembre"
+    ]
+
+    day_name = days[dt.weekday()]
+    day_num = dt.day
+    month_name = months[dt.month - 1]
+    time_str = f"{dt.hour:02d}h{dt.minute:02d}"
+
+    return f"({day_name} {day_num} {month_name}, {time_str})"
 
 
 def is_corrupt_test_artifact(path: Path) -> bool:

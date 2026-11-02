@@ -654,6 +654,7 @@ class Workspace:
                 "task_status": task_status,
                 "kind": kind,
                 "created_at": created_at,
+                "updated_at": now_ts,
                 "edited_files": merged_edited,
                 "read_files": merged_read,
             }
@@ -689,6 +690,7 @@ class Workspace:
                         if c_it.get("task_status") != new_st or c_it.get("done") != new_dn:
                             c_it["task_status"] = new_st
                             c_it["done"] = new_dn
+                            c_it["updated_at"] = now_ts
                             c_modified = True
                 if c_modified:
                     c_data["user_items"] = c_items
@@ -919,6 +921,7 @@ class Workspace:
             "task": title,
             "details": content,
             "task_status": task_status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
             "edited_files": list(edited_files) if edited_files else [],
             "read_files": list(read_files) if read_files else [],
         }
@@ -955,6 +958,7 @@ class Workspace:
                 if item.get("id") in target_ids and not item.get("done", False):
                     item["done"] = True
                     item["task_status"] = "validated"
+                    item["updated_at"] = datetime.now(timezone.utc).isoformat()
                     marked_done.append(item["id"])
                     modified = True
 
