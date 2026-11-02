@@ -34,6 +34,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 CYAN = "\033[0;36m"
 GREEN = "\033[0;32m"
 YELLOW = "\033[0;33m"
+RED = "\033[0;31m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
 MAGENTA = "\033[0;35m"
@@ -480,8 +481,8 @@ def _get_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
                 if time.time() - cached_time < 3600 and cached_ids:
                     _DREAM_INBOX_FOLDER_IDS_CACHE = cached_ids
                     return cached_ids
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: Failed to read Dream_Inbox folder cache: {e}", file=sys.stderr)
 
     import subprocess
     folder_ids = []
@@ -509,8 +510,8 @@ def _get_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
     try:
         import time
         cache_file.write_text(json.dumps({"folder_ids": folder_ids, "timestamp": time.time()}), encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: Failed to write Dream_Inbox folder cache: {e}", file=sys.stderr)
 
     return folder_ids
 
@@ -616,9 +617,11 @@ def _get_rclone_drive_access_token() -> str:
 
     if needs_refresh:
         try:
-            subprocess.run(["rclone", "about", "gdrive:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-        except Exception:
-            pass
+            res = subprocess.run(["rclone", "about", "gdrive:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+            if res.returncode != 0:
+                print(f"Warning: rclone about gdrive: returned code {res.returncode}", file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: Failed to refresh token via rclone about gdrive: {e}", file=sys.stderr)
         token_info = _read_token_from_rclone_conf(conf_path) if conf_path.exists() else None
 
     if token_info and token_info[0]:
@@ -680,17 +683,74 @@ def _drive_poll_changes(conn: http.client.HTTPSConnection, access_token: str, pa
             return current_token, all_changes
 
 
-def _extract_dream_inbox_doc_text(folder_id: str, file_name: str) -> str:
-    """Download and extract full text from a document in Dream_Inbox."""
+def _extract_dream_inbox_doc_text(folder_id: str, file_name: str, file_id: str = "", mime_type: str = "") -> str:
+    """Download and extract full text from a document in Dream_Inbox.
+
+    Attempts direct REST API export/download via Google Drive v3 if file_id is provided,
+    avoiding rclone subprocess overhead and handling native Google Docs seamlessly.
+    Falls back to rclone copy if REST fails or file_id is not provided.
+    """
     import tempfile
     import zipfile
     import xml.etree.ElementTree as ET
     import subprocess
+    import io
+
+    # 1. Direct REST API attempt via Google Drive v3 if file_id is provided
+    if file_id:
+        try:
+            access_token = _get_rclone_drive_access_token()
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Connection": "close",
+            }
+
+            # Try export as text/plain (native Google Docs)
+            conn = http.client.HTTPSConnection("www.googleapis.com", timeout=20)
+            conn.request("GET", f"/drive/v3/files/{file_id}/export?mimeType=text%2Fplain", headers=headers)
+            resp = conn.getresponse()
+            if resp.status == 200:
+                text = resp.read().decode("utf-8", errors="replace")
+                conn.close()
+                return text
+            resp.read()  # Consume response body
+            conn.close()
+
+            # If export failed (e.g. HTTP 400/403 fileNotExportable for binary files), try alt=media
+            conn = http.client.HTTPSConnection("www.googleapis.com", timeout=20)
+            conn.request("GET", f"/drive/v3/files/{file_id}?alt=media", headers=headers)
+            resp = conn.getresponse()
+            if resp.status == 200:
+                raw_bytes = resp.read()
+                conn.close()
+                if zipfile.is_zipfile(io.BytesIO(raw_bytes)):
+                    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as z:
+                        xml_content = z.read("word/document.xml")
+                    tree = ET.fromstring(xml_content)
+                    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                    paras = []
+                    for p in tree.iterfind(".//w:p", ns):
+                        t_parts = [t.text for t in p.iterfind(".//w:t", ns) if t.text]
+                        if t_parts:
+                            paras.append("".join(t_parts))
+                    return "\n".join(paras)
+                else:
+                    return raw_bytes.decode("utf-8", errors="replace")
+            resp.read()
+            conn.close()
+        except Exception as e:
+            print(f"{DIM}Note: Direct REST fetch for {file_name} ({file_id}) failed ({e}); falling back to rclone...{RESET}", file=sys.stderr)
+
+    # 2. Fallback to rclone copy
+    rclone_name = file_name
+    if mime_type == "application/vnd.google-apps.document" and not rclone_name.endswith(".docx"):
+        rclone_name = f"{rclone_name}.docx"
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        cmd = ["rclone", "copy", "--drive-root-folder-id", folder_id, f"gdrive:{file_name}", str(tmp_path)]
+        cmd = ["rclone", "copy", "--drive-root-folder-id", folder_id, f"gdrive:{rclone_name}", str(tmp_path)]
         subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        target_file = tmp_path / file_name
+        target_file = tmp_path / rclone_name
         if not target_file.exists():
             candidates = list(tmp_path.iterdir())
             if candidates:
@@ -760,10 +820,10 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
 
     agy_path = _find_agy_executable()
 
-    def _process_doc(doc_name: str, doc_id: str, fid: str, is_demo: bool = False) -> bool:
+    def _process_doc(doc_name: str, doc_id: str, fid: str, is_demo: bool = False, mime_type: str = "") -> bool:
         print(f"{YELLOW}{BOLD}>>> Nouveau document détecté : {doc_name} (ID: {doc_id}, Folder: {fid}){' [DRY-RUN DEMO SUR DERNIER DOC]' if is_demo else ''}{RESET}")
         try:
-            doc_text = _extract_dream_inbox_doc_text(fid, doc_name)
+            doc_text = _extract_dream_inbox_doc_text(fid, doc_name, file_id=doc_id, mime_type=mime_type)
         except Exception as ex:
             print(f"{RED}Erreur lors de l'extraction du document {doc_name}: {ex}{RESET}")
             return False
@@ -812,14 +872,21 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
             reg["processed"][doc_name] = entry
             _save_dream_inbox_processed(reg)
 
+            rclone_del_name = doc_name
+            if mime_type == "application/vnd.google-apps.document" and not rclone_del_name.endswith(".docx"):
+                rclone_del_name = f"{rclone_del_name}.docx"
+
             try:
-                subprocess.run(
-                    ["rclone", "deletefile", "--drive-root-folder-id", fid, f"gdrive:{doc_name}"],
+                del_res = subprocess.run(
+                    ["rclone", "deletefile", "--drive-root-folder-id", fid, f"gdrive:{rclone_del_name}"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     timeout=15
                 )
-                print(f"  {GREEN}{CHECK_MARK} Fichier distant supprimé/purgé du dossier {fid}.{RESET}")
+                if del_res.returncode == 0:
+                    print(f"  {GREEN}{CHECK_MARK} Fichier distant supprimé/purgé du dossier {fid}.{RESET}")
+                else:
+                    print(f"  {YELLOW}Suppression distante non autorisée ou ignorée (rclone code {del_res.returncode}) : document archivé et masqué dans dream_inbox_processed.json.{RESET}")
             except Exception as e:
                 print(f"  {YELLOW}Avertissement lors de la suppression rclone: {e}{RESET}")
             return True
@@ -841,13 +908,13 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     if unprocessed:
         print(f"{YELLOW}Scan initial : {len(unprocessed)} document(s) non traité(s) détecté(s).{RESET}")
         for f in unprocessed:
-            _process_doc(f.get("Name"), f.get("ID"), f.get("FolderID", folder_ids[0]))
+            _process_doc(f.get("Name"), f.get("ID"), f.get("FolderID", folder_ids[0]), mime_type=f.get("MimeType") or f.get("mimeType", ""))
     else:
         print(f"{GREEN}{CHECK_MARK} Scan initial : aucun document non traité en attente.{RESET}")
         if dry_run and once and all_existing_files:
             sorted_files = sorted(all_existing_files, key=lambda x: x.get("ModTime", ""), reverse=True)
             demo_f = sorted_files[0]
-            _process_doc(demo_f.get("Name"), demo_f.get("ID"), demo_f.get("FolderID", folder_ids[0]), is_demo=True)
+            _process_doc(demo_f.get("Name"), demo_f.get("ID"), demo_f.get("FolderID", folder_ids[0]), is_demo=True, mime_type=demo_f.get("MimeType") or demo_f.get("mimeType", ""))
 
     if once:
         print(f"\n{GREEN}{CHECK_MARK} Cycle unique terminé (--once).{RESET}")
@@ -865,8 +932,8 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                 except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError, PermissionError):
                     try:
                         conn.close()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"Warning: Exception closing connection on reset: {e}", file=sys.stderr)
                     access_token = _get_rclone_drive_access_token()
                     conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
                     new_token, changes = _drive_poll_changes(conn, access_token, page_token)
@@ -880,6 +947,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                         continue
                     f_name = f_info.get("name", "")
                     f_id = ch.get("fileId") or f_info.get("id")
+                    f_mime = f_info.get("mimeType", "")
                     f_parents = f_info.get("parents", [])
 
                     is_inbox = any(p in folder_ids_set for p in f_parents) or f_name.startswith("Dream_Inbox_")
@@ -888,7 +956,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                         p_map = reg.get("processed", {})
                         if f_id not in p_map and f_name not in p_map:
                             target_fid = next((p for p in f_parents if p in folder_ids_set), folder_ids[0])
-                            _process_doc(f_name, f_id, target_fid)
+                            _process_doc(f_name, f_id, target_fid, mime_type=f_mime)
 
             except KeyboardInterrupt:
                 raise
@@ -900,8 +968,8 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     finally:
         try:
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: Exception closing connection on exit: {e}", file=sys.stderr)
 
 
 def cmd_dream_inbox(args: argparse.Namespace) -> None:
@@ -985,7 +1053,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
         fid = doc_fid or (folder_ids[0] if folder_ids else "1ZLsrkwRBhH2Xz82eooQC3ahsePFjm28h")
 
         try:
-            content = _extract_dream_inbox_doc_text(fid, target_name)
+            content = _extract_dream_inbox_doc_text(fid, target_name, file_id=doc_id)
             print(content)
         except Exception as e:
             # Fallback to direct download attempt via doc_id if extraction failed
