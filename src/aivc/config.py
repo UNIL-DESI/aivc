@@ -144,11 +144,29 @@ def to_portable_path(path_str: str | Path) -> str:
     else:
         s = str(path_str).strip().replace("\\", "/")
 
+    # Ignore web URLs
+    if s.startswith(("http://", "https://", "ftp://", "mailto:", "spark://")):
+        return s
+
+    # Strip markdown link wrapper e.g. [name](path) -> path
+    m_md = re.match(r"^\[.*?\]\((.+)\)$", s)
+    if m_md:
+        s = m_md.group(1).strip()
+        if s.startswith(("http://", "https://", "ftp://", "mailto:", "spark://")):
+            return s
+
     # Strip file URI prefix if present
     if s.startswith("file:///"):
         s = s[8:]
     elif s.startswith("file://"):
         s = s[7:]
+
+    import urllib.parse
+    s = urllib.parse.unquote(s)
+
+    # Strip leading slash before drive letter e.g. /C:/ -> C:/
+    if re.match(r"^/[A-Za-z]:", s):
+        s = s[1:]
 
     # Strip trailing line numbers e.g. :L10-L20 if present
     if ":L" in s or re.search(r":\d+", s):
@@ -175,7 +193,7 @@ def to_portable_path(path_str: str | Path) -> str:
 
     # Try local home resolution first
     try:
-        resolved = Path(path_str).resolve()
+        resolved = Path(s).resolve()
         home = get_home_dir().resolve()
         if resolved == home:
             return "~"

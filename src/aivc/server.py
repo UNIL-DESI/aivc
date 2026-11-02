@@ -24,7 +24,9 @@ logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.WARNING)
 logging.getLogger("googleapiclient").setLevel(logging.ERROR)
 logging.getLogger("googleapiclient.discovery").setLevel(logging.ERROR)
 logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
-logging.getLogger("aivc").setLevel(logging.WARNING)
+_aivc_logger = logging.getLogger("aivc")
+_aivc_logger.setLevel(logging.WARNING)
+_aivc_logger.propagate = False
 
 if hasattr(sys.stdin, "reconfigure"):
     sys.stdin.reconfigure(encoding="utf-8", errors="replace")
@@ -127,6 +129,9 @@ logging.root.setLevel(logging.WARNING)
 logging.getLogger("mcp").setLevel(logging.WARNING)
 logging.getLogger("mcp.server").setLevel(logging.WARNING)
 logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.WARNING)
+_aivc_logger = logging.getLogger("aivc")
+_aivc_logger.setLevel(logging.WARNING)
+_aivc_logger.propagate = False
 
 
 # ---------------------------------------------------------------------------

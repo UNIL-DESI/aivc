@@ -45,8 +45,9 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logging.getLogger("mcp").setLevel(logging.WARNING)
-logging.getLogger("googleapiclient").setLevel(logging.ERROR)
-logging.getLogger("aivc").setLevel(logging.WARNING)
+_aivc_logger = logging.getLogger("aivc")
+_aivc_logger.setLevel(logging.WARNING)
+_aivc_logger.propagate = False
 logger = logging.getLogger("aivc.daemon")
 _tool_call_lock = threading.RLock()
 

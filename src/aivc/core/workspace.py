@@ -55,12 +55,14 @@ def _extract_linked_file_paths(text: str) -> list[str]:
     for m in re.finditer(r"file:///(?:[A-Za-z]:[\\/]|/)?([^\s\)\"\'\`\<\>]+)", text):
         raw = m.group(0)
         raw = re.sub(r":L\d+(?:-L\d+)?$", "", raw)
-        clean = raw[8:] if raw.startswith("file:///") else raw
+        clean = raw[8:] if raw.startswith("file:///") else (raw[7:] if raw.startswith("file://") else raw)
         decoded = urllib.parse.unquote(clean)
+        if re.match(r"^/[A-Za-z]:", decoded):
+            decoded = decoded[1:]
         paths.append(decoded)
 
-    # 2. Windows drive letters C:\... or C:/...
-    for m in re.finditer(r"[A-Za-z]:[\\/][^\s\)\"\'\`\<\>]+", text):
+    # 2. Windows drive letters C:\... or C:/... (negative lookbehind on \w to avoid matching https:// or file:///)
+    for m in re.finditer(r"(?<!\w)[A-Za-z]:[\\/][^\s\)\"\'\`\<\>]+", text):
         p = re.sub(r":L\d+(?:-L\d+)?$", "", m.group(0))
         paths.append(p)
 
@@ -72,10 +74,13 @@ def _extract_linked_file_paths(text: str) -> list[str]:
     seen = set()
     unique_paths = []
     for p in paths:
-        norm = p.replace("\\", "/").rstrip(".,;:)")
+        cleaned = p.rstrip(".,;:)\\]")
+        if cleaned.startswith(("http://", "https://", "ftp://", "mailto:", "spark://")):
+            continue
+        norm = cleaned.replace("\\", "/").lower()
         if norm not in seen:
             seen.add(norm)
-            unique_paths.append(p.rstrip(".,;:)"))
+            unique_paths.append(cleaned)
     return unique_paths
 
 
@@ -761,9 +766,12 @@ class Workspace:
                                 if ch.get("path"):
                                     candidate_paths.append(ch.get("path"))
 
-            # 3. Filter out VoiceNotes (sanctuarisé) and active paths
+            # 3. Filter out VoiceNotes (sanctuarisé), web URLs, and active paths
             seen_gc = set()
             for cand in candidate_paths:
+                cand_str = str(cand).strip()
+                if cand_str.startswith(("http://", "https://", "ftp://", "mailto:", "spark://")):
+                    continue
                 p_norm = to_portable_path(cand).lower()
                 if "voicenotes" in p_norm:
                     continue

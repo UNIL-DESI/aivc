@@ -9,4 +9,6 @@ import logging
 logging.getLogger("googleapiclient").setLevel(logging.ERROR)
 logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
 logging.getLogger("mcp").setLevel(logging.WARNING)
-logging.getLogger("aivc").setLevel(logging.WARNING)
+_aivc_logger = logging.getLogger("aivc")
+_aivc_logger.setLevel(logging.WARNING)
+_aivc_logger.propagate = False

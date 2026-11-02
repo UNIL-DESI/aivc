@@ -22,6 +22,15 @@ logger = logging.getLogger(__name__)
 logging.getLogger("googleapiclient").setLevel(logging.ERROR)
 logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
 
+_aivc_root_logger = logging.getLogger("aivc")
+_aivc_root_logger.setLevel(logging.WARNING)
+_aivc_root_logger.propagate = False
+
+
+def _escape_drive_query(text: str) -> str:
+    """Escapes backslashes and single quotes for Google Drive API query strings."""
+    return str(text).replace("\\", "\\\\").replace("'", "\\'")
+
 # Scopes: full read/write on user's own Drive files
 _SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 _ROOT_FOLDER_NAME = "AIVC_Sync"
@@ -116,7 +125,8 @@ class NativeDriveSyncManager:
         service = self._get_service()
 
         # Search for existing folder
-        query = f"name = '{name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        safe_name = _escape_drive_query(name)
+        query = f"name = '{safe_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         if parent_id:
             query += f" and '{parent_id}' in parents"
 
@@ -147,7 +157,8 @@ class NativeDriveSyncManager:
             return self._folder_cache[cache_key]
 
         service = self._get_service()
-        query = f"name = '{name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        safe_name = _escape_drive_query(name)
+        query = f"name = '{safe_name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         if parent_id:
             query += f" and '{parent_id}' in parents"
 
@@ -301,7 +312,8 @@ class NativeDriveSyncManager:
             for folder_name in parent_folders:
                 current_parent_id = self._find_or_create_folder(folder_name, current_parent_id)
 
-            query = f"name = '{filename}' and '{current_parent_id}' in parents and trashed = false"
+            safe_filename = _escape_drive_query(filename)
+            query = f"name = '{safe_filename}' and '{current_parent_id}' in parents and trashed = false"
             results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
             existing = results.get("files", [])
 
@@ -335,14 +347,16 @@ class NativeDriveSyncManager:
 
         current_parent_id = self.files_folder_id
         for folder_name in parent_folders:
-            query = f"name = '{folder_name}' and '{current_parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            safe_folder_name = _escape_drive_query(folder_name)
+            query = f"name = '{safe_folder_name}' and '{current_parent_id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
             results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
             files = results.get("files", [])
             if not files:
                 raise FileNotFoundError(f"Folder '{folder_name}' not found on Google Drive under AIVC_Sync/files/.")
             current_parent_id = files[0]["id"]
 
-        query = f"name = '{filename}' and '{current_parent_id}' in parents and trashed = false"
+        safe_filename = _escape_drive_query(filename)
+        query = f"name = '{safe_filename}' and '{current_parent_id}' in parents and trashed = false"
         results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
         files = results.get("files", [])
         if not files:
@@ -390,9 +404,34 @@ class NativeDriveSyncManager:
 
         try:
             import re
+            import urllib.parse
             service = self._get_service()
-            norm_str = str(file_path).replace("\\", "/")
-            candidates = [to_portable_path(file_path)]
+            norm_str = str(file_path).strip().replace("\\", "/")
+
+            # Web URLs are not local files synced to Drive
+            if norm_str.startswith(("http://", "https://", "ftp://", "mailto:", "spark://")):
+                return False
+
+            # Strip markdown link wrapper e.g. [name](path) -> path
+            m_md = re.match(r"^\[.*?\]\((.+)\)$", norm_str)
+            if m_md:
+                norm_str = m_md.group(1).strip()
+                if norm_str.startswith(("http://", "https://", "ftp://", "mailto:", "spark://")):
+                    return False
+
+            # Strip file URI prefix
+            if norm_str.startswith("file:///"):
+                norm_str = norm_str[8:]
+            elif norm_str.startswith("file://"):
+                norm_str = norm_str[7:]
+
+            norm_str = urllib.parse.unquote(norm_str)
+
+            # If leading slash before drive letter e.g. /C:/ -> C:/
+            if re.match(r"^/[A-Za-z]:", norm_str):
+                norm_str = norm_str[1:]
+
+            candidates = [to_portable_path(norm_str)]
 
             # Brain / Temp variants
             m = re.search(r"(?:brain|artifacts)[\\/]([0-9a-fA-F-]+)[\\/](.+)", norm_str)
@@ -407,8 +446,13 @@ class NativeDriveSyncManager:
             deleted_any = False
 
             for cand in unique_cands:
+                if not cand or cand.startswith(("http://", "https://", "ftp://", "mailto:", "spark://")):
+                    continue
+
                 rel_drive_path = cand[2:] if cand.startswith("~/") else cand.lstrip("/")
-                parts = Path(rel_drive_path).parts
+                rel_drive_path = rel_drive_path.replace("\\", "/")
+                # Split parts using pure forward slash to avoid Windows Path root part issue (e.g. 'C:\\')
+                parts = [p for p in rel_drive_path.split("/") if p and p != "."]
                 if not parts:
                     continue
 
@@ -427,7 +471,8 @@ class NativeDriveSyncManager:
                 if not folder_exists:
                     continue
 
-                query = f"name = '{filename}' and '{current_parent_id}' in parents and trashed = false"
+                safe_filename = _escape_drive_query(filename)
+                query = f"name = '{safe_filename}' and '{current_parent_id}' in parents and trashed = false"
                 results = service.files().list(q=query, spaces="drive", fields="files(id)").execute()
                 files = results.get("files", [])
 
