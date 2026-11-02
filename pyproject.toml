@@ -13,7 +13,7 @@ license = { text = "MIT" }
 aivc = "aivc.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = []
 semantic = [
     "chromadb>=0.6",
     "fastembed>=0.2.0",
@@ -27,7 +27,6 @@ sync = [
     "google-auth-oauthlib>=1.0",
 ]
 all = [
-    "pytest>=8.0",
     "chromadb>=0.6",
     "fastembed>=0.2.0",
     "sentence-transformers>=3.0",
