@@ -40,9 +40,3 @@ all = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["src/tests"]
-markers = [
-    "requires_ml: marks tests that need sentence-transformers and chromadb (use --run-ml to include)",
-]
