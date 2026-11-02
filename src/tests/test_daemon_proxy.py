@@ -124,6 +124,7 @@ class TestDaemonAndProxy(unittest.TestCase):
         tool_names = {t["name"] for t in tools}
         expected_tools = {
             "task_commit",
+            "remember",
             "recall",
             "consult_memory",
             "get_file_history",
