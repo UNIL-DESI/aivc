@@ -48,6 +48,7 @@ logging.getLogger("mcp").setLevel(logging.WARNING)
 logging.getLogger("googleapiclient").setLevel(logging.ERROR)
 logging.getLogger("aivc").setLevel(logging.WARNING)
 logger = logging.getLogger("aivc.daemon")
+_tool_call_lock = threading.RLock()
 
 
 def get_aivc_home() -> Path:
@@ -135,14 +136,18 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def _send_json_response(self, status_code: int, data: dict[str, Any]) -> None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Connection", "close")
-        self.end_headers()
-        self.wfile.write(body)
-        self.wfile.flush()
-        self.close_connection = True
+        try:
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            self.wfile.flush()
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
+            pass
+        finally:
+            self.close_connection = True
 
     def do_GET(self) -> None:
         self.server.touch()
@@ -178,7 +183,10 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
                 self._send_json_response(400, {"error": "Empty request body"})
                 return
 
-            raw_body = post_data.decode("utf-8")
+            try:
+                raw_body = post_data.decode("utf-8")
+            except UnicodeDecodeError:
+                raw_body = post_data.decode("latin-1", errors="replace")
             try:
                 msg = json.loads(raw_body)
             except Exception as e:
@@ -240,7 +248,8 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
                     arguments = _resolve_relative_args(arguments, client_cwd)
 
                     try:
-                        res = asyncio.run(aivc_server.mcp.call_tool(name, arguments))
+                        with _tool_call_lock:
+                            res = asyncio.run(aivc_server.mcp.call_tool(name, arguments))
                         # FastMCP returns a tuple (content_blocks, extra_context)
                         if isinstance(res, tuple):
                             content_blocks = res[0]
@@ -389,7 +398,10 @@ def run_daemon(port: int | None = None, idle_timeout: int | None = None) -> None
 
     try:
         while server.running:
-            server.handle_request()
+            try:
+                server.handle_request()
+            except Exception as e:
+                print(f"[aivc.daemon] Error handling request: {e}", file=sys.stderr, flush=True)
             if time.time() - server.last_activity > idle_timeout:
                 print(f"[aivc.daemon] Idle timeout ({idle_timeout}s) exceeded. Shutting down.", flush=True)
                 break

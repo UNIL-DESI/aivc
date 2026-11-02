@@ -25,9 +25,12 @@ import urllib.request
 from pathlib import Path
 
 
-def _check_health(port: int, timeout: float = 0.15) -> bool:
+def _check_health(port: int, timeout: float = 0.8) -> bool:
     try:
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/health")
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/health",
+            headers={"Connection": "close"},
+        )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status == 200
     except Exception:
@@ -91,10 +94,12 @@ def _cleanup_zombie(port: int) -> None:
 
 def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
     """Ensure the AIVC daemon is running on the given port, launching it if necessary."""
-    if _check_health(port, timeout=0.2):
-        return
+    for _ in range(3):
+        if _check_health(port, timeout=0.8):
+            return
+        time.sleep(0.05)
 
-    # If port is occupied or daemon.json exists but /health fails, clean up stale zombie process
+    # If port is occupied or daemon.json exists but /health fails after multiple attempts, clean up stale zombie process
     if _is_port_occupied(port) or _get_daemon_json_path().exists():
         _cleanup_zombie(port)
 
@@ -191,47 +196,72 @@ def main() -> None:
         if not raw_line:
             continue
 
-        req = urllib.request.Request(
-            url,
-            data=raw_line.encode("utf-8"),
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "X-AIVC-Cwd": os.getcwd(),
-            },
-            method="POST",
-        )
+        headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "Connection": "close",
+            "X-AIVC-Cwd": os.getcwd(),
+        }
 
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                if resp.status == 200:
-                    body = resp.read().decode("utf-8").strip()
-                    if body:
-                        sys.stdout.write(body + "\n")
+        # Attempt request with automatic retry on transient connection resets (WinError 10054)
+        success = False
+        last_error: Exception | None = None
+        max_attempts = 3
+
+        for attempt in range(max_attempts):
+            req = urllib.request.Request(
+                url,
+                data=raw_line.encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    if resp.status == 200:
+                        body = resp.read().decode("utf-8").strip()
+                        if body:
+                            sys.stdout.write(body + "\n")
+                            sys.stdout.flush()
+                        success = True
+                        break
+            except urllib.error.HTTPError as e:
+                if e.code == 204:
+                    success = True
+                    break
+                err_body = e.read().decode("utf-8", errors="replace")
+                try:
+                    msg_in = json.loads(raw_line)
+                    if "id" in msg_in:
+                        err_resp = {
+                            "jsonrpc": "2.0",
+                            "id": msg_in["id"],
+                            "error": {"code": -32603, "message": f"HTTP {e.code}: {err_body}"},
+                        }
+                        sys.stdout.write(json.dumps(err_resp) + "\n")
                         sys.stdout.flush()
-        except urllib.error.HTTPError as e:
-            if e.code == 204:
-                continue
-            err_body = e.read().decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                success = True
+                break
+            except (ConnectionResetError, BrokenPipeError, urllib.error.URLError, TimeoutError, OSError) as e:
+                last_error = e
+                # Retry on connection reset or transient socket error
+                if attempt < max_attempts - 1:
+                    time.sleep(0.15 * (attempt + 1))
+                    ensure_daemon_running(port)
+                    continue
+                break
+            except Exception as e:
+                last_error = e
+                break
+
+        if not success and last_error is not None:
             try:
                 msg_in = json.loads(raw_line)
                 if "id" in msg_in:
                     err_resp = {
                         "jsonrpc": "2.0",
                         "id": msg_in["id"],
-                        "error": {"code": -32603, "message": f"HTTP {e.code}: {err_body}"},
-                    }
-                    sys.stdout.write(json.dumps(err_resp) + "\n")
-                    sys.stdout.flush()
-            except Exception:
-                pass
-        except Exception as e:
-            try:
-                msg_in = json.loads(raw_line)
-                if "id" in msg_in:
-                    err_resp = {
-                        "jsonrpc": "2.0",
-                        "id": msg_in["id"],
-                        "error": {"code": -32603, "message": str(e)},
+                        "error": {"code": -32603, "message": str(last_error)},
                     }
                     sys.stdout.write(json.dumps(err_resp) + "\n")
                     sys.stdout.flush()

@@ -233,8 +233,7 @@ def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
-async def task_commit(
+async def _execute_memory_commit(
     title: str,
     content: str = "",
     main_project_file: str = "",
@@ -249,30 +248,12 @@ async def task_commit(
     roadmap_items: list[dict[str, Any]] | None = None,
     completed_user_items: list[str] | None = None,
 ) -> str:
-    """Enregistre un souvenir atomique ou structuré dans AIVC (1 appel = 1 souvenir sur 1 tâche).
-
-    Args:
-        title: Intitulé clair de la tâche ou de l'action.
-        main_project_file: Chemin de la note maîtresse du projet (ex. notes/MonProjet.md) ou README.md. Doit exister sur le disque. Cible unique de rattachement.
-        content: Paragraphe complet et fluide en pur langage naturel contenant le Contexte explicite, l'Action et le TL;DR (ce qui a été fait, observé, conclusions et chiffres clés), sans aucun chemin de fichier, bloc 'Source :' ni extrait de code brut.
-        task_id: Identifiant déterministe de la tâche (ex. 'r-123456-0' ou '123456-0'). Obligatoire pour mettre à jour ou changer le statut d'une tâche existante. Laisser None pour créer une nouvelle tâche.
-        task_status: Statut de la tâche ('new' pour la roadmap, 'await_validation' pour un livrable prêt, 'validated' pour une tâche terminée).
-        edited_files: Liste des fichiers modifiés ou créés (synchronisés et affichés en liens cliquables sous le souvenir).
-        read_files: Liste des fichiers consultés (synchronisés et affichés en liens cliquables sous le souvenir).
-        urls: URLs consultées ou référencées.
-        journal: Récit détaillé ou contexte de session (alias rétrocompatible pour content).
-        tasks: Liste unifiée des tâches (mode multi-tâches rétrocompatible).
-        user_items: Actions utilisateur (mode multi-tâches rétrocompatible).
-        roadmap_items: Tâches de roadmap (mode multi-tâches rétrocompatible).
-        completed_user_items: IDs des tâches terminées (déprécié).
-    """
     import asyncio
     from pathlib import Path
 
     actual_read_files = read_files or []
     actual_edited_files = edited_files or []
     actual_urls = urls or []
-    actual_user_items = user_items if user_items is not None else []
     effective_journal = journal or content or ""
     effective_content = content or journal or ""
 
@@ -283,11 +264,15 @@ async def task_commit(
         "title": title,
         "journal": effective_journal,
         "main_project_file": main_project_file,
-        "user_items": actual_user_items,
         "read_files": actual_read_files,
         "edited_files": actual_edited_files,
         "urls": actual_urls,
     }
+    if user_items is not None:
+        engine_kwargs["user_items"] = user_items
+    elif not content:
+        engine_kwargs["user_items"] = []
+
     if content:
         engine_kwargs["content"] = effective_content
     if tasks is not None:
@@ -331,6 +316,42 @@ async def task_commit(
 
 
 @mcp.tool()
+async def task_commit(
+    title: str,
+    content: str,
+    main_project_file: str,
+    task_id: str | None = None,
+    task_status: str = "await_validation",
+    edited_files: list[str] | None = None,
+    read_files: list[str] | None = None,
+    urls: list[str] | None = None,
+) -> str:
+    """Enregistre un souvenir atomique pour une unique tâche dans AIVC (1 appel = 1 tâche).
+
+    Règles impératives :
+    1. 1 appel = 1 souvenir atomique sur 1 tâche (task_id).
+    2. task_id : obligatoire pour mettre à jour ou changer le statut ('new' -> 'await_validation' -> 'validated') d'une tâche existante dans l'artefact persistant 🤖 <Titre>.md. Interdiction d'inventer un nouvel ID si la tâche existe déjà (même si son titre est affiné). Laisser None uniquement pour créer une nouvelle tâche.
+    3. title : intitulé clair de la tâche ou de l'action.
+    4. content : un bon paragraphe complet et fluide en pur langage naturel contenant :
+       - Le Contexte explicite (« Tu m'avais demandé de vérifier X... », « Suite à ton commentaire sur Y... »)
+       - L'Action et le TL;DR (ce qui a été fait, observé, et les conclusions précises avec les chiffres clés)
+       - Zéro chemin de fichier, zéro bloc 'Source :' et zéro extrait de code brut dans content (mentionner tout au plus par leur nom simple 1 ou 2 artefacts principaux où figurent les détails complexes et preuves).
+    5. main_project_file : chemin de la note maîtresse du projet (ex. notes/MonProjet.md ou README.md). Cible unique de rattachement.
+    6. edited_files & read_files : fichiers modifiés et consultés par cette tâche (automatiquement synchronisés et affichés en liens cliquables sous le souvenir dans 🤖 <Titre>.md).
+    """
+    return await _execute_memory_commit(
+        title=title,
+        content=content,
+        main_project_file=main_project_file,
+        task_id=task_id,
+        task_status=task_status,
+        edited_files=edited_files,
+        read_files=read_files,
+        urls=urls,
+    )
+
+
+@mcp.tool()
 async def remember(
     title: str,
     journal: str = "",
@@ -347,7 +368,7 @@ async def remember(
     completed_user_items: list[str] | None = None,
 ) -> str:
     """Enregistre un souvenir dans AIVC (alias rétrocompatible pour task_commit)."""
-    return await task_commit(
+    return await _execute_memory_commit(
         title=title,
         content=content,
         main_project_file=main_project_file,
@@ -369,11 +390,19 @@ _orig_call_tool = mcp.call_tool
 
 async def _wrapped_call_tool(name: str, arguments: dict[str, Any] | None = None) -> Any:
     args = dict(arguments or {})
-    if name in ("remember", "task_commit"):
+    if name == "task_commit":
+        if "journal" in args and "content" not in args:
+            args["content"] = args.pop("journal")
+        # Ensure only declared arguments are passed to FastMCP validator
+        valid_keys = {"title", "content", "main_project_file", "task_id", "task_status", "edited_files", "read_files", "urls"}
+        filtered_args = {k: v for k, v in args.items() if k in valid_keys}
+        return await _orig_call_tool("task_commit", filtered_args)
+    elif name == "remember":
         if "content" in args and "journal" not in args:
             args["journal"] = args["content"]
         elif "journal" in args and "content" not in args:
             args["content"] = args["journal"]
+        return await _orig_call_tool("remember", args)
     return await _orig_call_tool(name, args)
 
 
