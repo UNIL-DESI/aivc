@@ -321,11 +321,8 @@ class NativeDriveSyncManager:
             return False
 
 
-    def pull_latest_file(self, file_path: str, target_path: str | Path | None = None) -> Path:
-        """Download latest version of file from AIVC_Sync/files/ on Google Drive to local disk."""
-        if not self.enabled:
-            raise RuntimeError("Google Drive sync is disabled.")
-
+    def _pull_single_file(self, file_path: str, target_path: str | Path | None = None) -> Path:
+        """Helper to download a single file from Drive without folder fallback."""
         service = self._get_service()
         portable = to_portable_path(file_path)
         rel_drive_path = portable[2:] if portable.startswith("~/") else portable.lstrip("/")
@@ -355,6 +352,32 @@ class NativeDriveSyncManager:
         destination = from_portable_path(target_path or file_path)
         self._download_file(file_id, destination)
         return destination
+
+    def pull_latest_file(self, file_path: str, target_path: str | Path | None = None) -> Path:
+        """Download latest version of file from AIVC_Sync/files/ on Google Drive to local disk.
+        
+        Automatically falls back between antigravity and antigravity-cli brain locations.
+        """
+        if not self.enabled:
+            raise RuntimeError("Google Drive sync is disabled.")
+
+        try:
+            return self._pull_single_file(file_path, target_path=target_path)
+        except FileNotFoundError:
+            p_str = str(file_path).replace("\\", "/")
+            alt_path = None
+            if "/.gemini/antigravity/brain/" in p_str:
+                alt_path = p_str.replace("/.gemini/antigravity/brain/", "/.gemini/antigravity-cli/brain/")
+            elif "/.gemini/antigravity-cli/brain/" in p_str:
+                alt_path = p_str.replace("/.gemini/antigravity-cli/brain/", "/.gemini/antigravity/brain/")
+            elif p_str.startswith("~/.gemini/antigravity/brain/"):
+                alt_path = "~/.gemini/antigravity-cli/brain/" + p_str[len("~/.gemini/antigravity/brain/"):]
+            elif p_str.startswith("~/.gemini/antigravity-cli/brain/"):
+                alt_path = "~/.gemini/antigravity/brain/" + p_str[len("~/.gemini/antigravity-cli/brain/"):]
+
+            if alt_path:
+                return self._pull_single_file(alt_path, target_path=target_path)
+            raise
 
     def delete_remote_file(self, file_path: str | Path) -> bool:
         """Deletes a file from AIVC_Sync/files/ on Google Drive.
@@ -514,7 +537,7 @@ class NativeDriveSyncManager:
 
         # 3. From user_items (task and details)
         brain_regex = re.compile(
-            r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?\.?gemini[\\/]antigravity[\\/]brain[\\/]([^\s\"\'\`\)\>:]+)",
+            r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\"\'\`\)\>:]+)",
             re.IGNORECASE,
         )
         for item in mem_data.get("user_items", []) or mem_data.get("tasks", []):
@@ -533,19 +556,36 @@ class NativeDriveSyncManager:
                     if raw:
                         candidate_subpaths.add(raw)
 
+        import shutil
         # Download any missing files
         for sub in candidate_subpaths:
             local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+            local_cli_path = home / ".gemini" / "antigravity-cli" / "brain" / Path(sub)
+
             if local_path.is_file():
                 continue
-            sub_posix = sub.replace("\\", "/")
-            portable = f"~/.gemini/antigravity/brain/{sub_posix}"
-            try:
-                dest = self.pull_latest_file(portable, target_path=local_path)
-                if dest and dest.is_file():
+            if local_cli_path.is_file():
+                try:
+                    local_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(local_cli_path, local_path)
                     restored.append(str(local_path))
-            except Exception:
-                pass
+                    continue
+                except OSError:
+                    pass
+
+            sub_posix = sub.replace("\\", "/")
+            dest = None
+            for portable in (
+                f"~/.gemini/antigravity/brain/{sub_posix}",
+                f"~/.gemini/antigravity-cli/brain/{sub_posix}",
+            ):
+                try:
+                    dest = self.pull_latest_file(portable, target_path=local_path)
+                    if dest and dest.is_file():
+                        restored.append(str(local_path))
+                        break
+                except Exception:
+                    pass
 
         return restored
 
@@ -661,8 +701,12 @@ class NativeDriveSyncManager:
                 if dest_path.is_file():
                     mem_data = json.loads(dest_path.read_text(encoding="utf-8"))
                     self.auto_restore_brain_files_from_data(mem_data)
-                    from aivc.project_sync import sync_project_views
-                    sync_project_views(mem_data)
+                    try:
+                        from aivc.project_sync import sync_project_views
+                        sync_project_views(mem_data)
+                    except ImportError:
+                        from aivc.advance_sync import sync_advance_tldr
+                        sync_advance_tldr(mem_data)
             except Exception as e:
                 logger.debug("Post-pull restore/tldr sync skipped for %s: %s", dest_path, e)
 

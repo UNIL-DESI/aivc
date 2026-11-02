@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import fnmatch
 import sqlite3
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -60,6 +61,7 @@ class CooccurrenceGraph:
             storage_root: Directory shared with BlobStore / ChromaDB.
         """
         storage_root.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
         self._db_path = storage_root / _DB_FILE
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL;")
@@ -72,10 +74,12 @@ class CooccurrenceGraph:
     # ------------------------------------------------------------------
 
     def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
-        return self._conn.execute(sql, params)
+        with self._lock:
+            return self._conn.execute(sql, params)
 
     def _executemany(self, sql: str, params: list[tuple]) -> None:
-        self._conn.executemany(sql, params)
+        with self._lock:
+            self._conn.executemany(sql, params)
 
     # ------------------------------------------------------------------
     # Public API — Mutation
@@ -89,24 +93,25 @@ class CooccurrenceGraph:
         Args:
             memory: The memory to add.
         """
-        file_paths = [c.path for c in memory.changes]
+        with self._lock:
+            file_paths = [c.path for c in memory.changes]
 
-        self._execute(
-            "INSERT OR REPLACE INTO commit_nodes (commit_id, title, timestamp) VALUES (?, ?, ?)",
-            (memory.id, memory.title, memory.timestamp),
-        )
-
-        if file_paths:
-            self._executemany(
-                "INSERT OR IGNORE INTO file_nodes (file_path) VALUES (?)",
-                [(fp,) for fp in file_paths],
-            )
-            self._executemany(
-                "INSERT OR IGNORE INTO edges (commit_id, file_path) VALUES (?, ?)",
-                [(memory.id, fp) for fp in file_paths],
+            self._execute(
+                "INSERT OR REPLACE INTO commit_nodes (commit_id, title, timestamp) VALUES (?, ?, ?)",
+                (memory.id, memory.title, memory.timestamp),
             )
 
-        self._conn.commit()
+            if file_paths:
+                self._executemany(
+                    "INSERT OR IGNORE INTO file_nodes (file_path) VALUES (?)",
+                    [(fp,) for fp in file_paths],
+                )
+                self._executemany(
+                    "INSERT OR IGNORE INTO edges (commit_id, file_path) VALUES (?, ?)",
+                    [(memory.id, fp) for fp in file_paths],
+                )
+
+            self._conn.commit()
 
     def remove_memory(self, memory_id: str) -> None:
         """Remove a memory and all its edges from the graph.
@@ -117,45 +122,46 @@ class CooccurrenceGraph:
         Raises:
             KeyError: if the memory_id is not in the graph.
         """
-        row = self._execute(
-            "SELECT 1 FROM commit_nodes WHERE commit_id = ?", (memory_id,)
-        ).fetchone()
-        if row is None:
-            raise KeyError(f"Memory {memory_id!r} is not in the graph.")
+        with self._lock:
+            row = self._execute(
+                "SELECT 1 FROM commit_nodes WHERE commit_id = ?", (memory_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Memory {memory_id!r} is not in the graph.")
 
-        # Get files associated with this memory BEFORE deleting edges.
-        file_paths = [
-            r[0]
-            for r in self._execute(
-                "SELECT file_path FROM edges WHERE commit_id = ?", (memory_id,)
-            ).fetchall()
-        ]
+            # Get files associated with this memory BEFORE deleting edges.
+            file_paths = [
+                r[0]
+                for r in self._execute(
+                    "SELECT file_path FROM edges WHERE commit_id = ?", (memory_id,)
+                ).fetchall()
+            ]
 
-        # Remove all edges for this memory.
-        self._execute("DELETE FROM edges WHERE commit_id = ?", (memory_id,))
+            # Remove all edges for this memory.
+            self._execute("DELETE FROM edges WHERE commit_id = ?", (memory_id,))
 
-        # Remove the memory node.
-        self._execute("DELETE FROM commit_nodes WHERE commit_id = ?", (memory_id,))
+            # Remove the memory node.
+            self._execute("DELETE FROM commit_nodes WHERE commit_id = ?", (memory_id,))
 
-        # Clean up orphan file nodes (files that no longer have any edges).
-        if file_paths:
-            # Use chunks to avoid SQLite's parameter limit (usually 999).
-            unique_paths = list(set(file_paths))
-            for i in range(0, len(unique_paths), 900):
-                chunk = unique_paths[i : i + 900]
-                placeholders = ",".join("?" for _ in chunk)
-                self._execute(
-                    f"""
-                    DELETE FROM file_nodes
-                    WHERE file_path IN ({placeholders})
-                      AND NOT EXISTS (
-                          SELECT 1 FROM edges WHERE edges.file_path = file_nodes.file_path
-                      )
-                    """,
-                    tuple(chunk),
-                )
+            # Clean up orphan file nodes (files that no longer have any edges).
+            if file_paths:
+                # Use chunks to avoid SQLite's parameter limit (usually 999).
+                unique_paths = list(set(file_paths))
+                for i in range(0, len(unique_paths), 900):
+                    chunk = unique_paths[i : i + 900]
+                    placeholders = ",".join("?" for _ in chunk)
+                    self._execute(
+                        f"""
+                        DELETE FROM file_nodes
+                        WHERE file_path IN ({placeholders})
+                          AND NOT EXISTS (
+                              SELECT 1 FROM edges WHERE edges.file_path = file_nodes.file_path
+                          )
+                        """,
+                        tuple(chunk),
+                    )
 
-        self._conn.commit()
+            self._conn.commit()
 
     # ------------------------------------------------------------------
     # Public API — Queries
@@ -422,6 +428,7 @@ class CooccurrenceGraph:
 
     def close(self) -> None:
         """Close the database connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
 

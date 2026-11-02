@@ -256,4 +256,79 @@ def test_remember_with_roadmap_items(tmp_path: Path, ws: Workspace) -> None:
     reloaded = ws._load_memory(m.id)
     assert reloaded.user_items[2]["done"] is True
 
+
+def test_user_items_and_file_memories_chronological_order(tmp_path: Path, ws: Workspace) -> None:
+    f = _write(tmp_path / "project_note.md", b"Project details")
+
+    # Commit 1 with item-1 and item-2
+    m1 = ws.remember(
+        "Commit 1",
+        journal="First commit",
+        read_files=[str(f)],
+        user_items=[
+            {"id": "item-1", "task": "Task 1", "task_status": "await_validation"},
+            {"id": "item-2", "task": "Task 2", "task_status": "await_validation"},
+        ],
+    )
+    assert [it["id"] for it in m1.user_items] == ["item-1", "item-2"]
+
+    # Commit 2: updates item-1 and adds item-3, passed in mixed order [item-3, item-1]
+    m2 = ws.remember(
+        "Commit 2",
+        journal="Second commit",
+        read_files=[str(f)],
+        user_items=[
+            {"id": "item-3", "task": "Task 3", "task_status": "await_validation"},
+            {"id": "item-1", "task": "Task 1 updated", "task_status": "await_validation"},
+        ],
+    )
+    # Chronological sort should place existing item-1 before newly created item-3
+    assert [it["id"] for it in m2.user_items] == ["item-1", "item-3"]
+    assert m2.user_items[0]["task"] == "Task 1 updated"
+
+    # Verify get_file_history returns memories in chronological ascending order (m1 then m2)
+    memories = ws.get_file_history(str(f))
+    assert len(memories) >= 2
+    assert [m.id for m in memories[:2]] == [m1.id, m2.id]
+    assert memories[0].timestamp <= memories[1].timestamp
+
+
+def test_remember_artifact_resolution(tmp_path: Path, ws: Workspace, monkeypatch) -> None:
+    """Verify that existing files under aivc/artifacts/ or temp are properly resolved and tracked."""
+    artifact_dir = tmp_path / "public_aivc" / "artifacts" / "proj_x"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    art_file = artifact_dir / "report.pdf"
+    content = b"%PDF-1.4 test report content"
+    art_file.write_bytes(content)
+
+    fake_home = tmp_path / "user_home"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("aivc.config.get_home_dir", lambda: fake_home)
+
+    # 1. Calling remember with the physical artifact path in edited_files must succeed
+    mem = ws.remember(
+        title="Artifact commit",
+        journal="Recorded artifact",
+        edited_files=[str(art_file)],
+    )
+    assert len(mem.changes) == 1
+    ch = mem.changes[0]
+    assert ch.action == "edited"
+    assert ch.blob_hash is not None
+    assert ws._blob_store.retrieve(ch.blob_hash) == content
+
+    # 2. Mirror file under fake_home/.gemini/antigravity/brain must have been created
+    mirrored = fake_home / ".gemini" / "antigravity" / "brain" / "proj_x" / "report.pdf"
+    assert mirrored.is_file()
+    assert mirrored.read_bytes() == content
+
+    # 3. An untracked non-existent file must still raise ValueError
+    import pytest
+    with pytest.raises(ValueError, match="is an untracked non-existent file"):
+        ws.remember(
+            title="Non-existent",
+            journal="Should fail",
+            edited_files=[str(tmp_path / "does_not_exist.pdf")],
+        )
+
 

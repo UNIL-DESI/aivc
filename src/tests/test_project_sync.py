@@ -374,6 +374,143 @@ def test_restore_brain_files_scans_existing_advance_tldr_note(tmp_path: Path, mo
     assert "rules.pdf" in restored[0]
 
 
+def test_rewrite_brain_paths_preserves_slashes_in_markdown_labels():
+    """Verify markdown links with slashes like A/B or Coût/WR are not corrupted."""
+    from aivc.advance_sync import rewrite_brain_paths_to_temp_artifacts
+    from aivc.config import get_aivc_temp_dir
+
+    sample_md = (
+        "Dashboard links:\n"
+        "- [📄 Onglet 1 Galerie & Comparateur A/B](file:///C:/Users/hjamet/.gemini/antigravity/brain/464a4378-48ee-462c-b7b7-5502f1f2b848/playwright_tab1_gallery_ab.png)\n"
+        "- [📄 Onglet 2 Campagne 10k & Coût/WR](file:///C:/Users/hjamet/.gemini/antigravity/brain/464a4378-48ee-462c-b7b7-5502f1f2b848/playwright_tab2_campaign_10k.png)\n"
+        "Local citation: Source: C:\\Users\\hjamet\\.gemini\\antigravity\\brain\\464a4378-48ee-462c-b7b7-5502f1f2b848\\rules.pdf:L10-L20\n"
+    )
+
+    rewritten = rewrite_brain_paths_to_temp_artifacts(sample_md)
+
+    temp_dir = get_aivc_temp_dir()
+    posix_artifacts = (temp_dir / "artifacts").as_posix().lstrip("/")
+
+    # Check that labels are 100% intact
+    assert "[📄 Onglet 1 Galerie & Comparateur A/B](file:///" in rewritten
+    assert "[📄 Onglet 2 Campagne 10k & Coût/WR](file:///" in rewritten
+    assert f"file:///{posix_artifacts}/464a4378-48ee-462c-b7b7-5502f1f2b848/playwright_tab1_gallery_ab.png" in rewritten
+    assert f"file:///{posix_artifacts}/464a4378-48ee-462c-b7b7-5502f1f2b848/playwright_tab2_campaign_10k.png" in rewritten
+
+    # Check local citation is rewritten to native artifacts path with line number suffix
+    expected_local = str(temp_dir / "artifacts" / "464a4378-48ee-462c-b7b7-5502f1f2b848" / "rules.pdf") + ":L10-L20"
+    assert expected_local in rewritten
+
+
+def test_normalize_main_project_file_variants():
+    """Verify normalize_main_project_file handles relative, absolute, and portable formats."""
+    from aivc.config import normalize_main_project_file
+
+    assert normalize_main_project_file("~/Documents/VoiceNotes/notes/Test.md") == "~/Documents/VoiceNotes/notes/Test.md"
+    assert normalize_main_project_file("notes/Traitement des Mails.md") == "~/Documents/VoiceNotes/notes/Traitement des Mails.md"
+    assert normalize_main_project_file("Traitement des Mails.md") == "~/Documents/VoiceNotes/notes/Traitement des Mails.md"
+    assert normalize_main_project_file("VoiceNotes/notes/Test.md") == "~/Documents/VoiceNotes/notes/Test.md"
+    assert normalize_main_project_file("") == ""
+
+
+def test_rewrite_brain_paths_repairs_filc_and_double_e():
+    """Verify rewrite_brain_paths_to_temp_artifacts repairs filC: and file:///e:/// URLs."""
+    from aivc.advance_sync import rewrite_brain_paths_to_temp_artifacts
+    from aivc.config import get_aivc_temp_dir
+
+    raw_filc = "[Audit](filC:\\Users\\hjamet\\AppData\\Local\\Temp\\aivc\\artifacts\\conv-1\\sources_audit.md)"
+    res_filc = rewrite_brain_paths_to_temp_artifacts(raw_filc)
+    assert "filC:" not in res_filc
+    assert "file:///" in res_filc
+    assert "conv-1/sources_audit.md" in res_filc
+
+    raw_double_e = "[Doc](file:///e:///C:/Users/hjamet/AppData/Local/Temp/aivc/artifacts/conv-2/doc.md)"
+    res_double_e = rewrite_brain_paths_to_temp_artifacts(raw_double_e)
+    assert "file:///e:///" not in res_double_e
+    assert "file:///" in res_double_e
+
+
+def test_sync_advance_tldr_copies_to_temp_and_brain(tmp_path: Path, monkeypatch):
+    """Verify sync_advance_tldr systematically copies generated note to Temp and Brain dirs."""
+    temp_dir = tmp_path / "temp"
+    home_dir = tmp_path / "home"
+    monkeypatch.setattr("aivc.config.get_aivc_temp_dir", lambda: temp_dir)
+    monkeypatch.setattr("pathlib.Path.home", lambda: home_dir)
+
+    brain_tldr = home_dir / ".gemini" / "antigravity" / "brain" / "advance_tldr"
+    temp_tldr = temp_dir / "advance_tldr"
+
+    gen_file = tmp_path / "scratch" / "🤖 Mon Projet.md"
+    gen_file.parent.mkdir(parents=True, exist_ok=True)
+    gen_file.write_text("# 🤖 Mon Projet\n\nLink: [Audit](filC:\\Users\\hjamet\\AppData\\Local\\Temp\\aivc\\artifacts\\c1\\audit.md)", encoding="utf-8")
+
+    def mock_sync_fn(memory, vault_dir=None):
+        return [str(gen_file)]
+
+    set_custom_sync_handler(mock_sync_fn)
+    try:
+        mem = {
+            "id": "mem-sync-multi",
+            "title": "[Mon Projet] Test multi target",
+            "main_project_file": "notes/Mon Projet.md",
+            "user_items": [{"id": "t-1", "task": "Check sync", "task_status": "new"}],
+        }
+        res = sync_advance_tldr(mem)
+        assert res == [str(gen_file)]
+
+        # Check copied to Brain
+        brain_target = brain_tldr / "🤖 Mon Projet.md"
+        assert brain_target.is_file()
+        content = brain_target.read_text(encoding="utf-8")
+        assert "filC:" not in content
+        assert "file:///" in content
+
+        # Check copied to Temp
+        temp_target = temp_tldr / "🤖 Mon Projet.md"
+        assert temp_target.is_file()
+    finally:
+        set_custom_sync_handler(None)
+
+
+def test_to_portable_path_preserves_users_public():
+    """Verify to_portable_path preserves C:/Users/Public/aivc/... and does not replace with ~."""
+    from aivc.config import to_portable_path
+
+    public_tldr = "C:/Users/Public/aivc/advance_tldr/🤖 Test.md"
+    assert to_portable_path(public_tldr) == public_tldr
+
+    public_base = "C:/Users/Public/aivc"
+    assert to_portable_path(public_base) == public_base
+
+    # Meanwhile normal user path is still converted to ~/
+    user_path = "C:/Users/hjamet/Documents/VoiceNotes/notes/Test.md"
+    assert to_portable_path(user_path) == "~/Documents/VoiceNotes/notes/Test.md"
+
+
+def test_public_aivc_temp_dir_and_hermetic_isolation(tmp_path: Path, monkeypatch):
+    """Verify get_aivc_temp_dir uses C:/Users/Public/aivc on Windows when env var is absent,
+    while conftest fixture isolate_aivc_temp_dir provides 100% hermetic isolation.
+    """
+    import os
+    from aivc.config import get_aivc_temp_dir, get_aivc_user_temp_dir
+
+    # 1. Inside pytest, AIVC_TEMP_DIR is set by isolate_aivc_temp_dir
+    env_dir = os.environ.get("AIVC_TEMP_DIR")
+    assert env_dir is not None
+    assert get_aivc_temp_dir() == Path(env_dir)
+    assert get_aivc_user_temp_dir() == Path(env_dir)
+
+    # 2. When AIVC_TEMP_DIR is unset, under Windows it targets PUBLIC / aivc
+    monkeypatch.delenv("AIVC_TEMP_DIR", raising=False)
+    fake_public = tmp_path / "FakePublic"
+    monkeypatch.setenv("PUBLIC", str(fake_public))
+    if os.name == "nt":
+        expected_public = fake_public / "aivc"
+        assert get_aivc_temp_dir() == expected_public
+        assert expected_public.is_dir()
+
+
+
 
 
 def test_backfill_missing_main_project_files(tmp_path: Path):

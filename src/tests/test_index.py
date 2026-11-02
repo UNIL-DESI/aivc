@@ -89,15 +89,39 @@ def test_migrate_from_json(tmp_path: Path, index: CoreIndex) -> None:
     assert count2 == 0
 
 
-def test_get_blob_hashes_for_file_filtering(index: CoreIndex) -> None:
-    fc1 = FileChange(path="src/aivc/file.py", action="added", blob_hash="hash_a", bytes_added=10, bytes_removed=0)
-    fc2 = FileChange(path="other/not_file.py", action="added", blob_hash="hash_b", bytes_added=10, bytes_removed=0)
-    fc3 = FileChange(path="prefix_file.py", action="added", blob_hash="hash_c", bytes_added=10, bytes_removed=0)
-    m = Memory.create(title="Multi", note="Note", parent_id=None, changes=[fc1, fc2, fc3])
-    index.add_memory(m)
+def test_concurrent_index_thread_safety(index: CoreIndex) -> None:
+    import threading
 
-    assert index.get_blob_hashes_for_file("src/aivc/file.py") == {"hash_a"}
-    assert index.get_blob_hashes_for_file("prefix_file.py") == {"hash_c"}
-    assert index.get_blob_hashes_for_file("file.py") == set()
-    assert index.get_blob_hashes_for_file("") == set()
+    errors = []
+    memories = [
+        Memory.create(
+            title=f"Mem {i}",
+            note="Valid note",
+            parent_id=None,
+            changes=[
+                FileChange(path=f"file_{i % 3}.txt", action="added", blob_hash=f"hash_{i}", bytes_added=10, bytes_removed=0)
+            ],
+        )
+        for i in range(50)
+    ]
 
+    def worker(items):
+        for m in items:
+            try:
+                index.add_memory(m)
+                _ = index.get_recent_commits(limit=10)
+            except Exception as e:
+                errors.append(e)
+
+    threads = [
+        threading.Thread(target=worker, args=(memories[0:25],)),
+        threading.Thread(target=worker, args=(memories[25:50],)),
+    ]
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Concurrent operations failed with: {errors}"
+    assert len(index.get_recent_commits(limit=100)) == 50

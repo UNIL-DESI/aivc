@@ -233,9 +233,9 @@ class DaemonHTTPRequestHandler(BaseHTTPRequestHandler):
                     from aivc import server as aivc_server
                     params = msg.get("params", {})
                     name = params.get("name", "")
+                    arguments = params.get("arguments", {})
                     if name == "remember":
                         name = "task_commit"
-                    arguments = params.get("arguments", {})
                     client_cwd = self.headers.get("X-AIVC-Cwd")
                     arguments = _resolve_relative_args(arguments, client_cwd)
 
@@ -370,26 +370,22 @@ def run_daemon(port: int | None = None, idle_timeout: int | None = None) -> None
 
     print(f"[aivc.daemon] Daemon listening on http://127.0.0.1:{port} (PID: {os.getpid()})", flush=True)
 
-    # Pre-warm server and engine components in a non-blocking background thread
-    def _warmup_worker() -> None:
-        from aivc import server as aivc_server
-        try:
-            engine = aivc_server._get_engine()
-            _ = engine._indexer._collection
-            print("[aivc.daemon] Semantic indexer pre-warmed successfully.", flush=True)
-        except Exception as e:
-            print(f"[aivc.daemon] Warning during indexer pre-warming: {e}", file=sys.stderr, flush=True)
+    # Pre-warm server and engine components sequentially on main thread
+    from aivc import server as aivc_server
+    try:
+        engine = aivc_server._get_engine()
+        _ = engine._indexer._collection
+        print("[aivc.daemon] Semantic indexer pre-warmed successfully.", flush=True)
+    except Exception as e:
+        print(f"[aivc.daemon] Warning during indexer pre-warming: {e}", file=sys.stderr, flush=True)
 
-        try:
-            syncer = aivc_server._get_syncer()
-            if syncer and syncer.manager.enabled:
-                syncer.start()
-                print("[aivc.daemon] Background syncer started successfully.", flush=True)
-        except Exception as e:
-            print(f"[aivc.daemon] Warning during syncer start: {e}", file=sys.stderr, flush=True)
-
-    warmup_thread = threading.Thread(target=_warmup_worker, daemon=True, name="AivcDaemonWarmup")
-    warmup_thread.start()
+    try:
+        syncer = aivc_server._get_syncer()
+        if syncer and syncer.manager.enabled:
+            syncer.start()
+            print("[aivc.daemon] Background syncer started successfully.", flush=True)
+    except Exception as e:
+        print(f"[aivc.daemon] Warning during syncer start: {e}", file=sys.stderr, flush=True)
 
     try:
         while server.running:

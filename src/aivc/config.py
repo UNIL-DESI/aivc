@@ -25,7 +25,24 @@ def get_home_dir() -> Path:
 
 
 def get_aivc_temp_dir() -> Path:
-    """Returns the base temp directory for AIVC runtime files (<temp>/aivc)."""
+    """Returns the base temp directory for AIVC runtime files (<temp>/aivc or C:\\Users\\Public\\aivc)."""
+    env_dir = os.environ.get("AIVC_TEMP_DIR")
+    if env_dir:
+        return Path(env_dir)
+    if os.name == "nt":
+        public_var = os.environ.get("PUBLIC", r"C:\Users\Public")
+        public_aivc = Path(public_var) / "aivc"
+        try:
+            public_aivc.mkdir(parents=True, exist_ok=True)
+            return public_aivc
+        except Exception:
+            pass
+    import tempfile
+    return Path(tempfile.gettempdir()) / "aivc"
+
+
+def get_aivc_user_temp_dir() -> Path:
+    """Returns the user-specific temp directory (%TEMP%/aivc) for backward-compatible mirroring."""
     env_dir = os.environ.get("AIVC_TEMP_DIR")
     if env_dir:
         return Path(env_dir)
@@ -33,14 +50,14 @@ def get_aivc_temp_dir() -> Path:
     return Path(tempfile.gettempdir()) / "aivc"
 
 
-_STORAGE_ROOT_ENV = "AIVC_STORAGE_ROOT"
-_CONFIG_PATH = get_home_dir() / ".aivc" / "config.json"
 def get_aivc_dir() -> Path:
     return get_home_dir() / ".aivc"
 
+
+_STORAGE_ROOT_ENV = "AIVC_STORAGE_ROOT"
+_CONFIG_PATH = get_aivc_dir() / "config.json"
 _CREDENTIALS_PATH = get_aivc_dir() / "credentials.json"
 _TOKEN_PATH = get_aivc_dir() / "token.json"
-
 
 # Disable network telemetry that causes massive latency spikes on Windows
 os.environ["ANONYMIZED_TELEMETRY"] = "False"  # ChromaDB
@@ -142,7 +159,7 @@ def to_portable_path(path_str: str | Path) -> str:
         idx = s.rfind("/~/")
         s = s[idx + 1:]
 
-    # Fix potential missing separator before .gemini: e.g. Users/alice.gemini -> Users/alice/.gemini
+    # Fix potential missing separator before .gemini: e.g. Users/hjamet.gemini -> Users/hjamet/.gemini
     s = re.sub(r"(/Users/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
     s = re.sub(r"(/home/[^/]+)\.(gemini)", r"\1/.\2", s, flags=re.IGNORECASE)
 
@@ -171,8 +188,8 @@ def to_portable_path(path_str: str | Path) -> str:
         pass
 
     patterns = [
-        r"^[A-Za-z]:/Users/[^/]+/(.*)$",
-        r"^/?Users/[^/]+/(.*)$",
+        r"^[A-Za-z]:/Users/(?!Public(?:/|$))[^/]+/(.*)$",
+        r"^/?Users/(?!Public(?:/|$))[^/]+/(.*)$",
         r"^/?home/[^/]+/(.*)$",
     ]
     for pattern in patterns:
@@ -181,8 +198,8 @@ def to_portable_path(path_str: str | Path) -> str:
             return f"~/{m.group(1)}"
 
     exact_patterns = [
-        r"^[A-Za-z]:/Users/[^/]+/?$",
-        r"^/?Users/[^/]+/?$",
+        r"^[A-Za-z]:/Users/(?!Public(?:/|$))[^/]+/?$",
+        r"^/?Users/(?!Public(?:/|$))[^/]+/?$",
         r"^/?home/[^/]+/?$",
     ]
     for pattern in exact_patterns:
@@ -192,12 +209,55 @@ def to_portable_path(path_str: str | Path) -> str:
     return s
 
 
+def normalize_main_project_file(path_str: str | Path) -> str:
+    """Normalize main_project_file to a canonical portable path.
+
+    Accepts relative paths (e.g. 'notes/Traitement des Mails.md' or 'Traitement des Mails.md'),
+    absolute paths, or portable paths (~/...), and resolves them to ~/Documents/VoiceNotes/...
+    """
+    if not path_str:
+        return ""
+    if isinstance(path_str, Path):
+        s = path_str.as_posix()
+    else:
+        s = str(path_str).strip().replace("\\", "/")
+
+    if not s:
+        return ""
+
+    if s.startswith("~/"):
+        return s
+    if (len(s) >= 2 and s[1] == ":") or s.startswith("/"):
+        return to_portable_path(s)
+
+    clean_rel = s.lstrip("./")
+    clean_lower = clean_rel.lower()
+    if clean_lower.startswith("voicenotes/"):
+        return f"~/Documents/{clean_rel}"
+    if clean_lower.startswith("documents/voicenotes/"):
+        return f"~/{clean_rel}"
+
+    vault = get_home_dir() / "Documents" / "VoiceNotes"
+    cand_direct = vault / clean_rel
+    if cand_direct.exists():
+        return to_portable_path(cand_direct)
+
+    cand_notes = vault / "notes" / clean_rel
+    if cand_notes.exists():
+        return to_portable_path(cand_notes)
+
+    if clean_lower.startswith("notes/"):
+        return f"~/Documents/VoiceNotes/{clean_rel}"
+
+    return f"~/Documents/VoiceNotes/notes/{clean_rel}"
+
+
 def extract_brain_subpath(raw_path: str | Path) -> str | None:
     """Extract relative path after .gemini/antigravity/brain/ from any path, URI, or link.
 
     Example:
         'file:///C:/Users/other/.gemini/antigravity/brain/conv-1/doc.md' -> 'conv-1/doc.md'
-        'file:///C:/Users/alice/AppData/Local/Temp/aivc/artifacts/conv-1/doc.md' -> 'conv-1/doc.md'
+        'file:///C:/Users/hjamet/AppData/Local/Temp/aivc/artifacts/conv-1/doc.md' -> 'conv-1/doc.md'
     """
     if not raw_path:
         return None
@@ -318,5 +378,6 @@ def resolve_workspace_path(rel_path: str | Path, cwd: str | Path | None = None) 
             pass
 
     return None
+
 
 

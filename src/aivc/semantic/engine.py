@@ -26,7 +26,7 @@ from typing import Any
 from aivc.core.memory import Memory
 from aivc.core.workspace import FileStatus, Workspace
 from aivc.semantic.graph import CooccurrenceGraph
-from aivc.config import get_machine_id, to_portable_path, from_portable_path
+from aivc.config import get_machine_id, to_portable_path, from_portable_path, normalize_main_project_file
 from aivc.sync.drive import NativeDriveSyncManager
 
 logger = logging.getLogger(__name__)
@@ -323,6 +323,7 @@ class SemanticEngine:
     def task_commit(
         self,
         title: str,
+        content: str = "",
         journal: str = "",
         tasks: list[dict[str, Any]] | None = None,
         user_items: list[dict[str, Any]] | None = None,
@@ -333,6 +334,9 @@ class SemanticEngine:
         consulted_files: list[str] | None = None,
         roadmap_items: list[dict[str, Any]] | None = None,
         main_project_file: str = "",
+        task_id: str | None = None,
+        task_status: str = "await_validation",
+        completed_user_items: list[str] | None = None,
     ) -> Memory:
         """Create a versioning memory and index it semantically (asynchronously)."""
         if not main_project_file or not str(main_project_file).strip():
@@ -356,7 +360,10 @@ class SemanticEngine:
             from aivc.config import resolve_workspace_path
             ws_cand = resolve_workspace_path(cand, cwd=Path.cwd())
             if ws_cand and ws_cand.exists():
-                return str(ws_cand)
+                return str(ws_cand.resolve())
+            vn_cand = Path.home() / "Documents" / "VoiceNotes" / cand
+            if vn_cand.exists():
+                return str(vn_cand.resolve())
             return raw_s
 
         p_str = str(main_project_file).strip()
@@ -375,12 +382,20 @@ class SemanticEngine:
                     from aivc.config import resolve_workspace_path
                     ws_candidate = resolve_workspace_path(raw_p, cwd=Path.cwd())
                     if ws_candidate and ws_candidate.exists():
-                        resolved_path = ws_candidate
+                        resolved_path = ws_candidate.resolve()
+                    else:
+                        vn_candidate = Path.home() / "Documents" / "VoiceNotes" / raw_p
+                        if vn_candidate.exists():
+                            resolved_path = vn_candidate.resolve()
+                        else:
+                            vn_notes_cand = Path.home() / "Documents" / "VoiceNotes" / "notes" / raw_p
+                            if vn_notes_cand.exists():
+                                resolved_path = vn_notes_cand.resolve()
 
         if not resolved_path.exists():
             raise ValueError(f"main_project_file does not exist on disk: {main_project_file}")
 
-        portable_main = to_portable_path(resolved_path)
+        portable_main = normalize_main_project_file(resolved_path)
 
         norm_read_files = [_resolve_relative_vn(f) for f in (read_files or [])]
         norm_consulted_files = [_resolve_relative_vn(f) for f in (consulted_files or [])]
@@ -396,12 +411,24 @@ class SemanticEngine:
         if portable_main_lower not in existing_paths_lower:
             actual_read_files.append(str(resolved_path))
 
+        effective_journal = journal or content or ""
+        effective_user_items = user_items
+        if content and effective_user_items is None and tasks is None and roadmap_items is None:
+            effective_user_items = [{
+                "id": task_id.strip() if task_id else None,
+                "task": title,
+                "details": content,
+                "task_status": task_status,
+                "edited_files": list(norm_edited_files),
+                "read_files": list(actual_read_files),
+            }]
+
         machine_id = get_machine_id()
         memory = self._workspace.remember(
             title=title,
-            journal=journal,
+            journal=effective_journal,
             tasks=tasks,
-            user_items=user_items,
+            user_items=effective_user_items,
             edited_files=norm_edited_files,
             read_files=actual_read_files,
             urls=urls,
@@ -410,6 +437,7 @@ class SemanticEngine:
             consulted_files=norm_consulted_files,
             roadmap_items=roadmap_items,
             main_project_file=portable_main,
+            completed_user_items=completed_user_items,
         )
         memory.main_project_file = portable_main
 
@@ -724,4 +752,5 @@ class SemanticEngine:
                 final_candidates.append(local_path)
 
         return final_candidates[0] if final_candidates else None
+
 

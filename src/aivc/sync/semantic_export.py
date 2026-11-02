@@ -34,7 +34,7 @@ _LOCAL_PATH_REGEX = re.compile(
 )
 
 GENERIC_PROJECT_NAMES = {
-    "roadmap", "advance", "session", "project", "projet general", "projet général", "task",
+    "roadmap", "advance", "projet general", "projet général", "task",
     "scratch", "memoire_principale", "index_principal", "home",
     "general", "général"
 }
@@ -115,7 +115,7 @@ def extract_project_name(
     """Converts main_project_file or read_files notes reference into a readable project title.
 
     Examples:
-        'notes/Améliorer le système Antigravity.md' -> 'Projet : Améliorer le système Antigravity'
+        'notes/Améliorer le système Antigravity Obsidian.md' -> 'Projet : Améliorer le système Antigravity Obsidian'
         '[Asharde] Session 12' in title -> 'Projet : Asharde'
     """
     # 0. Priority: From main_project_file (absolute priority)
@@ -124,7 +124,7 @@ def extract_project_name(
         name = None
         if "notes/" in p and p.endswith(".md"):
             name = p.split("notes/")[-1][:-3].strip()
-        elif p.endswith(".md") and not any(k in p.lower() for k in ("/brain/", "/temp/", "appdata", "scratch", "sources_")):
+        elif p.endswith(".md") and "voicenotes" in p.lower():
             name = p.split("/")[-1][:-3].strip()
         elif p.endswith(".md"):
             name = p.split("/")[-1][:-3].strip()
@@ -146,7 +146,7 @@ def extract_project_name(
             name = None
             if "notes/" in p and p.endswith(".md"):
                 name = p.split("notes/")[-1][:-3].strip()
-            elif p.endswith(".md") and not any(k in p.lower() for k in ("/brain/", "/temp/", "appdata", "scratch", "sources_")):
+            elif p.endswith(".md") and "voicenotes" in p.lower():
                 name = p.split("/")[-1][:-3].strip()
 
             if name and not _is_generic_project_name(name):
@@ -155,13 +155,10 @@ def extract_project_name(
     # 2. From memory_title
     if memory_title:
         title = memory_title.strip()
-        # Pattern 1: [GenericTag] <Projet> — ... or [GenericTag] <Projet> : ...
-        m = re.match(r"^\[([^\]]+)\]\s*([^—–\:\n]+?)(?:\s+[-—–:]\s+.*|$)", title)
-        if m:
-            tag = m.group(1).strip()
-            after = m.group(2).strip()
-            if _is_generic_project_name(tag) and after and not _is_generic_project_name(after):
-                return f"Projet : {after}"
+        # Pattern 1: [Advance] <Projet> — ... or [Roadmap] <Projet> — ...
+        m = re.match(r"^\[(?:Advance|Roadmap|Session|Project)\]\s*([^—–\:\n]+?)(?:\s+[-—–:]\s+.*|$)", title)
+        if m and m.group(1).strip() and not _is_generic_project_name(m.group(1).strip()):
+            return f"Projet : {m.group(1).strip()}"
 
         # Pattern 2: [Project Name] ...
         m = re.match(r"^\[([^\]]+)\]\s*(.*)$", title)
@@ -310,7 +307,15 @@ def collect_tasks_from_commits(commits_dir: Path) -> tuple[dict[str, dict[str, A
 
             tasks_current[t_id] = entry
             if raw_status in history_by_status:
-                history_by_status[raw_status].append(entry)
+                clean_tid = str(t_id).strip()
+                existing_idx = next(
+                    (i for i, h_it in enumerate(history_by_status[raw_status]) if str(h_it.get("id")).strip() == clean_tid),
+                    None,
+                )
+                if existing_idx is not None:
+                    history_by_status[raw_status][existing_idx] = entry
+                else:
+                    history_by_status[raw_status].append(entry)
 
     return tasks_current, history_by_status
 
@@ -459,27 +464,23 @@ class SemanticDriveExporter:
         self._load_export_cache()
 
     def _load_export_cache(self) -> None:
-        """Loads cached Google Doc IDs and SHA-256 hashes from disk."""
-        if self._cache_file.is_file():
+        """Loads cached Google Doc IDs and content SHA-256 hashes."""
+        if self._cache_file.exists():
             try:
                 data = json.loads(self._cache_file.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    self._doc_id_cache.update(data.get("doc_ids", {}))
-                    self._content_hashes.update(data.get("content_hashes", {}))
+                self._doc_id_cache = data.get("doc_ids", {})
+                self._content_hashes = data.get("content_hashes", {})
             except Exception as e:
                 logger.debug("Failed to load semantic export cache: %s", e)
 
     def _save_export_cache(self) -> None:
-        """Persists Google Doc IDs and SHA-256 hashes safely to disk."""
+        """Saves Google Doc IDs and content SHA-256 hashes to cache file."""
         try:
-            self._cache_file.parent.mkdir(parents=True, exist_ok=True)
-            tmp_file = self._cache_file.with_suffix(".tmp")
             payload = {
                 "doc_ids": self._doc_id_cache,
                 "content_hashes": self._content_hashes,
             }
-            tmp_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            tmp_file.replace(self._cache_file)
+            self._cache_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         except Exception as e:
             logger.debug("Failed to save semantic export cache: %s", e)
 
@@ -506,10 +507,7 @@ class SemanticDriveExporter:
         return created["id"]
 
     def _upsert_gdoc(self, title: str, parent_id: str, content: str) -> str:
-        """Creates or updates a native Google Doc by complete content replacement, deduplicating if needed.
-
-        Skips update if content SHA-256 hash matches the cached hash for this doc.
-        """
+        """Creates or updates a native Google Doc by complete content replacement, deduplicating if needed."""
         from googleapiclient.http import MediaInMemoryUpload
         from googleapiclient.errors import HttpError
 

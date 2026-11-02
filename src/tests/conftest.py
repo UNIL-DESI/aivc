@@ -10,7 +10,18 @@ Run only ML tests:    python -m pytest src/tests/ -m requires_ml
 Skip ML tests:        python -m pytest src/tests/ -m "not requires_ml"
 """
 
+import os
+from pathlib import Path
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolate_aivc_temp_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Isolate AIVC_TEMP_DIR for 100% of tests to prevent writing to real AppData/Local/Temp/aivc."""
+    test_temp = tmp_path / "aivc_test_temp"
+    test_temp.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("AIVC_TEMP_DIR", str(test_temp))
+    return test_temp
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -20,14 +31,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Run tests marked with @pytest.mark.requires_ml",
     )
-
-
-@pytest.fixture(autouse=True)
-def isolate_aivc_temp_dir(tmp_path_factory, monkeypatch):
-    """Ensure all test runs use an isolated temporary directory for AIVC runtime files."""
-    test_temp = tmp_path_factory.mktemp("aivc_test_temp")
-    monkeypatch.setenv("AIVC_TEMP_DIR", str(test_temp))
-    return test_temp
 
 
 def pytest_collection_modifyitems(

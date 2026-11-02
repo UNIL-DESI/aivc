@@ -110,11 +110,14 @@ class Memory:
     user_items: list[dict[str, Any]] = field(default_factory=list)
     """List of user-facing task items [{id, task, details, done}]."""
 
+    completed_user_items: list[str] = field(default_factory=list)
+    """List of completed/validated task IDs."""
+
     journal: str = ""
     """Agent thoughts and activity log."""
 
     main_project_file: str = ""
-    """Main project file identifying the project/topic of this memory in project workspace."""
+    """Main project file identifying the project/topic of this memory."""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to dict."""
@@ -137,6 +140,7 @@ class Memory:
         user_items: list[dict[str, Any]] | None = None,
         journal: str = "",
         main_project_file: str = "",
+        completed_user_items: list[str] | None = None,
     ) -> "Memory":
         """Factory: create a new Memory with a fresh UUID and current UTC timestamp."""
         if not title.strip():
@@ -160,7 +164,8 @@ class Memory:
             urls=list(urls) if urls else [],
             user_items=actual_user_items,
             journal=actual_journal or (note if not actual_user_items else ""),
-            main_project_file=str(main_project_file or ""),
+            main_project_file=main_project_file,
+            completed_user_items=list(completed_user_items) if completed_user_items else [],
         )
 
 
@@ -179,6 +184,7 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
         "journal": memory.journal,
         "main_project_file": getattr(memory, "main_project_file", "") or "",
         "user_items": memory.user_items,
+        "completed_user_items": getattr(memory, "completed_user_items", []),
         "parent_id": memory.parent_id,
         "machine_id": memory.machine_id,
         "urls": list(memory.urls),
@@ -214,7 +220,8 @@ def memory_from_dict(data: dict[str, Any]) -> Memory:
         )
 
     user_items = data.get("user_items", [])
-    journal = data.get("journal") if "journal" in data else data.get("note", "")
+    completed_user_items = data.get("completed_user_items", [])
+    journal = data.get("journal") or data.get("note", "")
     note = data.get("note", "")
     full_note = _compose_note(journal, user_items, fallback_note=note)
 
@@ -244,6 +251,7 @@ def memory_from_dict(data: dict[str, Any]) -> Memory:
         machine_id=data.get("machine_id", ""),  # Default to empty for legacy
         urls=data.get("urls", []),
         user_items=user_items,
+        completed_user_items=completed_user_items,
         journal=journal,
         changes=changes,
         main_project_file=str(data.get("main_project_file") or ""),

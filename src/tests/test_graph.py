@@ -199,3 +199,38 @@ def test_get_memories_by_glob_all_match(graph) -> None:
     graph.add_memory(m1)
     graph.add_memory(m2)
     assert set(graph.get_memories_by_glob("*")) == {"m1", "m2"}
+
+
+# ---------------------------------------------------------------------------
+# Thread safety & SQLite concurrency (non-regression for SQLITE_MISUSE)
+# ---------------------------------------------------------------------------
+
+def test_concurrent_add_memory_thread_safety(graph) -> None:
+    import threading
+
+    errors = []
+    memories = [
+        _make_memory(f"mem_{i}", file_paths=[f"file_{i % 5}.py", f"shared_{i % 2}.txt"])
+        for i in range(50)
+    ]
+
+    def worker(items):
+        for m in items:
+            try:
+                graph.add_memory(m)
+                _ = graph.get_indexed_commit_ids()
+            except Exception as e:
+                errors.append(e)
+
+    threads = [
+        threading.Thread(target=worker, args=(memories[0:25],)),
+        threading.Thread(target=worker, args=(memories[25:50],)),
+    ]
+
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Concurrent operations failed with: {errors}"
+    assert len(graph.get_indexed_commit_ids()) == 50

@@ -236,27 +236,35 @@ def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_
 @mcp.tool()
 async def task_commit(
     title: str,
-    journal: str,
-    main_project_file: str,
-    tasks: list[dict[str, Any]] | None = None,
-    user_items: list[dict[str, Any]] | None = None,
+    content: str = "",
+    main_project_file: str = "",
+    task_id: str | None = None,
+    task_status: str = "await_validation",
     edited_files: list[str] | None = None,
     read_files: list[str] | None = None,
     urls: list[str] | None = None,
+    journal: str = "",
+    tasks: list[dict[str, Any]] | None = None,
+    user_items: list[dict[str, Any]] | None = None,
     roadmap_items: list[dict[str, Any]] | None = None,
+    completed_user_items: list[str] | None = None,
 ) -> str:
-    """Enregistre un souvenir structuré avec journal, tâches (états: new, await_validation, validated) et fichiers.
+    """Enregistre un souvenir atomique ou structuré dans AIVC (1 appel = 1 souvenir sur 1 tâche).
 
     Args:
-        title: Titre résumant le souvenir.
-        journal: Récit détaillé de session.
-        main_project_file: Chemin du fichier principal identifiant le projet ou sujet de ce souvenir (ex. la note maîtresse du projet ou le README.md d'un dépôt de code). Doit exister sur le disque. Ajouté automatiquement aux fichiers consultés (read_files) s'il n'est ni dans read_files ni dans edited_files, et utilisé comme cible unique de rattachement des tâches (user_items).
-        tasks: Liste unifiée des tâches.
-        user_items: Actions utilisateur.
-        edited_files: Fichiers édités ou créés.
-        read_files: Fichiers consultés.
-        urls: URLs consultées.
-        roadmap_items: Tâches de roadmap.
+        title: Intitulé clair de la tâche ou de l'action.
+        main_project_file: Chemin de la note maîtresse du projet (ex. notes/MonProjet.md) ou README.md. Doit exister sur le disque. Cible unique de rattachement.
+        content: Paragraphe complet et fluide en pur langage naturel contenant le Contexte explicite, l'Action et le TL;DR (ce qui a été fait, observé, conclusions et chiffres clés), sans aucun chemin de fichier, bloc 'Source :' ni extrait de code brut.
+        task_id: Identifiant déterministe de la tâche (ex. 'r-123456-0' ou '123456-0'). Obligatoire pour mettre à jour ou changer le statut d'une tâche existante. Laisser None pour créer une nouvelle tâche.
+        task_status: Statut de la tâche ('new' pour la roadmap, 'await_validation' pour un livrable prêt, 'validated' pour une tâche terminée).
+        edited_files: Liste des fichiers modifiés ou créés (synchronisés et affichés en liens cliquables sous le souvenir).
+        read_files: Liste des fichiers consultés (synchronisés et affichés en liens cliquables sous le souvenir).
+        urls: URLs consultées ou référencées.
+        journal: Récit détaillé ou contexte de session (alias rétrocompatible pour content).
+        tasks: Liste unifiée des tâches (mode multi-tâches rétrocompatible).
+        user_items: Actions utilisateur (mode multi-tâches rétrocompatible).
+        roadmap_items: Tâches de roadmap (mode multi-tâches rétrocompatible).
+        completed_user_items: IDs des tâches terminées (déprécié).
     """
     import asyncio
     from pathlib import Path
@@ -264,29 +272,36 @@ async def task_commit(
     actual_read_files = read_files or []
     actual_edited_files = edited_files or []
     actual_urls = urls or []
-    actual_user_items = user_items or []
-    actual_tasks = tasks or []
+    actual_user_items = user_items if user_items is not None else []
+    effective_journal = journal or content or ""
+    effective_content = content or journal or ""
 
     engine = _get_engine()
 
-    engine_kwargs = {
+    commit_fn = getattr(engine, "task_commit", engine.remember)
+    engine_kwargs: dict[str, Any] = {
         "title": title,
-        "journal": journal,
+        "content": effective_content,
+        "journal": effective_journal,
         "main_project_file": main_project_file,
-        "user_items": actual_user_items,
         "read_files": actual_read_files,
         "edited_files": actual_edited_files,
         "urls": actual_urls,
     }
+    if user_items is not None:
+        engine_kwargs["user_items"] = user_items
     if tasks is not None:
         engine_kwargs["tasks"] = tasks
     if roadmap_items is not None:
         engine_kwargs["roadmap_items"] = roadmap_items
+    if completed_user_items is not None:
+        engine_kwargs["completed_user_items"] = completed_user_items
+    if task_id is not None:
+        engine_kwargs["task_id"] = task_id
+        engine_kwargs["task_status"] = task_status
+    elif task_status != "await_validation":
+        engine_kwargs["task_status"] = task_status
 
-    if hasattr(engine, "task_commit"):
-        commit_fn = engine.task_commit
-    else:
-        commit_fn = engine.remember
     memory = await asyncio.to_thread(
         commit_fn,
         **engine_kwargs
@@ -306,24 +321,60 @@ async def task_commit(
     if memory.user_items:
         lines = []
         for it in memory.user_items:
-            task_id = it.get("id") or "task"
-            status = it.get("task_status") or ("validated" if it.get("done") else "new")
-            lines.append(f"[{task_id}] {status}")
+            t_id = it.get("id") or "task"
+            st = it.get("task_status") or ("validated" if it.get("done") else "new")
+            lines.append(f"[{t_id}] {st}")
         return "\n".join(lines)
 
     short_cid = memory.id[:8] if memory.id else "ok"
     return f"OK ({short_cid})"
 
 
-remember = task_commit
+@mcp.tool()
+async def remember(
+    title: str,
+    content: str = "",
+    main_project_file: str = "",
+    task_id: str | None = None,
+    task_status: str = "await_validation",
+    edited_files: list[str] | None = None,
+    read_files: list[str] | None = None,
+    urls: list[str] | None = None,
+    journal: str = "",
+    tasks: list[dict[str, Any]] | None = None,
+    user_items: list[dict[str, Any]] | None = None,
+    roadmap_items: list[dict[str, Any]] | None = None,
+    completed_user_items: list[str] | None = None,
+) -> str:
+    """Enregistre un souvenir dans AIVC (alias rétrocompatible pour task_commit)."""
+    return await task_commit(
+        title=title,
+        main_project_file=main_project_file,
+        content=content,
+        task_id=task_id,
+        task_status=task_status,
+        edited_files=edited_files,
+        read_files=read_files,
+        urls=urls,
+        journal=journal,
+        tasks=tasks,
+        user_items=user_items,
+        roadmap_items=roadmap_items,
+        completed_user_items=completed_user_items,
+    )
+
 
 _orig_call_tool = mcp.call_tool
 
 
 async def _wrapped_call_tool(name: str, arguments: dict[str, Any] | None = None) -> Any:
-    if name == "remember":
-        name = "task_commit"
-    return await _orig_call_tool(name, arguments or {})
+    args = dict(arguments or {})
+    if name in ("remember", "task_commit"):
+        if "content" in args and "journal" not in args:
+            args["journal"] = args["content"]
+        elif "journal" in args and "content" not in args:
+            args["content"] = args["journal"]
+    return await _orig_call_tool(name, args)
 
 
 mcp.call_tool = _wrapped_call_tool  # type: ignore[assignment]

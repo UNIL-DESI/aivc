@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from aivc.config import get_home_dir, to_portable_path, get_aivc_temp_dir
+from aivc.config import get_home_dir, to_portable_path, get_aivc_temp_dir, get_aivc_user_temp_dir
 
 logger = logging.getLogger(__name__)
 
@@ -173,13 +173,83 @@ def normalize_project_tldr_title(title: str) -> str:
 normalize_advance_tldr_title = normalize_project_tldr_title
 
 
+def is_corrupt_test_artifact(path: Path) -> bool:
+    """Detects 8-byte dummy 'restored' artifact written by unit tests."""
+    try:
+        if path.is_file() and path.stat().st_size == 8:
+            return path.read_bytes() == b"restored"
+    except Exception:
+        pass
+    return False
+
+
+def convert_wikilinks_to_markdown_links(text: str, vault_dir: Path | str | None = None) -> str:
+    """Convert Obsidian wikilinks [[target|label]] or [[target]] to standard markdown links.
+    Ensures no [[...]] syntax remains in advance_tldr notes.
+    """
+    if not text or "[[" not in text:
+        return text
+
+    wikilink_pattern = re.compile(r"\[\[([^\]|\r\n]+)(?:\|([^\]\r\n]+))?\]\]")
+
+    def _replace_wikilink(m: re.Match) -> str:
+        target = m.group(1).strip()
+        label = m.group(2).strip() if m.group(2) else None
+
+        # 1. Already a file:/// URL
+        if target.lower().startswith("file:///"):
+            t_url = target.replace("\\", "/")
+            lbl = label or Path(t_url).name
+            return f"[{lbl}]({t_url})"
+
+        # 2. Windows drive letter path e.g. C:\... or C:/...
+        if re.match(r"^[A-Za-z]:[\\/]", target):
+            posix_path = target.replace("\\", "/").rstrip("/")
+            lbl = label or Path(target).name
+            return f"[{lbl}](file:///{posix_path})"
+
+        # 3. Portable home path ~/ or ~\
+        if target.startswith("~/") or target.startswith("~\\"):
+            posix_home = Path.home().as_posix()
+            sub = target[2:].replace("\\", "/").lstrip("/")
+            lbl = label or Path(target).name
+            return f"[{lbl}](file:///{posix_home}/{sub})"
+
+        # 4. Relative vault path
+        base_v = Path(vault_dir) if vault_dir else get_workspace_dir()
+        lbl = label or Path(target).stem
+        clean_target = target.replace("\\", "/").lstrip("/")
+
+        cand_direct = base_v / clean_target
+        if cand_direct.exists():
+            return f"[{lbl}](file:///{cand_direct.as_posix()})"
+
+        if not clean_target.lower().endswith(".md"):
+            cand_md = base_v / f"{clean_target}.md"
+            if cand_md.exists():
+                return f"[{lbl}](file:///{cand_md.as_posix()})"
+
+            cand_notes_md = base_v / "notes" / f"{clean_target}.md"
+            if cand_notes_md.exists():
+                return f"[{lbl}](file:///{cand_notes_md.as_posix()})"
+
+        cand_notes = base_v / "notes" / clean_target
+        if cand_notes.exists():
+            return f"[{lbl}](file:///{cand_notes.as_posix()})"
+
+        target_file = f"{clean_target}.md" if not clean_target.lower().endswith(".md") else clean_target
+        return f"[{lbl}](file:///{base_v.as_posix()}/{target_file})"
+
+    return wikilink_pattern.sub(_replace_wikilink, text)
+
+
 def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, background_drive: bool = False) -> list[str]:
     """Auto-restores files under .gemini/antigravity/brain/ referenced by memory if missing locally.
     Remaps any foreign machine paths to current PC's Path.home() / .gemini/antigravity/brain/...
     Supports memory objects, dicts, file paths, or project view notes.
     """
     import urllib.parse
-    from aivc.config import get_home_dir, extract_brain_subpath, get_storage_root, get_aivc_temp_dir
+    from aivc.config import get_home_dir, extract_brain_subpath, get_storage_root, get_aivc_temp_dir, get_aivc_user_temp_dir
     from aivc.sync.drive import NativeDriveSyncManager
 
     home = get_home_dir()
@@ -269,9 +339,10 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
                 stem = Path(str(mpf)).stem
                 title = normalize_project_tldr_title(stem)
                 tldr_temp = get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md"
+                tldr_user_temp = get_aivc_user_temp_dir() / "advance_tldr" / f"🤖 {title}.md"
                 tldr_legacy = home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md"
                 tldr_cli = home / ".gemini" / "antigravity-cli" / "brain" / "advance_tldr" / f"🤖 {title}.md"
-                tldr_files = [p for p in (tldr_temp, tldr_legacy, tldr_cli) if p.is_file()]
+                tldr_files = [p for p in (tldr_temp, tldr_user_temp, tldr_legacy, tldr_cli) if p.is_file()]
                 tldr_candidate = max(tldr_files, key=lambda p: p.stat().st_mtime) if tldr_files else tldr_legacy
                 if tldr_candidate.is_file():
                     tldr_txt = tldr_candidate.read_text(encoding="utf-8")
@@ -283,6 +354,8 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
                 pass
 
     temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
+    user_temp_artifacts_dir = get_aivc_user_temp_dir() / "artifacts"
+    mirror_user_temp = (user_temp_artifacts_dir.resolve() != temp_artifacts_dir.resolve())
     drive_candidates: list[tuple[str, Path, list[Path]]] = []
 
     brain_roots = [
@@ -295,6 +368,7 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
         local_path = brain_roots[0] / sub_p
         cli_path = brain_roots[1] / sub_p
         temp_artifact_path = temp_artifacts_dir / sub_p
+        user_temp_artifact_path = user_temp_artifacts_dir / sub_p if mirror_user_temp else None
 
         local_files = [local_path, cli_path]
         brain_candidates = [p for p in local_files if p.is_file()]
@@ -302,13 +376,17 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
             existing_file = max(brain_candidates, key=lambda p: p.stat().st_mtime)
         elif temp_artifact_path.is_file():
             existing_file = temp_artifact_path
+        elif user_temp_artifact_path is not None and user_temp_artifact_path.is_file():
+            existing_file = user_temp_artifact_path
         else:
             existing_file = None
+
+        target_list = [p for p in (local_files + [temp_artifact_path, user_temp_artifact_path]) if p is not None]
 
         if existing_file:
             # Sync across local brain roots and temp_artifacts_dir
             mirrored_to_local_path = False
-            for target in local_files + [temp_artifact_path]:
+            for target in target_list:
                 if target == existing_file:
                     continue
                 needs_copy = False
@@ -336,24 +414,29 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
             continue
 
         sub_posix = sub.replace("\\", "/")
-        portable = f"~/.gemini/antigravity/brain/{sub_posix}"
-        drive_candidates.append((portable, local_path, [temp_artifact_path, cli_path]))
+        extra_targets = [p for p in [temp_artifact_path, cli_path, user_temp_artifact_path] if p is not None]
+        drive_candidates.append((sub_posix, local_path, extra_targets))
 
     if drive_candidates:
         if background_drive:
             def _async_advance_drive_worker(candidates: list[tuple[str, Path, list[Path]]], d_mgr: Any) -> None:
-                for port_p, l_p, targets in candidates:
-                    try:
-                        dest = d_mgr.pull_latest_file(port_p, target_path=l_p)
-                        if dest and dest.is_file():
-                            for t in targets:
-                                try:
-                                    t.parent.mkdir(parents=True, exist_ok=True)
-                                    shutil.copy2(l_p, t)
-                                except OSError:
-                                    pass
-                    except Exception:
-                        pass
+                for sub_posix, l_p, targets in candidates:
+                    for port_p in (
+                        f"~/.gemini/antigravity/brain/{sub_posix}",
+                        f"~/.gemini/antigravity-cli/brain/{sub_posix}",
+                    ):
+                        try:
+                            dest = d_mgr.pull_latest_file(port_p, target_path=l_p)
+                            if dest and dest.is_file():
+                                for t in targets:
+                                    try:
+                                        t.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(l_p, t)
+                                    except OSError:
+                                        pass
+                                break
+                        except Exception:
+                            pass
 
             import threading
             t = threading.Thread(
@@ -364,19 +447,26 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
             )
             t.start()
         else:
-            for portable, local_path, targets in drive_candidates:
-                try:
-                    dest = mgr.pull_latest_file(portable, target_path=local_path)
-                    if dest and dest.is_file():
-                        restored.append(str(local_path))
-                        for t in targets:
-                            try:
-                                t.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(local_path, t)
-                            except OSError:
-                                pass
-                except Exception:
-                    pass
+            for sub_posix, local_path, targets in drive_candidates:
+                dest = None
+                for port_p in (
+                    f"~/.gemini/antigravity/brain/{sub_posix}",
+                    f"~/.gemini/antigravity-cli/brain/{sub_posix}",
+                ):
+                    try:
+                        dest = mgr.pull_latest_file(port_p, target_path=local_path)
+                        if dest and dest.is_file():
+                            break
+                    except Exception:
+                        pass
+                if dest and dest.is_file():
+                    restored.append(str(local_path))
+                    for t in targets:
+                        try:
+                            t.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(local_path, t)
+                        except OSError:
+                            pass
 
     return restored
 
@@ -396,9 +486,12 @@ def rewrite_artifact_paths_to_temp(text: str, temp_dir: Path | None = None) -> s
     if not text:
         return text
 
-    from aivc.config import get_aivc_temp_dir
+    # Pre-step 0: convert any wikilinks [[...]] to markdown links
+    text = convert_wikilinks_to_markdown_links(text)
 
-    base_temp = temp_dir if temp_dir is not None else get_aivc_temp_dir()
+    import aivc.config as _cfg
+
+    base_temp = temp_dir if temp_dir is not None else _cfg.get_aivc_temp_dir()
     artifacts_dir = Path(base_temp) / "artifacts"
     artifacts_posix = artifacts_dir.as_posix().replace("\\", "/").lstrip("/")
 
@@ -448,11 +541,20 @@ def rewrite_artifact_paths_to_temp(text: str, temp_dir: Path | None = None) -> s
         if line_m:
             suffix = line_m.group(1)
             raw_sub = raw_sub[:-len(suffix)]
+
         sub_clean = raw_sub.replace("/", "\\").strip("\\")
         native_path = str(artifacts_dir / Path(sub_clean))
         return native_path + suffix
 
     text = local_pattern.sub(_replace_local, text)
+
+    # Post-step safety: guarantee no remaining filC:\ can survive
+    text = re.sub(
+        r"(?<![A-Za-z0-9_])fil(?![eE]://)([A-Za-z]:[\\/](?![\\/])[^\s\[\]\(\)\"\'\`<>]+)",
+        _fix_corrupted_fil,
+        text,
+    )
+    text = convert_wikilinks_to_markdown_links(text)
     return text
 
 
@@ -484,6 +586,56 @@ def sync_project_views(
     except Exception as e:
         logger.debug("auto-restore in sync_project_views skipped: %s", e)
 
+    temp_adv_dir = get_aivc_temp_dir() / "advance_tldr"
+    def _mirror_paths(synced_paths: list[str]) -> None:
+        if not synced_paths:
+            return
+        import aivc.config as _cfg
+        cur_home = _cfg.get_home_dir()
+        cur_temp_adv_dir = _cfg.get_aivc_temp_dir() / "advance_tldr"
+        cur_user_temp_adv_dir = _cfg.get_aivc_user_temp_dir() / "advance_tldr"
+        cur_mirror_user_temp = (cur_user_temp_adv_dir.as_posix().lower() != cur_temp_adv_dir.as_posix().lower())
+
+        for sp in synced_paths:
+            try:
+                p_sp = Path(sp)
+                if p_sp.is_file():
+                    try:
+                        content = p_sp.read_text(encoding="utf-8")
+                        repaired = rewrite_artifact_paths_to_temp(content)
+                        if repaired != content:
+                            p_sp.write_text(repaired, encoding="utf-8")
+                    except Exception:
+                        pass
+                view_dir_name = p_sp.parent.name or "advance_tldr"
+                stem = p_sp.stem
+                title = normalize_project_tldr_title(stem)
+                destinations = [
+                    cur_home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md",
+                    cur_home / ".gemini" / "antigravity-cli" / "brain" / "advance_tldr" / f"🤖 {title}.md",
+                    cur_temp_adv_dir / f"🤖 {title}.md",
+                ]
+                if cur_mirror_user_temp:
+                    destinations.append(cur_user_temp_adv_dir / f"🤖 {title}.md")
+
+                if view_dir_name != "advance_tldr":
+                    destinations.append(cur_home / ".gemini" / "antigravity" / "brain" / view_dir_name / f"🤖 {title}.md")
+                    destinations.append(cur_home / ".gemini" / "antigravity-cli" / "brain" / view_dir_name / f"🤖 {title}.md")
+                    destinations.append(get_aivc_temp_dir() / view_dir_name / f"🤖 {title}.md")
+                    if cur_mirror_user_temp:
+                        destinations.append(get_aivc_user_temp_dir() / view_dir_name / f"🤖 {title}.md")
+
+                for legacy_dest in destinations:
+                    if p_sp.is_file() and legacy_dest.as_posix().lower() != p_sp.as_posix().lower():
+                        legacy_dest.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(p_sp, legacy_dest)
+            except Exception:
+                pass
+            try:
+                restore_artifacts_for_memory(sp, background_drive=True)
+            except Exception:
+                pass
+
     if _CUSTOM_SYNC_HANDLER is not None:
         try:
             try:
@@ -496,32 +648,7 @@ def sync_project_views(
             else:
                 setattr(memory, "_tldr_synced", True)
                 setattr(memory, "_tldr_synced_paths", res or [])
-            if res:
-                for sp in res:
-                    try:
-                        p_sp = Path(sp)
-                        view_dir_name = p_sp.parent.name or "advance_tldr"
-                        stem = p_sp.stem
-                        title = normalize_project_tldr_title(stem)
-                        destinations = [
-                            home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md",
-                            home / ".gemini" / "antigravity-cli" / "brain" / "advance_tldr" / f"🤖 {title}.md",
-                            get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md",
-                        ]
-                        if view_dir_name != "advance_tldr":
-                            destinations.append(home / ".gemini" / "antigravity" / "brain" / view_dir_name / f"🤖 {title}.md")
-                            destinations.append(home / ".gemini" / "antigravity-cli" / "brain" / view_dir_name / f"🤖 {title}.md")
-                            destinations.append(get_aivc_temp_dir() / view_dir_name / f"🤖 {title}.md")
-                        for legacy_dest in destinations:
-                            if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
-                                legacy_dest.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(p_sp, legacy_dest)
-                    except Exception:
-                        pass
-                    try:
-                        restore_artifacts_for_memory(sp, background_drive=True)
-                    except Exception:
-                        pass
+            _mirror_paths(res or [])
             return res or []
         except Exception as e:
             logger.warning("Custom sync handler failed: %s", e)
@@ -566,33 +693,8 @@ def sync_project_views(
         except TypeError:
             synced_paths = sync_fn(memory, vault_dir=target_ws_str)
 
-        # Restore missing brain files and mirror to legacy view dir for backwards compatibility
         if synced_paths:
-            for sp in synced_paths:
-                try:
-                    p_sp = Path(sp)
-                    view_dir_name = p_sp.parent.name or "advance_tldr"
-                    stem = p_sp.stem
-                    title = normalize_project_tldr_title(stem)
-                    destinations = [
-                        home / ".gemini" / "antigravity" / "brain" / "advance_tldr" / f"🤖 {title}.md",
-                        home / ".gemini" / "antigravity-cli" / "brain" / "advance_tldr" / f"🤖 {title}.md",
-                        get_aivc_temp_dir() / "advance_tldr" / f"🤖 {title}.md",
-                    ]
-                    if view_dir_name != "advance_tldr":
-                        destinations.append(home / ".gemini" / "antigravity" / "brain" / view_dir_name / f"🤖 {title}.md")
-                        destinations.append(home / ".gemini" / "antigravity-cli" / "brain" / view_dir_name / f"🤖 {title}.md")
-                        destinations.append(get_aivc_temp_dir() / view_dir_name / f"🤖 {title}.md")
-                    for legacy_dest in destinations:
-                        if p_sp.is_file() and legacy_dest.resolve() != p_sp.resolve():
-                            legacy_dest.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(p_sp, legacy_dest)
-                except Exception:
-                    pass
-                try:
-                    restore_artifacts_for_memory(sp, background_drive=True)
-                except Exception:
-                    pass
+            _mirror_paths(synced_paths)
 
         if is_dict:
             memory["_tldr_synced"] = True
@@ -608,6 +710,7 @@ def sync_project_views(
 
 
 sync_advance_tldr = sync_project_views
+_mirror_advance_tldr_files = sync_project_views
 
 
 def backfill_missing_main_project_files(

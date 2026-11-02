@@ -7,29 +7,42 @@ the untrack + GC lifecycle.
 
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import glob as _glob
-import hashlib
 import json
+import logging
 import os
+import re
 import sys
 import time
+import unicodedata
 import uuid
 import shutil
 import tempfile
-import threading
-import re
-import urllib.parse
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 from typing import Any
 
+import urllib.parse
+
 from aivc.core.blob_store import BlobStore
 from aivc.core.memory import Memory, FileChange, memory_from_dict, memory_to_dict, _compose_note
 from aivc.core.diff import compute_diff
 from aivc.core.index import CoreIndex
-from aivc.config import get_machine_id, to_portable_path, from_portable_path, get_aivc_temp_dir
+from aivc.config import (
+    get_machine_id,
+    to_portable_path,
+    from_portable_path,
+    get_home_dir,
+    extract_brain_subpath,
+    get_aivc_temp_dir,
+    get_aivc_user_temp_dir,
+    normalize_main_project_file,
+)
 
 
 def _extract_linked_file_paths(text: str) -> list[str]:
@@ -64,6 +77,105 @@ def _extract_linked_file_paths(text: str) -> list[str]:
             seen.add(norm)
             unique_paths.append(p.rstrip(".,;:)"))
     return unique_paths
+
+
+def _is_same_project(mpf_a: str, mpf_b: str) -> bool:
+    """Check if two main_project_file paths point to the same project."""
+    if not mpf_a or not mpf_b:
+        return False
+    a = to_portable_path(mpf_a).lower().strip()
+    b = to_portable_path(mpf_b).lower().strip()
+    if a == b:
+        return True
+    if a.endswith("/" + b) or b.endswith("/" + a):
+        return True
+    name_a = PurePath(a).name
+    name_b = PurePath(b).name
+    if name_a and name_b and name_a == name_b and name_a.endswith(".md"):
+        return True
+    return False
+
+
+def _resolve_file_path(path_str: str | Path) -> Path:
+    """Resolve an input file path (direct path, portable path, or brain/aivc artifact) to an existing local Path.
+
+    If the file exists under an artifact mirror (e.g. C:\\Users\\Public\\aivc\\artifacts\\...),
+    and not yet under ~/.gemini/antigravity/brain/..., it automatically mirrors it to the brain
+    location so that downstream sync and from_portable_path find it consistently.
+    """
+    clean_str = str(path_str).strip()
+    if clean_str.startswith("file:///"):
+        clean_str = clean_str[8:]
+    elif clean_str.startswith("file://"):
+        clean_str = clean_str[7:]
+    clean_str = re.split(r":L?\d+", clean_str)[0]
+
+    # 1. Direct path check on local filesystem
+    direct_p = Path(clean_str)
+    if direct_p.is_file() or direct_p.is_dir():
+        sub = extract_brain_subpath(clean_str)
+        if sub and direct_p.is_file():
+            import aivc.config
+            home = aivc.config.get_home_dir()
+            brain_p = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+            if not brain_p.is_file() or (
+                brain_p.stat().st_size != direct_p.stat().st_size
+                or brain_p.stat().st_mtime < direct_p.stat().st_mtime
+            ):
+                try:
+                    brain_p.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(direct_p, brain_p)
+                except OSError:
+                    pass
+        return direct_p
+
+    # 2. Check from_portable_path resolution
+    try:
+        portable_cand = from_portable_path(path_str)
+        if portable_cand.is_file() or portable_cand.is_dir():
+            return portable_cand
+    except Exception:
+        portable_cand = None
+
+    # 3. Artifact candidates lookup across standard temp and brain locations
+    sub = extract_brain_subpath(clean_str)
+    if not sub:
+        try:
+            sub = extract_brain_subpath(to_portable_path(path_str))
+        except Exception:
+            sub = None
+
+    if sub:
+        import aivc.config
+        home = aivc.config.get_home_dir()
+        temp_dir = aivc.config.get_aivc_temp_dir() / "artifacts"
+        user_temp_dir = aivc.config.get_aivc_user_temp_dir() / "artifacts"
+        brain_dir = home / ".gemini" / "antigravity" / "brain"
+        brain_cli_dir = home / ".gemini" / "antigravity-cli" / "brain"
+
+        candidates = [
+            temp_dir / Path(sub),
+            user_temp_dir / Path(sub),
+            brain_dir / Path(sub),
+            brain_cli_dir / Path(sub),
+        ]
+        for cand in candidates:
+            if cand.is_file() or cand.is_dir():
+                target_brain = brain_dir / Path(sub)
+                if cand.is_file() and (
+                    not target_brain.is_file()
+                    or target_brain.stat().st_size != cand.stat().st_size
+                    or target_brain.stat().st_mtime < cand.stat().st_mtime
+                ):
+                    try:
+                        target_brain.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(cand, target_brain)
+                    except OSError:
+                        pass
+                return cand
+
+    return portable_cand if portable_cand is not None else Path(clean_str)
+
 
 
 @dataclass
@@ -275,7 +387,7 @@ class Workspace:
     def _resolve_tracked_path(self, path_str: str, allow_basename_fallback: bool = False) -> str:
         """Resolve a relative or basename path to a known tracked file path."""
         try:
-            if from_portable_path(path_str).exists() or to_portable_path(path_str) in self._state["tracked_files"]:
+            if _resolve_file_path(path_str).exists() or to_portable_path(path_str) in self._state["tracked_files"]:
                 return path_str
         except Exception:
             if to_portable_path(path_str) in self._state["tracked_files"]:
@@ -286,10 +398,9 @@ class Workspace:
         rel_norm = raw_s.lstrip("./")
 
         if is_rel and rel_norm:
-            from aivc.config import resolve_workspace_path
-            ws_cand = resolve_workspace_path(rel_norm)
-            if ws_cand and ws_cand.exists():
-                return str(ws_cand)
+            vn_cand = Path.home() / "Documents" / "VoiceNotes" / rel_norm
+            if vn_cand.exists():
+                return str(vn_cand)
 
             for tp in self._state["tracked_files"]:
                 if tp == rel_norm or tp.endswith("/" + rel_norm):
@@ -340,7 +451,7 @@ class Workspace:
         self._reload_state_if_needed()
         return list(self._state["tracked_files"].keys())
 
-    def task_commit(
+    def remember(
         self,
         title: str,
         journal: str = "",
@@ -354,6 +465,7 @@ class Workspace:
         consulted_files: list[str] | None = None,
         roadmap_items: list[dict[str, Any]] | None = None,
         main_project_file: str = "",
+        completed_user_items: list[str] | None = None,
     ) -> Memory:
         """Create a new memory in 3-part format (title, journal, tasks/user_items) without local diffs/blobs.
 
@@ -373,6 +485,9 @@ class Workspace:
         """
         self._reload_state_if_needed()
 
+        if main_project_file:
+            main_project_file = normalize_main_project_file(main_project_file)
+
         if not journal and note:
             journal = note
 
@@ -386,8 +501,8 @@ class Workspace:
         actual_edited_files = list(dict.fromkeys([self._resolve_tracked_path(f, allow_basename_fallback=False) for f in actual_edited_files]))
 
         memory_id = str(uuid.uuid4())
-        self._last_modified_commit_ids = []
-        self._last_gc_drive_files = []
+        now_ts = datetime.now(timezone.utc).isoformat()
+        self._last_modified_commit_ids: list[str] = []
 
         # Merge input task collections
         raw_task_entries: list[tuple[dict[str, Any], bool]] = []
@@ -406,55 +521,73 @@ class Workspace:
                 elif isinstance(it, str):
                     raw_task_entries.append(({"task": it}, True))
 
-        # Build existing task map across commits for lookup and event-sourcing
+        # Build existing task map across commits for lookup and event-sourcing, sorted chronologically
         existing_tasks: dict[str, dict[str, Any]] = {}
         commits_data: dict[Path, dict[str, Any]] = {}
+        raw_commits: list[tuple[str, str, Path, dict[str, Any]]] = []
         for p in self._commits_dir.glob("*.json"):
             try:
                 c_data = json.loads(p.read_text(encoding="utf-8"))
-                commits_data[p] = c_data
-                for c_it in c_data.get("user_items", []):
-                    c_id = c_it.get("id")
-                    if c_id and c_id not in existing_tasks:
-                        existing_tasks[c_id] = c_it
+                c_ts = str(c_data.get("timestamp") or "")
+                raw_commits.append((c_ts, p.name, p, c_data))
             except Exception:
                 continue
 
-        # Build existing_task_ids mapping normalized task text to latest id for main_project_file
-        existing_task_ids: dict[str, str] = {}
-        norm_main_proj = to_portable_path(main_project_file).lower() if main_project_file else ""
-        if norm_main_proj:
-            sorted_commits = sorted(
-                commits_data.values(),
-                key=lambda c: str(c.get("timestamp", ""))
-            )
-            for c_data in sorted_commits:
-                c_mpf = to_portable_path(str(c_data.get("main_project_file") or "")).lower()
-                if c_mpf and c_mpf == norm_main_proj:
-                    for c_it in c_data.get("user_items", []):
-                        c_id = str(c_it.get("id") or "").strip()
-                        c_task = str(c_it.get("task") or "").strip()
-                        c_key = " ".join(c_task.lower().split())
-                        if c_key and c_id:
-                            existing_task_ids[c_key] = c_id
+        raw_commits.sort(key=lambda x: (x[0], x[1]))
+
+        first_seen: dict[str, tuple[str, int]] = {}
+        project_active_tasks: dict[str, dict[str, Any]] = {}
+
+        for c_ts, p_name, p, c_data in raw_commits:
+            commits_data[p] = c_data
+            c_mpf = c_data.get("main_project_file") or ""
+            is_same_proj = bool(main_project_file and c_mpf and _is_same_project(c_mpf, main_project_file))
+
+            for c_idx, c_it in enumerate(c_data.get("user_items", []), 1):
+                if isinstance(c_it, dict):
+                    c_id = c_it.get("id")
+                    if c_id:
+                        if c_id not in first_seen:
+                            first_seen[c_id] = (c_it.get("created_at") or c_ts, c_idx)
+                        existing_tasks[c_id] = c_it
+
+                        if is_same_proj:
+                            c_st = c_it.get("task_status")
+                            c_dn = bool(c_it.get("done", False))
+                            if c_st == "validated" or c_dn:
+                                project_active_tasks.pop(c_id, None)
+                            elif c_st in ("new", "await_validation"):
+                                project_active_tasks[c_id] = c_it
+
+            if is_same_proj:
+                for cid in c_data.get("completed_user_items", []) or []:
+                    project_active_tasks.pop(str(cid).strip(), None)
 
         norm_user_items: list[dict[str, Any]] = []
         status_updates_by_id: dict[str, tuple[str, bool]] = {}
-        processed_task_ids: dict[str, str] = {}
+
+        if completed_user_items:
+            for cid in completed_user_items:
+                c_id_clean = str(cid).strip()
+                if c_id_clean:
+                    status_updates_by_id[c_id_clean] = ("validated", True)
+                    project_active_tasks.pop(c_id_clean, None)
+
+        self._last_gc_drive_files = []
 
         for idx, (item, is_roadmap_arg) in enumerate(raw_task_entries, 1):
             raw_id = str(item.get("id") or "").strip()
             task_title = str(item.get("task", "")).strip()
-            task_key = " ".join(task_title.lower().split())
 
-            candidate_id = raw_id
-            if not candidate_id and task_key:
-                if task_key in processed_task_ids:
-                    candidate_id = processed_task_ids[task_key]
-                elif task_key in existing_task_ids:
-                    candidate_id = existing_task_ids[task_key]
-
-            prior_task = existing_tasks.get(candidate_id) if candidate_id else None
+            # Deterministic lookup: a task is identified EXCLUSIVELY by its exact task_id
+            matched_existing_id = None
+            if raw_id and raw_id in existing_tasks:
+                matched_existing_id = raw_id
+                prior_task = existing_tasks[raw_id]
+                final_id = raw_id
+            else:
+                prior_task = None
+                final_id = raw_id
 
             # Resolve task_status
             explicit_status = item.get("task_status")
@@ -466,7 +599,7 @@ class Workspace:
                 is_roadmap_arg
                 or item.get("kind") == "roadmap"
                 or item.get("type") == "roadmap"
-                or (candidate_id and candidate_id.startswith("r-"))
+                or (final_id and final_id.startswith("r-"))
             ):
                 task_status = "new"
             elif prior_task and prior_task.get("task_status"):
@@ -477,15 +610,10 @@ class Workspace:
             done = (task_status == "validated")
             kind = "roadmap" if task_status == "new" else "deliverable"
 
-            # Resolve id
-            if candidate_id:
-                final_id = candidate_id
-            else:
+            # Assign generated id if still None
+            if not final_id:
                 prefix = f"r-{memory_id[:6]}" if task_status == "new" else f"{memory_id[:6]}"
                 final_id = f"{prefix}-{idx}"
-
-            if task_key:
-                processed_task_ids[task_key] = final_id
 
             # Resolve task title (fallback to prior commit if empty)
             if not task_title and prior_task:
@@ -496,6 +624,28 @@ class Workspace:
             if not details and prior_task and prior_task.get("details"):
                 details = str(prior_task.get("details", "")).strip()
 
+            # Resolve created_at (preserve original created_at on update)
+            created_at = item.get("created_at")
+            if not created_at and final_id and final_id in first_seen:
+                created_at = first_seen[final_id][0]
+            if not created_at and prior_task and prior_task.get("created_at"):
+                created_at = prior_task["created_at"]
+            if not created_at:
+                created_at = now_ts
+
+            # Merge and attach edited_files & read_files to task item
+            existing_edited = list(prior_task.get("edited_files", [])) if prior_task else []
+            item_edited = list(item.get("edited_files", []))
+            if not item_edited and len(raw_task_entries) == 1 and actual_edited_files:
+                item_edited = list(actual_edited_files)
+            merged_edited = list(dict.fromkeys(existing_edited + item_edited))
+
+            existing_read = list(prior_task.get("read_files", [])) if prior_task else []
+            item_read = list(item.get("read_files", []))
+            if not item_read and len(raw_task_entries) == 1 and actual_read_files:
+                item_read = [f for f in actual_read_files if to_portable_path(f).lower() != to_portable_path(main_project_file).lower()]
+            merged_read = list(dict.fromkeys(existing_read + item_read))
+
             norm_item = {
                 "id": final_id,
                 "task": task_title,
@@ -503,11 +653,29 @@ class Workspace:
                 "done": done,
                 "task_status": task_status,
                 "kind": kind,
+                "created_at": created_at,
+                "edited_files": merged_edited,
+                "read_files": merged_read,
             }
             norm_user_items.append(norm_item)
 
-            if final_id and prior_task:
+            if matched_existing_id:
                 status_updates_by_id[final_id] = (task_status, done)
+            elif raw_id and prior_task:
+                status_updates_by_id[raw_id] = (task_status, done)
+
+        # Sort user_items chronologically: existing tasks by (first_seen_ts, first_seen_idx), new tasks after in submission order
+        def _task_sort_key(entry: tuple[int, dict[str, Any]]) -> tuple[int, str, int]:
+            submission_idx, t_item = entry
+            t_id = t_item.get("id", "")
+            if t_id in first_seen:
+                fs_ts, fs_idx = first_seen[t_id]
+                return (0, fs_ts, fs_idx)
+            return (1, t_item.get("created_at") or now_ts, submission_idx)
+
+        indexed_items = list(enumerate(norm_user_items, 1))
+        indexed_items.sort(key=_task_sort_key)
+        norm_user_items = [it for _, it in indexed_items]
 
         # Event-sourcing update on previous commits if status changed
         if status_updates_by_id:
@@ -524,21 +692,18 @@ class Workspace:
                             c_modified = True
                 if c_modified:
                     c_data["user_items"] = c_items
-                    if c_data.get("journal") or c_data.get("user_items"):
-                        c_data.pop("note", None)
-                    else:
-                        c_data["note"] = _compose_note(
-                            c_data.get("journal", ""),
-                            c_items,
-                            fallback_note=c_data.get("note", ""),
-                        )
+                    c_data["note"] = _compose_note(
+                        c_data.get("journal", ""),
+                        c_items,
+                        fallback_note=c_data.get("note", ""),
+                    )
                     try:
                         p.write_text(json.dumps(c_data, indent=2), encoding="utf-8")
                         self._last_modified_commit_ids.append(p.stem)
                     except Exception:
                         pass
 
-        # Collect validated task ids from this update for Drive Garbage Collection
+        # Collect validated task ids from this update for Drive Garbage Collection (Dream #49)
         validated_ids = {tid for tid, (st, _) in status_updates_by_id.items() if st == "validated"}
         for it in norm_user_items:
             if it.get("task_status") == "validated" and it.get("id"):
@@ -554,18 +719,22 @@ class Workspace:
                     if st in ("new", "await_validation"):
                         for lp in _extract_linked_file_paths(c_it.get("details", "")):
                             active_paths.add(to_portable_path(lp).lower())
+                        for ep in c_it.get("edited_files", []):
+                            active_paths.add(to_portable_path(ep).lower())
 
             for it in norm_user_items:
                 if it.get("task_status") in ("new", "await_validation"):
                     for lp in _extract_linked_file_paths(it.get("details", "")):
                         active_paths.add(to_portable_path(lp).lower())
+                    for ep in it.get("edited_files", []):
+                        active_paths.add(to_portable_path(ep).lower())
 
             # 2. Gather candidate paths from validated tasks
             candidate_paths: list[str] = []
-
             for it in norm_user_items:
                 if it.get("id") in validated_ids:
                     candidate_paths.extend(_extract_linked_file_paths(it.get("details", "")))
+                    candidate_paths.extend(it.get("edited_files", []))
 
             for p_c, c_data in commits_data.items():
                 commit_task_ids = {c_it.get("id") for c_it in c_data.get("user_items", []) if c_it.get("id")}
@@ -573,6 +742,7 @@ class Workspace:
                     for c_it in c_data.get("user_items", []):
                         if c_it.get("id") in validated_ids:
                             candidate_paths.extend(_extract_linked_file_paths(c_it.get("details", "")))
+                            candidate_paths.extend(c_it.get("edited_files", []))
 
                     # If this commit has no other tasks still in 'new' or 'await_validation'
                     commit_has_active_tasks = False
@@ -589,26 +759,12 @@ class Workspace:
                                 if ch.get("path"):
                                     candidate_paths.append(ch.get("path"))
 
-            # 3. Filter out project workspace files and active paths
-            from aivc.config import get_workspace_dir
-            ws_dir = get_workspace_dir()
+            # 3. Filter out VoiceNotes (sanctuarisé) and active paths
             seen_gc = set()
             for cand in candidate_paths:
                 p_norm = to_portable_path(cand).lower()
-                cand_str = str(cand).replace("\\", "/").lower()
-                is_temp_artifact = any(k in cand_str for k in ("/brain/", "/temp/", "appdata", ".aivc/artifacts"))
-                if not is_temp_artifact and cand_str.endswith(".md"):
+                if "voicenotes" in p_norm:
                     continue
-                try:
-                    cand_path = from_portable_path(cand)
-                    if cand_path.is_file() and not is_temp_artifact:
-                        try:
-                            cand_path.relative_to(ws_dir)
-                            continue
-                        except ValueError:
-                            pass
-                except Exception:
-                    pass
                 if p_norm in active_paths:
                     continue
                 if p_norm not in seen_gc:
@@ -618,7 +774,7 @@ class Workspace:
         # Strict validation
         for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
             for path_str in files_list:
-                p = from_portable_path(path_str)
+                p = _resolve_file_path(path_str)
                 portable_path = to_portable_path(path_str)
 
                 # Check for directories
@@ -634,7 +790,7 @@ class Workspace:
 
         # edited_files -> FileChange(path=portable_path, action="edited" or "deleted")
         for path_str in actual_edited_files:
-            p = from_portable_path(path_str)
+            p = _resolve_file_path(path_str)
             portable_path = to_portable_path(path_str)
             action = "deleted" if (not p.is_file() and portable_path in self._state["tracked_files"]) else "edited"
             if portable_path not in seen_paths:
@@ -684,7 +840,7 @@ class Workspace:
 
         memory = Memory(
             id=memory_id,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=now_ts,
             title=title,
             note=full_note,
             parent_id=self._state.get("head_commit_id"),
@@ -692,6 +848,7 @@ class Workspace:
             machine_id=machine_id,
             urls=actual_urls,
             user_items=norm_user_items,
+            completed_user_items=list(completed_user_items) if completed_user_items else [],
             journal=journal or (note if not norm_user_items else ""),
             main_project_file=main_project_file,
         )
@@ -708,16 +865,14 @@ class Workspace:
         self._state["head_commit_id"] = memory.id
         self._save_state()
 
-        # Step: Auto-sync project views
+        # Step: Auto-sync advance_tldr notes for Obsidian projects
         try:
-            from aivc.project_sync import sync_project_views
-            sync_project_views(memory)
+            from aivc.advance_sync import sync_advance_tldr
+            sync_advance_tldr(memory)
         except Exception as e:
-            logger.warning("Failed to auto-sync project views in workspace.task_commit: %s", e)
+            logger.warning("Failed to auto-sync advance_tldr in workspace.remember: %s", e)
 
         return memory
-
-    remember = task_commit
 
     def create_memory(
         self,
@@ -744,6 +899,38 @@ class Workspace:
             machine_id=machine_id,
             consulted_files=consulted_files,
             roadmap_items=roadmap_items,
+        )
+
+    def task_commit(
+        self,
+        title: str,
+        content: str,
+        main_project_file: str,
+        task_id: str | None = None,
+        task_status: str = "await_validation",
+        edited_files: list[str] | None = None,
+        read_files: list[str] | None = None,
+        urls: list[str] | None = None,
+        machine_id: str = "",
+    ) -> Memory:
+        """Atomic task commit (1 call = 1 task memory) with flat parameters."""
+        task_item = {
+            "id": task_id.strip() if task_id else None,
+            "task": title,
+            "details": content,
+            "task_status": task_status,
+            "edited_files": list(edited_files) if edited_files else [],
+            "read_files": list(read_files) if read_files else [],
+        }
+        return self.remember(
+            title=title,
+            journal=content,
+            main_project_file=main_project_file,
+            user_items=[task_item],
+            edited_files=edited_files,
+            read_files=read_files,
+            urls=urls,
+            machine_id=machine_id,
         )
 
     def complete_user_items(self, item_ids: list[str]) -> list[str]:
@@ -773,22 +960,14 @@ class Workspace:
 
             if modified:
                 data["user_items"] = user_items
-                if data.get("journal") or data.get("user_items"):
-                    data.pop("note", None)
-                else:
-                    data["note"] = _compose_note(
-                        data.get("journal", ""),
-                        user_items,
-                        fallback_note=data.get("note", ""),
-                    )
+                data["note"] = _compose_note(
+                    data.get("journal", ""),
+                    user_items,
+                    fallback_note=data.get("note", ""),
+                )
                 p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
         return marked_done
-
-    @property
-    def commits_dir(self) -> Path:
-        """Directory where commit JSON files are stored."""
-        return self._commits_dir
 
     def compact_commits_json(self) -> int:
         """Removes the redundant 'note' key from on-disk commit JSONs that have journal or user_items.
@@ -854,7 +1033,7 @@ class Workspace:
                         matching_memories.append(mem)
                         break
 
-        matching_memories.sort(key=lambda m: m.timestamp, reverse=True)
+        matching_memories.sort(key=lambda m: m.timestamp)
         return matching_memories
 
     def get_tracked_files_metadata(self) -> dict[str, dict]:
@@ -879,7 +1058,7 @@ class Workspace:
         blob_size_cache = {}
         
         for tracked_path in self._state["tracked_files"]:
-            p = from_portable_path(tracked_path)
+            p = _resolve_file_path(tracked_path)
             
             # Current size: check disk for correctness (deleted file detection)
             current_size = None
@@ -980,7 +1159,7 @@ class Workspace:
                     if change.blob_hash is not None:
                         return self._blob_store.retrieve(change.blob_hash)
                     # If blob is None, fallback to local file on disk
-                    local_p = from_portable_path(target_portable)
+                    local_p = _resolve_file_path(target_portable)
                     if local_p.exists():
                         return local_p.read_bytes()
             current_id = memory.parent_id
@@ -989,22 +1168,15 @@ class Workspace:
             f"File {file_path!r} was not found in the history up to memory {memory_id!r}."
         )
 
-    def auto_restore_brain_files(
-        self,
-        memory: Memory,
-        sync_manager: Any = None,
-        background_drive: bool = False,
-    ) -> list[str]:
+    def auto_restore_brain_files(self, memory: Memory, sync_manager: Any = None, background_drive: bool = False) -> list[str]:
         """Automatically restore files under .gemini/antigravity/brain/ linked to this memory.
 
         If a file does not exist locally and its blob is available in BlobStore
         (or recoverable via other commits or sync_manager), it is restored to disk.
-        When background_drive=True, Drive pulls run in a detached daemon thread
-        to prevent blocking caller / MCP timeout.
-        Returns the list of synchronously restored local file paths.
+        Returns the list of restored local file paths.
         """
         import re
-        from urllib.parse import unquote
+        import threading
         from aivc.config import extract_brain_subpath, get_home_dir
 
         restored: list[str] = []
@@ -1019,20 +1191,16 @@ class Workspace:
             if not path_str:
                 continue
             sub = extract_brain_subpath(path_str)
-            if sub:
-                sub = unquote(sub)
-                if sub not in candidates:
-                    candidates[sub] = getattr(change, "blob_hash", None)
+            if sub and sub not in candidates:
+                candidates[sub] = getattr(change, "blob_hash", None)
 
         # 2. From edited_files and read_files
         for path_str in getattr(memory, "edited_files", []) + getattr(memory, "read_files", []):
             sub = extract_brain_subpath(path_str)
-            if sub:
-                sub = unquote(sub)
-                if sub not in candidates:
-                    candidates[sub] = None
+            if sub and sub not in candidates:
+                candidates[sub] = None
 
-        # 3. From user_items (task, details)
+        # 3. From user_items (task, details, and attached files)
         brain_regex = re.compile(
             r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\"\'\`\)\>:]+)",
             re.IGNORECASE,
@@ -1041,75 +1209,66 @@ class Workspace:
             if isinstance(item, dict):
                 text = f"{item.get('task', '')} {item.get('details', '')}"
                 for m in brain_regex.finditer(text):
-                    raw = unquote(m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/"))
+                    raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
                     if raw and raw not in candidates:
                         candidates[raw] = None
+                for ep in item.get("edited_files", []) + item.get("read_files", []):
+                    sub = extract_brain_subpath(ep)
+                    if sub and sub not in candidates:
+                        candidates[sub] = None
 
         # 4. From journal and note
         for text in (getattr(memory, "journal", ""), getattr(memory, "note", "")):
             if text:
                 for m in brain_regex.finditer(text):
-                    raw = unquote(m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/"))
+                    raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
                     if raw and raw not in candidates:
                         candidates[raw] = None
 
         temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
-        cache_file = self._root / "missing_blobs_cache.json"
+        user_temp_artifacts_dir = get_aivc_user_temp_dir() / "artifacts"
+        mirror_user_temp = (user_temp_artifacts_dir.resolve() != temp_artifacts_dir.resolve())
         drive_candidates_to_pull: list[tuple[str, Path, list[Path], list[str]]] = []
-
+        cache_file = self._root / "missing_blobs_cache.json"
         for sub, blob_hash in candidates.items():
-            sub_p = Path(sub)
-            local_path = home / ".gemini" / "antigravity" / "brain" / sub_p
-            cli_path = home / ".gemini" / "antigravity-cli" / "brain" / sub_p
-            temp_artifact_path = temp_artifacts_dir / sub_p
+            local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+            cli_path = home / ".gemini" / "antigravity-cli" / "brain" / Path(sub)
+            temp_artifact_path = temp_artifacts_dir / Path(sub)
+            user_temp_artifact_path = user_temp_artifacts_dir / Path(sub) if mirror_user_temp else None
             sub_posix = sub.replace("\\", "/")
             portable = f"~/.gemini/antigravity/brain/{sub_posix}"
+            extra_targets = [p for p in (temp_artifact_path, cli_path, user_temp_artifact_path) if p is not None]
 
-            local_files = [local_path, cli_path]
-            brain_candidates = [p for p in local_files if p.is_file()]
-            if brain_candidates:
-                existing_file = max(brain_candidates, key=lambda p: p.stat().st_mtime)
-            elif temp_artifact_path.is_file():
-                existing_file = temp_artifact_path
-            else:
-                existing_file = None
+            # Purge corrupt 8-byte 'restored' artifact if present in local_path
+            if local_path.is_file() and local_path.stat().st_size == 8:
+                try:
+                    if local_path.read_bytes() == b"restored":
+                        local_path.unlink()
+                except OSError:
+                    pass
 
-            if existing_file:
-                # Sync across local brain roots and temp_artifacts_dir
-                mirrored_to_local_path = False
-                for target in local_files + [temp_artifact_path]:
-                    if target == existing_file:
-                        continue
-                    needs_copy = False
-                    if not target.is_file():
-                        needs_copy = True
-                    else:
-                        try:
-                            if target.stat().st_size != existing_file.stat().st_size:
-                                needs_copy = True
-                            elif hashlib.sha256(target.read_bytes()).hexdigest() != hashlib.sha256(existing_file.read_bytes()).hexdigest():
-                                needs_copy = True
-                        except OSError:
-                            needs_copy = True
+            # Mirror to target mirrors if local_path already exists and valid
+            if local_path.is_file():
+                for target in extra_targets:
+                    is_corrupt = False
+                    try:
+                        if target.is_file() and target.stat().st_size == 8:
+                            is_corrupt = (target.read_bytes() == b"restored")
+                    except OSError:
+                        pass
 
-                    if needs_copy:
+                    needs_mirror = (
+                        not target.is_file()
+                        or is_corrupt
+                        or target.stat().st_size != local_path.stat().st_size
+                        or target.stat().st_mtime < local_path.stat().st_mtime
+                    )
+                    if needs_mirror:
                         try:
                             target.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(existing_file, target)
-                            if target == local_path:
-                                mirrored_to_local_path = True
+                            shutil.copy2(local_path, target)
                         except OSError:
                             pass
-                if mirrored_to_local_path:
-                    restored.append(str(local_path))
-                continue
-
-            # If path already exists locally on disk (file or directory), nothing to restore
-            if local_path.exists() or cli_path.exists():
-                continue
-
-            # If not tracked in memory.changes and has no extension, skip directory references
-            if blob_hash is None and "." not in sub_p.name:
                 continue
 
             content: bytes | None = None
@@ -1135,8 +1294,10 @@ class Workspace:
                 except Exception:
                     pass
 
-            # 3. If still not found, check sync_manager (Google Drive) if available
+
+            # 3. If still not found, try sync_manager (Google Drive) if available
             if content is None and sync_manager is not None:
+                cache_file = self._root / "missing_blobs_cache.json"
                 missing_cache: dict[str, float] = {}
                 if cache_file.exists():
                     try:
@@ -1158,54 +1319,53 @@ class Workspace:
 
                 if not is_neg_cached:
                     if background_drive:
-                        drive_candidates_to_pull.append((portable, local_path, [temp_artifact_path, cli_path], cache_keys))
+                        drive_candidates_to_pull.append((portable, local_path, extra_targets, cache_keys))
                     else:
                         try:
                             if getattr(sync_manager, "enabled", False):
                                 dest = sync_manager.pull_latest_file(portable, target_path=local_path)
                                 if dest and dest.is_file():
                                     restored.append(str(local_path))
-                                    for t in (temp_artifact_path, cli_path):
+                                    for target in extra_targets:
                                         try:
-                                            t.parent.mkdir(parents=True, exist_ok=True)
-                                            shutil.copy2(local_path, t)
+                                            target.parent.mkdir(parents=True, exist_ok=True)
+                                            shutil.copy2(local_path, target)
                                         except OSError:
                                             pass
-                                    # Clean up cache if previously marked missing
-                                    updated = False
-                                    for key in cache_keys:
-                                        if key in missing_cache:
-                                            del missing_cache[key]
-                                            updated = True
-                                    if updated:
-                                        try:
-                                            cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
-                                        except Exception:
-                                            pass
-                                    continue
-                                else:
-                                    is_neg_cached = True
+                                # Clean up cache if previously marked missing
+                                updated = False
+                                for key in cache_keys:
+                                    if key in missing_cache:
+                                        del missing_cache[key]
+                                        updated = True
+                                if updated:
+                                    try:
+                                        cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
+                                    except Exception:
+                                        pass
+                                continue
+                            else:
+                                is_neg_cached = True
                         except Exception:
                             is_neg_cached = True
 
-                        if is_neg_cached:
-                            for key in cache_keys:
-                                missing_cache[key] = now
-                            try:
-                                cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
-                            except Exception:
-                                pass
-
+                    if is_neg_cached:
+                        for key in cache_keys:
+                            missing_cache[key] = now
+                        try:
+                            cache_file.write_text(json.dumps(missing_cache, indent=2), encoding="utf-8")
+                        except Exception:
+                            pass
             # Write content retrieved from blob_store to disk
             if content is not None:
                 try:
                     local_path.parent.mkdir(parents=True, exist_ok=True)
                     local_path.write_bytes(content)
                     restored.append(str(local_path))
-                    for t in (temp_artifact_path, cli_path):
+                    for target in extra_targets:
                         try:
-                            t.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(local_path, t)
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(local_path, target)
                         except OSError:
                             pass
                 except Exception:
@@ -1218,9 +1378,6 @@ class Workspace:
                 mgr: Any,
                 c_file: Path,
             ) -> None:
-                import json
-                import time
-                import shutil
                 cache_now = time.time()
                 m_cache: dict[str, float] = {}
                 if c_file.exists():
@@ -1229,14 +1386,14 @@ class Workspace:
                     except Exception:
                         m_cache = {}
 
-                for port_path, l_path, extra_targets, c_keys in candidates_to_pull:
+                for port_path, l_path, targets, c_keys in candidates_to_pull:
                     pull_ok = False
                     try:
                         if getattr(mgr, "enabled", False):
                             dest = mgr.pull_latest_file(port_path, target_path=l_path)
                             if dest and dest.is_file():
                                 pull_ok = True
-                                for t_path in extra_targets:
+                                for t_path in targets:
                                     try:
                                         t_path.parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copy2(l_path, t_path)
