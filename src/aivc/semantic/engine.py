@@ -31,6 +31,14 @@ from aivc.sync.drive import NativeDriveSyncManager
 
 logger = logging.getLogger(__name__)
 
+_GENERIC_PARENT_NAMES = frozenset({
+    "scratch", "artifacts", "brain", "notes", "temp", "tmp",
+    "advance_tldr", "advance_artifacts", "src", "tests", "docs",
+})
+_UUID_SEGMENT_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
 
 class SemanticEngine:
     """High-level facade combining versioning + semantic search.
@@ -117,10 +125,17 @@ class SemanticEngine:
             try:
                 # Cloud Sync push (Memory JSON)
                 self._sync_manager.push_memory(memory.id)
-                # Push latest versions of changed/consulted files
+                # Push latest versions of changed files (excluding consulted)
                 for c in getattr(memory, "changes", []):
-                    if c.action in ("edited", "consulted", "added", "modified"):
+                    if c.action in ("edited", "added", "modified"):
                         self._sync_manager.push_latest_file(c.path)
+                # Volet C: GC Drive files for tasks validated in this cycle
+                gc_files = getattr(self._workspace, "_last_gc_drive_files", [])
+                for p_gc in gc_files:
+                    try:
+                        self._sync_manager.delete_remote_file(p_gc)
+                    except Exception as e:
+                        logger.debug("Failed to GC remote file %s: %s", p_gc, e)
             except Exception as e:
                 import sys
                 print(f"Error in async sync for memory {memory.id}: {e}", file=sys.stderr)
@@ -305,9 +320,10 @@ class SemanticEngine:
     # Commit lifecycle
     # ------------------------------------------------------------------
 
-    def remember(
+    def task_commit(
         self,
         title: str,
+        content: str = "",
         journal: str = "",
         tasks: list[dict[str, Any]] | None = None,
         user_items: list[dict[str, Any]] | None = None,
@@ -318,6 +334,8 @@ class SemanticEngine:
         consulted_files: list[str] | None = None,
         roadmap_items: list[dict[str, Any]] | None = None,
         main_project_file: str = "",
+        task_id: str | None = None,
+        task_status: str = "await_validation",
         completed_user_items: list[str] | None = None,
     ) -> Memory:
         """Create a versioning memory and index it semantically (asynchronously)."""
@@ -333,13 +351,19 @@ class SemanticEngine:
             cand = Path(raw_s)
             if cand.is_absolute():
                 return raw_s
+            if (Path.cwd() / cand).exists():
+                return str((Path.cwd() / cand).resolve())
             ws_root = getattr(self, "workspace_root", None) or getattr(self._workspace, "_root", None) or Path.cwd()
             candidate = Path(ws_root) / cand
             if candidate.exists():
-                return str(candidate)
+                return str(candidate.resolve())
+            from aivc.config import resolve_workspace_path
+            ws_cand = resolve_workspace_path(cand, cwd=Path.cwd())
+            if ws_cand and ws_cand.exists():
+                return str(ws_cand.resolve())
             vn_cand = Path.home() / "Documents" / "VoiceNotes" / cand
             if vn_cand.exists():
-                return str(vn_cand)
+                return str(vn_cand.resolve())
             return raw_s
 
         p_str = str(main_project_file).strip()
@@ -349,17 +373,24 @@ class SemanticEngine:
             raw_p = Path(p_str)
             if raw_p.is_absolute():
                 resolved_path = raw_p
+            elif (Path.cwd() / raw_p).exists():
+                resolved_path = (Path.cwd() / raw_p).resolve()
             else:
                 ws_root = getattr(self, "workspace_root", None) or getattr(self._workspace, "_root", None) or Path.cwd()
                 resolved_path = Path(ws_root) / raw_p
                 if not resolved_path.exists():
-                    vn_candidate = Path.home() / "Documents" / "VoiceNotes" / raw_p
-                    if vn_candidate.exists():
-                        resolved_path = vn_candidate
+                    from aivc.config import resolve_workspace_path
+                    ws_candidate = resolve_workspace_path(raw_p, cwd=Path.cwd())
+                    if ws_candidate and ws_candidate.exists():
+                        resolved_path = ws_candidate.resolve()
                     else:
-                        vn_notes_cand = Path.home() / "Documents" / "VoiceNotes" / "notes" / raw_p
-                        if vn_notes_cand.exists():
-                            resolved_path = vn_notes_cand
+                        vn_candidate = Path.home() / "Documents" / "VoiceNotes" / raw_p
+                        if vn_candidate.exists():
+                            resolved_path = vn_candidate.resolve()
+                        else:
+                            vn_notes_cand = Path.home() / "Documents" / "VoiceNotes" / "notes" / raw_p
+                            if vn_notes_cand.exists():
+                                resolved_path = vn_notes_cand.resolve()
 
         if not resolved_path.exists():
             raise ValueError(f"main_project_file does not exist on disk: {main_project_file}")
@@ -380,12 +411,24 @@ class SemanticEngine:
         if portable_main_lower not in existing_paths_lower:
             actual_read_files.append(str(resolved_path))
 
+        effective_journal = journal or content or ""
+        effective_user_items = user_items
+        if content and effective_user_items is None and tasks is None and roadmap_items is None:
+            effective_user_items = [{
+                "id": task_id.strip() if task_id else None,
+                "task": title,
+                "details": content,
+                "task_status": task_status,
+                "edited_files": list(norm_edited_files),
+                "read_files": list(actual_read_files),
+            }]
+
         machine_id = get_machine_id()
         memory = self._workspace.remember(
             title=title,
-            journal=journal,
+            journal=effective_journal,
             tasks=tasks,
-            user_items=user_items,
+            user_items=effective_user_items,
             edited_files=norm_edited_files,
             read_files=actual_read_files,
             urls=urls,
@@ -415,14 +458,16 @@ class SemanticEngine:
         # Step 4: Invalidate hints cache
         self._local_hints_index = None
 
-        # Step 5: Auto-sync advance_tldr notes for Obsidian projects
+        # Step 5: Auto-sync project views
         try:
-            from aivc.advance_sync import sync_advance_tldr
-            sync_advance_tldr(memory)
+            from aivc.project_sync import sync_project_views
+            sync_project_views(memory)
         except Exception as e:
-            logger.warning("Failed to auto-sync advance_tldr in engine.remember: %s", e)
+            logger.warning("Failed to auto-sync project views in engine.task_commit: %s", e)
 
         return memory
+
+    remember = task_commit
 
     def create_memory(
         self,
@@ -640,9 +685,9 @@ class SemanticEngine:
         """Explicitly migrate JSON memories to SQLite index."""
         self._workspace.migrate_index()
 
-    def auto_restore_brain_files(self, memory: Memory) -> list[str]:
+    def auto_restore_brain_files(self, memory: Memory, background_drive: bool = False) -> list[str]:
         """Auto-restore missing brain files for a given memory from BlobStore or Drive."""
-        return self._workspace.auto_restore_brain_files(memory, self._sync_manager)
+        return self._workspace.auto_restore_brain_files(memory, self._sync_manager, background_drive=background_drive)
 
     def _get_local_hints_index(self) -> dict[str, list[str]]:
         """Lazy-build an inverted index {basename: [paths]} for fast lookups."""
@@ -671,15 +716,20 @@ class SemanticEngine:
             
         remote_basename = parts[-1]
         remote_parent_name = parts[-2] if len(parts) > 1 else ""
-        
+        remote_uuids = {part.lower() for part in parts if _UUID_SEGMENT_RE.match(part)}
+
         # O(1) lookup in inverted index
         candidates = self._get_local_hints_index().get(remote_basename, [])
         if not candidates:
             return None
-        
+
         final_candidates = []
         for local_path in candidates:
             lp = Path(local_path)
+            local_uuids = {part.lower() for part in lp.parts if _UUID_SEGMENT_RE.match(part)}
+            if remote_uuids and local_uuids != remote_uuids:
+                continue
+
             # 1. Check strong match via blob hash if available
             if remote_blob_hash:
                 # _index is CoreIndex (SQLite) - this is still an I/O hit but 
@@ -687,11 +737,20 @@ class SemanticEngine:
                 local_blobs = self._workspace._index.get_blob_hashes_for_file(local_path)
                 if remote_blob_hash in local_blobs:
                     return local_path
-            
+
             # 2. Parent folder match (depth 1)
+            # Do not allow fallback on generic folder names or cross-UUID / no-UUID confusion
+            if not remote_uuids and local_uuids:
+                continue
+
             local_parent_name = lp.parent.name if lp.parent else ""
-            if local_parent_name == remote_parent_name:
+            if (
+                remote_parent_name
+                and remote_parent_name.lower() not in _GENERIC_PARENT_NAMES
+                and local_parent_name == remote_parent_name
+            ):
                 final_candidates.append(local_path)
-        
+
         return final_candidates[0] if final_candidates else None
+
 

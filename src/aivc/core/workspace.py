@@ -11,6 +11,7 @@ import difflib
 import fnmatch
 import glob as _glob
 import json
+import logging
 import os
 import re
 import sys
@@ -19,10 +20,14 @@ import unicodedata
 import uuid
 import shutil
 import tempfile
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 from typing import Any
+
+import urllib.parse
 
 from aivc.core.blob_store import BlobStore
 from aivc.core.memory import Memory, FileChange, memory_from_dict, memory_to_dict, _compose_note
@@ -39,103 +44,39 @@ from aivc.config import (
     normalize_main_project_file,
 )
 
-_TASK_STOPWORDS = {
-    "pour", "dans", "avec", "sur", "les", "des", "une", "un", "le", "la", "par", "est",
-    "qui", "que", "aux", "son", "ses", "leur", "leurs", "cette", "cet", "ces", "du", "de",
-    "the", "and", "for", "with", "from", "that", "this", "suite", "afin", "tout", "tous",
-    "faire", "fait", "plus", "tres", "bien", "aussi", "comme", "apres", "avant", "ci", "dessus", "dessous"
-}
 
+def _extract_linked_file_paths(text: str) -> list[str]:
+    """Extracts local file paths from text (file:/// URLs, Windows drive letters, ~/, AppData)."""
+    if not text or not isinstance(text, str):
+        return []
 
-def _strip_accents(text: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", text)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
+    paths: list[str] = []
+    # 1. file:/// links (e.g. [name](file:///C:/...))
+    for m in re.finditer(r"file:///(?:[A-Za-z]:[\\/]|/)?([^\s\)\"\'\`\<\>]+)", text):
+        raw = m.group(0)
+        raw = re.sub(r":L\d+(?:-L\d+)?$", "", raw)
+        clean = raw[8:] if raw.startswith("file:///") else raw
+        decoded = urllib.parse.unquote(clean)
+        paths.append(decoded)
 
+    # 2. Windows drive letters C:\... or C:/...
+    for m in re.finditer(r"[A-Za-z]:[\\/][^\s\)\"\'\`\<\>]+", text):
+        p = re.sub(r":L\d+(?:-L\d+)?$", "", m.group(0))
+        paths.append(p)
 
-def _normalize_task_text(task: str) -> str:
-    if not task:
-        return ""
-    s = str(task).strip()
-    # Strip markdown links [label](url) -> label
-    s = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", s)
-    # Strip HTML tags
-    s = re.sub(r"<[^>]+>", " ", s)
-    # Strip markdown headers, checkboxes, IDs, bold markers
-    s = re.sub(r"^\s*[-*+]\s+\[[ xX]?\]\s*", " ", s)
-    s = re.sub(r"^(?:#+\s*)+", " ", s)
-    s = re.sub(r"\*\*\[[a-zA-Z0-9\-_]+\]\*\*", " ", s)
-    s = re.sub(r"\[[a-zA-Z0-9\-_]+\]", " ", s)
-    # Strip emojis
-    s = re.sub(r"[🤖⚡📋🔴🟢🟡🟠⚪👤✅❌]", " ", s)
-    # Strip dates (e.g. JJ/MM/AAAA, JJ-MM-AAAA, AAAA-MM-JJ)
-    s = re.sub(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", " ", s)
-    s = re.sub(r"\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b", " ", s)
-    # Strip git hashes and issue/ticket numbers (#1234 or commit hex)
-    s = re.sub(r"#[a-zA-Z0-9_]+\b", " ", s)
-    s = re.sub(r"\b[0-9a-fA-F]{6,40}\b", " ", s)
-    # Strip accents & lowercase
-    s = _strip_accents(s).lower()
-    # Replace punctuation / non-alphanumeric characters with spaces
-    s = re.sub(r"[^a-z0-9\s]", " ", s)
-    return " ".join(s.split())
+    # 3. ~/ or .gemini or AppData paths
+    for m in re.finditer(r"(?:~|\.gemini|AppData)[\\/][^\s\)\"\'\`\<\>]+", text):
+        p = re.sub(r":L\d+(?:-L\d+)?$", "", m.group(0))
+        paths.append(p)
 
-
-def _extract_task_tokens(norm_text: str) -> set[str]:
-    words = norm_text.split()
-    return {w for w in words if len(w) >= 3 and w not in _TASK_STOPWORDS}
-
-
-def _are_tasks_duplicate(task_a: str, task_b: str) -> bool:
-    """Pure, deterministic heuristic to detect duplicate or reformulated task titles."""
-    if not task_a or not task_b:
-        return False
-    norm_a = _normalize_task_text(task_a)
-    norm_b = _normalize_task_text(task_b)
-    if not norm_a or not norm_b:
-        return False
-    if norm_a == norm_b:
-        return True
-
-    # 1. Shared significant action prefix (>= 28 characters)
-    min_len = min(len(norm_a), len(norm_b))
-    common_len = 0
-    while common_len < min_len and norm_a[common_len] == norm_b[common_len]:
-        common_len += 1
-    if common_len >= 28:
-        return True
-    if len(norm_a) >= 28 and norm_b.startswith(norm_a[:28]):
-        return True
-    if len(norm_b) >= 28 and norm_a.startswith(norm_b[:28]):
-        return True
-
-    # Check prefix without stopwords for short formulations
-    no_stop_a = " ".join([w for w in norm_a.split() if w not in _TASK_STOPWORDS])
-    no_stop_b = " ".join([w for w in norm_b.split() if w not in _TASK_STOPWORDS])
-    if no_stop_a and no_stop_b:
-        if no_stop_a == no_stop_b:
-            return True
-        min_ns = min(len(no_stop_a), len(no_stop_b))
-        common_ns = 0
-        while common_ns < min_ns and no_stop_a[common_ns] == no_stop_b[common_ns]:
-            common_ns += 1
-        if common_ns >= 28:
-            return True
-
-    # 2. Significant tokens Jaccard similarity >= 0.55
-    tok_a = _extract_task_tokens(norm_a)
-    tok_b = _extract_task_tokens(norm_b)
-    if tok_a and tok_b:
-        intersection = tok_a.intersection(tok_b)
-        union = tok_a.union(tok_b)
-        jaccard = len(intersection) / len(union) if union else 0.0
-        if jaccard >= 0.55:
-            return True
-
-    # 3. difflib SequenceMatcher >= 0.70
-    if difflib.SequenceMatcher(None, norm_a, norm_b).ratio() >= 0.70:
-        return True
-
-    return False
+    seen = set()
+    unique_paths = []
+    for p in paths:
+        norm = p.replace("\\", "/").rstrip(".,;:)")
+        if norm not in seen:
+            seen.add(norm)
+            unique_paths.append(p.rstrip(".,;:)"))
+    return unique_paths
 
 
 def _is_same_project(mpf_a: str, mpf_b: str) -> bool:
@@ -275,6 +216,8 @@ class Workspace:
         self._index = CoreIndex(self._root)
         self._last_mtime = 0.0
         self._on_reload_callbacks = []
+        self._last_modified_commit_ids: list[str] = []
+        self._last_gc_drive_files: list[str] = []
 
         if self._workspace_path.exists():
             self._state = self._load_state()
@@ -630,44 +573,20 @@ class Workspace:
                     status_updates_by_id[c_id_clean] = ("validated", True)
                     project_active_tasks.pop(c_id_clean, None)
 
+        self._last_gc_drive_files = []
+
         for idx, (item, is_roadmap_arg) in enumerate(raw_task_entries, 1):
             raw_id = str(item.get("id") or "").strip()
             task_title = str(item.get("task", "")).strip()
 
-            # Inspect active items in prior commits of the same project for deduplication
+            # Deterministic lookup: a task is identified EXCLUSIVELY by its exact task_id
             matched_existing_id = None
             if raw_id and raw_id in existing_tasks:
                 matched_existing_id = raw_id
-            elif project_active_tasks:
-                m_raw = re.search(r'-(\d+)$', raw_id) if raw_id else None
-                new_idx_suffix = m_raw.group(1) if m_raw else str(idx)
-                tok_new = _extract_task_tokens(_normalize_task_text(task_title))
-
-                for ex_id, ex_it in list(project_active_tasks.items()):
-                    ex_task_text = str(ex_it.get("task", "")).strip()
-                    m_ex = re.search(r'-(\d+)$', ex_id)
-                    ex_idx_suffix = m_ex.group(1) if m_ex else ""
-
-                    if _are_tasks_duplicate(ex_task_text, task_title):
-                        matched_existing_id = ex_id
-                        break
-
-                    if new_idx_suffix and ex_idx_suffix and new_idx_suffix == ex_idx_suffix:
-                        tok_ex = _extract_task_tokens(_normalize_task_text(ex_task_text))
-                        if tok_new and tok_ex:
-                            inter = tok_new.intersection(tok_ex)
-                            uni = tok_new.union(tok_ex)
-                            jaccard = len(inter) / len(uni) if uni else 0.0
-                            if jaccard >= 0.40:
-                                matched_existing_id = ex_id
-                                break
-
-            if matched_existing_id:
-                final_id = matched_existing_id
-                prior_task = existing_tasks.get(matched_existing_id) or project_active_tasks.get(matched_existing_id)
-                project_active_tasks.pop(matched_existing_id, None)
+                prior_task = existing_tasks[raw_id]
+                final_id = raw_id
             else:
-                prior_task = existing_tasks.get(raw_id) if raw_id else None
+                prior_task = None
                 final_id = raw_id
 
             # Resolve task_status
@@ -705,7 +624,7 @@ class Workspace:
             if not details and prior_task and prior_task.get("details"):
                 details = str(prior_task.get("details", "")).strip()
 
-            # Resolve created_at
+            # Resolve created_at (preserve original created_at on update)
             created_at = item.get("created_at")
             if not created_at and final_id and final_id in first_seen:
                 created_at = first_seen[final_id][0]
@@ -713,6 +632,19 @@ class Workspace:
                 created_at = prior_task["created_at"]
             if not created_at:
                 created_at = now_ts
+
+            # Merge and attach edited_files & read_files to task item
+            existing_edited = list(prior_task.get("edited_files", [])) if prior_task else []
+            item_edited = list(item.get("edited_files", []))
+            if not item_edited and len(raw_task_entries) == 1 and actual_edited_files:
+                item_edited = list(actual_edited_files)
+            merged_edited = list(dict.fromkeys(existing_edited + item_edited))
+
+            existing_read = list(prior_task.get("read_files", [])) if prior_task else []
+            item_read = list(item.get("read_files", []))
+            if not item_read and len(raw_task_entries) == 1 and actual_read_files:
+                item_read = [f for f in actual_read_files if to_portable_path(f).lower() != to_portable_path(main_project_file).lower()]
+            merged_read = list(dict.fromkeys(existing_read + item_read))
 
             norm_item = {
                 "id": final_id,
@@ -722,6 +654,8 @@ class Workspace:
                 "task_status": task_status,
                 "kind": kind,
                 "created_at": created_at,
+                "edited_files": merged_edited,
+                "read_files": merged_read,
             }
             norm_user_items.append(norm_item)
 
@@ -768,6 +702,74 @@ class Workspace:
                         self._last_modified_commit_ids.append(p.stem)
                     except Exception:
                         pass
+
+        # Collect validated task ids from this update for Drive Garbage Collection (Dream #49)
+        validated_ids = {tid for tid, (st, _) in status_updates_by_id.items() if st == "validated"}
+        for it in norm_user_items:
+            if it.get("task_status") == "validated" and it.get("id"):
+                validated_ids.add(it.get("id"))
+
+        if validated_ids:
+            # 1. Map all currently active paths across the workspace
+            active_paths: set[str] = set()
+            for p_c, c_data in commits_data.items():
+                for c_it in c_data.get("user_items", []):
+                    c_id = c_it.get("id")
+                    st = status_updates_by_id.get(c_id, (c_it.get("task_status"), False))[0]
+                    if st in ("new", "await_validation"):
+                        for lp in _extract_linked_file_paths(c_it.get("details", "")):
+                            active_paths.add(to_portable_path(lp).lower())
+                        for ep in c_it.get("edited_files", []):
+                            active_paths.add(to_portable_path(ep).lower())
+
+            for it in norm_user_items:
+                if it.get("task_status") in ("new", "await_validation"):
+                    for lp in _extract_linked_file_paths(it.get("details", "")):
+                        active_paths.add(to_portable_path(lp).lower())
+                    for ep in it.get("edited_files", []):
+                        active_paths.add(to_portable_path(ep).lower())
+
+            # 2. Gather candidate paths from validated tasks
+            candidate_paths: list[str] = []
+            for it in norm_user_items:
+                if it.get("id") in validated_ids:
+                    candidate_paths.extend(_extract_linked_file_paths(it.get("details", "")))
+                    candidate_paths.extend(it.get("edited_files", []))
+
+            for p_c, c_data in commits_data.items():
+                commit_task_ids = {c_it.get("id") for c_it in c_data.get("user_items", []) if c_it.get("id")}
+                if commit_task_ids & validated_ids:
+                    for c_it in c_data.get("user_items", []):
+                        if c_it.get("id") in validated_ids:
+                            candidate_paths.extend(_extract_linked_file_paths(c_it.get("details", "")))
+                            candidate_paths.extend(c_it.get("edited_files", []))
+
+                    # If this commit has no other tasks still in 'new' or 'await_validation'
+                    commit_has_active_tasks = False
+                    for c_it in c_data.get("user_items", []):
+                        c_id = c_it.get("id")
+                        st = status_updates_by_id.get(c_id, (c_it.get("task_status"), False))[0]
+                        if st in ("new", "await_validation"):
+                            commit_has_active_tasks = True
+                            break
+
+                    if not commit_has_active_tasks:
+                        for ch in c_data.get("changes", []):
+                            if isinstance(ch, dict) and ch.get("action") in ("edited", "added", "modified"):
+                                if ch.get("path"):
+                                    candidate_paths.append(ch.get("path"))
+
+            # 3. Filter out VoiceNotes (sanctuarisé) and active paths
+            seen_gc = set()
+            for cand in candidate_paths:
+                p_norm = to_portable_path(cand).lower()
+                if "voicenotes" in p_norm:
+                    continue
+                if p_norm in active_paths:
+                    continue
+                if p_norm not in seen_gc:
+                    seen_gc.add(p_norm)
+                    self._last_gc_drive_files.append(cand)
 
         # Strict validation
         for files_list, list_name in [(actual_read_files, "read_files"), (actual_edited_files, "edited_files")]:
@@ -899,6 +901,38 @@ class Workspace:
             roadmap_items=roadmap_items,
         )
 
+    def task_commit(
+        self,
+        title: str,
+        content: str,
+        main_project_file: str,
+        task_id: str | None = None,
+        task_status: str = "await_validation",
+        edited_files: list[str] | None = None,
+        read_files: list[str] | None = None,
+        urls: list[str] | None = None,
+        machine_id: str = "",
+    ) -> Memory:
+        """Atomic task commit (1 call = 1 task memory) with flat parameters."""
+        task_item = {
+            "id": task_id.strip() if task_id else None,
+            "task": title,
+            "details": content,
+            "task_status": task_status,
+            "edited_files": list(edited_files) if edited_files else [],
+            "read_files": list(read_files) if read_files else [],
+        }
+        return self.remember(
+            title=title,
+            journal=content,
+            main_project_file=main_project_file,
+            user_items=[task_item],
+            edited_files=edited_files,
+            read_files=read_files,
+            urls=urls,
+            machine_id=machine_id,
+        )
+
     def complete_user_items(self, item_ids: list[str]) -> list[str]:
         """Search across all memories for user_items matching item_ids, mark done=True, re-save.
 
@@ -934,6 +968,36 @@ class Workspace:
                 p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
         return marked_done
+
+    def compact_commits_json(self) -> int:
+        """Removes the redundant 'note' key from on-disk commit JSONs that have journal or user_items.
+
+        Returns:
+            The number of commit JSON files compacted.
+        """
+        compacted = 0
+        if not self._commits_dir.is_dir():
+            return 0
+
+        for p in self._commits_dir.glob("*.json"):
+            if p.stat().st_size == 0:
+                continue
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            has_journal = bool(data.get("journal") and str(data.get("journal")).strip())
+            has_user_items = bool(data.get("user_items"))
+            if (has_journal or has_user_items) and "note" in data:
+                data.pop("note", None)
+                try:
+                    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                    compacted += 1
+                except Exception:
+                    pass
+
+        return compacted
 
     def get_file_history(self, file_path: str) -> list[Memory]:
         """Return chronological list of memories touching file_path (portable match)."""
@@ -1104,7 +1168,7 @@ class Workspace:
             f"File {file_path!r} was not found in the history up to memory {memory_id!r}."
         )
 
-    def auto_restore_brain_files(self, memory: Memory, sync_manager: Any = None) -> list[str]:
+    def auto_restore_brain_files(self, memory: Memory, sync_manager: Any = None, background_drive: bool = False) -> list[str]:
         """Automatically restore files under .gemini/antigravity/brain/ linked to this memory.
 
         If a file does not exist locally and its blob is available in BlobStore
@@ -1112,6 +1176,7 @@ class Workspace:
         Returns the list of restored local file paths.
         """
         import re
+        import threading
         from aivc.config import extract_brain_subpath, get_home_dir
 
         restored: list[str] = []
@@ -1135,7 +1200,7 @@ class Workspace:
             if sub and sub not in candidates:
                 candidates[sub] = None
 
-        # 3. From user_items (task, details)
+        # 3. From user_items (task, details, and attached files)
         brain_regex = re.compile(
             r"(?:file:///?(?:[A-Za-z]:)?[\\/]|~/|[A-Za-z]:[\\/]|/)?(?:Users|home)?[^\"\'\`\s\)\>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\"\'\`\)\>:]+)",
             re.IGNORECASE,
@@ -1147,6 +1212,10 @@ class Workspace:
                     raw = m.group(1).rstrip("\\/.,").split(":")[0].replace("\\", "/").strip("/")
                     if raw and raw not in candidates:
                         candidates[raw] = None
+                for ep in item.get("edited_files", []) + item.get("read_files", []):
+                    sub = extract_brain_subpath(ep)
+                    if sub and sub not in candidates:
+                        candidates[sub] = None
 
         # 4. From journal and note
         for text in (getattr(memory, "journal", ""), getattr(memory, "note", "")):
@@ -1159,12 +1228,16 @@ class Workspace:
         temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
         user_temp_artifacts_dir = get_aivc_user_temp_dir() / "artifacts"
         mirror_user_temp = (user_temp_artifacts_dir.resolve() != temp_artifacts_dir.resolve())
+        drive_candidates_to_pull: list[tuple[str, Path, list[Path], list[str]]] = []
+        cache_file = self._root / "missing_blobs_cache.json"
         for sub, blob_hash in candidates.items():
             local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
+            cli_path = home / ".gemini" / "antigravity-cli" / "brain" / Path(sub)
             temp_artifact_path = temp_artifacts_dir / Path(sub)
             user_temp_artifact_path = user_temp_artifacts_dir / Path(sub) if mirror_user_temp else None
             sub_posix = sub.replace("\\", "/")
             portable = f"~/.gemini/antigravity/brain/{sub_posix}"
+            extra_targets = [p for p in (temp_artifact_path, cli_path, user_temp_artifact_path) if p is not None]
 
             # Purge corrupt 8-byte 'restored' artifact if present in local_path
             if local_path.is_file() and local_path.stat().st_size == 8:
@@ -1174,45 +1247,26 @@ class Workspace:
                 except OSError:
                     pass
 
-            # Mirror to temp_artifacts_dir if local_path already exists and valid
+            # Mirror to target mirrors if local_path already exists and valid
             if local_path.is_file():
-                is_corrupt_temp = False
-                try:
-                    if temp_artifact_path.is_file() and temp_artifact_path.stat().st_size == 8:
-                        is_corrupt_temp = (temp_artifact_path.read_bytes() == b"restored")
-                except OSError:
-                    pass
-
-                needs_mirror = (
-                    not temp_artifact_path.is_file()
-                    or is_corrupt_temp
-                    or temp_artifact_path.stat().st_size != local_path.stat().st_size
-                    or temp_artifact_path.stat().st_mtime < local_path.stat().st_mtime
-                )
-                if needs_mirror:
+                for target in extra_targets:
+                    is_corrupt = False
                     try:
-                        temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(local_path, temp_artifact_path)
+                        if target.is_file() and target.stat().st_size == 8:
+                            is_corrupt = (target.read_bytes() == b"restored")
                     except OSError:
                         pass
 
-                if user_temp_artifact_path is not None:
-                    is_corrupt_user_temp = False
-                    try:
-                        if user_temp_artifact_path.is_file() and user_temp_artifact_path.stat().st_size == 8:
-                            is_corrupt_user_temp = (user_temp_artifact_path.read_bytes() == b"restored")
-                    except OSError:
-                        pass
-                    needs_user_mirror = (
-                        not user_temp_artifact_path.is_file()
-                        or is_corrupt_user_temp
-                        or user_temp_artifact_path.stat().st_size != local_path.stat().st_size
-                        or user_temp_artifact_path.stat().st_mtime < local_path.stat().st_mtime
+                    needs_mirror = (
+                        not target.is_file()
+                        or is_corrupt
+                        or target.stat().st_size != local_path.stat().st_size
+                        or target.stat().st_mtime < local_path.stat().st_mtime
                     )
-                    if needs_user_mirror:
+                    if needs_mirror:
                         try:
-                            user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(local_path, user_temp_artifact_path)
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(local_path, target)
                         except OSError:
                             pass
                 continue
@@ -1264,22 +1318,20 @@ class Workspace:
                             break
 
                 if not is_neg_cached:
-                    try:
-                        if getattr(sync_manager, "enabled", False):
-                            dest = sync_manager.pull_latest_file(portable, target_path=local_path)
-                            if dest and dest.is_file():
-                                restored.append(str(local_path))
-                                try:
-                                    temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                                    shutil.copy2(local_path, temp_artifact_path)
-                                except OSError:
-                                    pass
-                                if user_temp_artifact_path is not None:
-                                    try:
-                                        user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                                        shutil.copy2(local_path, user_temp_artifact_path)
-                                    except OSError:
-                                        pass
+                    if background_drive:
+                        drive_candidates_to_pull.append((portable, local_path, extra_targets, cache_keys))
+                    else:
+                        try:
+                            if getattr(sync_manager, "enabled", False):
+                                dest = sync_manager.pull_latest_file(portable, target_path=local_path)
+                                if dest and dest.is_file():
+                                    restored.append(str(local_path))
+                                    for target in extra_targets:
+                                        try:
+                                            target.parent.mkdir(parents=True, exist_ok=True)
+                                            shutil.copy2(local_path, target)
+                                        except OSError:
+                                            pass
                                 # Clean up cache if previously marked missing
                                 updated = False
                                 for key in cache_keys:
@@ -1294,8 +1346,8 @@ class Workspace:
                                 continue
                             else:
                                 is_neg_cached = True
-                    except Exception:
-                        is_neg_cached = True
+                        except Exception:
+                            is_neg_cached = True
 
                     if is_neg_cached:
                         for key in cache_keys:
@@ -1310,19 +1362,65 @@ class Workspace:
                     local_path.parent.mkdir(parents=True, exist_ok=True)
                     local_path.write_bytes(content)
                     restored.append(str(local_path))
-                    try:
-                        temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(local_path, temp_artifact_path)
-                    except OSError:
-                        pass
-                    if user_temp_artifact_path is not None:
+                    for target in extra_targets:
                         try:
-                            user_temp_artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(local_path, user_temp_artifact_path)
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(local_path, target)
                         except OSError:
                             pass
                 except Exception:
                     pass
+
+        # If any Drive candidates were deferred for background restore, start daemon worker
+        if drive_candidates_to_pull and background_drive and sync_manager is not None:
+            def _async_drive_worker(
+                candidates_to_pull: list[tuple[str, Path, list[Path], list[str]]],
+                mgr: Any,
+                c_file: Path,
+            ) -> None:
+                cache_now = time.time()
+                m_cache: dict[str, float] = {}
+                if c_file.exists():
+                    try:
+                        m_cache = json.loads(c_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        m_cache = {}
+
+                for port_path, l_path, targets, c_keys in candidates_to_pull:
+                    pull_ok = False
+                    try:
+                        if getattr(mgr, "enabled", False):
+                            dest = mgr.pull_latest_file(port_path, target_path=l_path)
+                            if dest and dest.is_file():
+                                pull_ok = True
+                                for t_path in targets:
+                                    try:
+                                        t_path.parent.mkdir(parents=True, exist_ok=True)
+                                        shutil.copy2(l_path, t_path)
+                                    except OSError:
+                                        pass
+                                for k in c_keys:
+                                    m_cache.pop(k, None)
+                    except Exception:
+                        pull_ok = False
+
+                    if not pull_ok:
+                        for k in c_keys:
+                            m_cache[k] = cache_now
+
+                try:
+                    c_file.write_text(json.dumps(m_cache, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+
+            t = threading.Thread(
+                target=_async_drive_worker,
+                args=(list(drive_candidates_to_pull), sync_manager, cache_file),
+                daemon=True,
+                name="AivcAutoRestoreDrivePull",
+            )
+            self._last_restore_thread = t
+            t.start()
 
         return restored
 

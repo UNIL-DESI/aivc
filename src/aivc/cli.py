@@ -5,6 +5,7 @@ AIVC Command Line Interface.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -386,6 +387,76 @@ def cmd_sync_semantic(args: argparse.Namespace) -> None:
     else:
         print(f"{RED}Error during semantic export: {result.get('error', 'Unknown error')}{RESET}")
 
+def _load_dream_inbox_processed() -> dict:
+    """Load processed documents registry locally and merge with Google Drive AIVC_Sync if available."""
+    from aivc.config import get_aivc_dir
+    local_path = get_aivc_dir() / "dream_inbox_processed.json"
+    data = {"processed": {}}
+    if local_path.exists():
+        try:
+            loaded = json.loads(local_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict) and "processed" in loaded:
+                data = loaded
+        except Exception:
+            pass
+
+    # Attempt to sync/merge from Google Drive AIVC_Sync (scope drive.file compatible)
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            from aivc.sync.drive import NativeDriveSyncManager
+            from aivc.config import get_storage_root
+            mgr = NativeDriveSyncManager(get_storage_root())
+            if getattr(mgr, "enabled", False):
+                service = mgr._get_service()
+                root_id = mgr._get_root_folder_id()
+                q = f"name = 'dream_inbox_processed.json' and '{root_id}' in parents and trashed = false"
+                res = service.files().list(q=q, spaces="drive", fields="files(id, name)").execute()
+                files = res.get("files", [])
+                if files:
+                    content = service.files().get_media(fileId=files[0]["id"]).execute().decode("utf-8")
+                    remote_data = json.loads(content)
+                    if isinstance(remote_data, dict) and "processed" in remote_data:
+                        for k, v in remote_data["processed"].items():
+                            if k not in data["processed"]:
+                                data["processed"][k] = v
+        except Exception:
+            pass
+
+    return data
+
+
+def _save_dream_inbox_processed(data: dict) -> None:
+    """Save processed documents registry locally and to Google Drive AIVC_Sync."""
+    from aivc.config import get_aivc_dir
+    local_path = get_aivc_dir() / "dream_inbox_processed.json"
+    try:
+        local_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        print(f"Warning: Failed to save local dream inbox registry: {e}", file=sys.stderr)
+
+    # Attempt to sync to Google Drive AIVC_Sync (scope drive.file compatible)
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            from aivc.sync.drive import NativeDriveSyncManager
+            from aivc.config import get_storage_root
+            from googleapiclient.http import MediaInMemoryUpload
+            mgr = NativeDriveSyncManager(get_storage_root())
+            if getattr(mgr, "enabled", False):
+                service = mgr._get_service()
+                root_id = mgr._get_root_folder_id()
+                q = f"name = 'dream_inbox_processed.json' and '{root_id}' in parents and trashed = false"
+                res = service.files().list(q=q, spaces="drive", fields="files(id, name)").execute()
+                files = res.get("files", [])
+                body_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+                media = MediaInMemoryUpload(body_bytes, mimetype="application/json")
+                if files:
+                    service.files().update(fileId=files[0]["id"], media_body=media).execute()
+                else:
+                    meta = {"name": "dream_inbox_processed.json", "parents": [root_id]}
+                    service.files().create(body=meta, media_body=media).execute()
+        except Exception:
+            pass
+
 
 def cmd_dream_inbox(args: argparse.Namespace) -> None:
     """Inspect and manage Google Drive Dream_Inbox files for the /dream skill."""
@@ -395,6 +466,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
     import zipfile
     import xml.etree.ElementTree as ET
     import sys
+    import datetime
 
     if hasattr(sys.stdout, "reconfigure"):
         try:
@@ -403,6 +475,25 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             pass
 
     action = args.inbox_action
+
+    def _resolve_dream_inbox_target(target_str: str) -> tuple[str | None, str | None]:
+        doc_id = None
+        doc_name = None
+        try:
+            out = subprocess.check_output(
+                ["rclone", "lsjson", "gdrive:Dream_Inbox"],
+                stderr=subprocess.DEVNULL,
+                encoding="utf-8"
+            )
+            files = json.loads(out)
+            for f in files:
+                if f.get("Name") == target_str or f.get("ID") == target_str:
+                    return f.get("ID"), f.get("Name")
+        except Exception:
+            pass
+        if len(target_str) > 20 and "." not in target_str:
+            return target_str, None
+        return None, target_str
 
     if action == "list":
         print(f"{CYAN}{BOLD}Google Drive Dream_Inbox Listing:{RESET}")
@@ -413,15 +504,34 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
                 encoding="utf-8"
             )
             files = json.loads(out)
-            if not files:
-                print(f"  {GREEN}{CHECK_MARK} Dream_Inbox est vide (0 fichier).{RESET}")
+            registry = _load_dream_inbox_processed()
+            processed_map = registry.get("processed", {})
+            include_all = getattr(args, "all", False)
+
+            filtered_files = []
+            for f in files:
+                f_name = f.get("Name", "")
+                f_id = f.get("ID", "")
+                if not include_all and (f_id in processed_map or f_name in processed_map):
+                    continue
+                filtered_files.append(f)
+
+            if not filtered_files:
+                if files and not include_all:
+                    print(f"  {GREEN}{CHECK_MARK} Dream_Inbox ne contient aucun nouveau document non traité ({len(files)} document(s) masqué(s) car déjà traité(s), utilisez '--all' pour afficher).{RESET}")
+                else:
+                    print(f"  {GREEN}{CHECK_MARK} Dream_Inbox est vide (0 fichier).{RESET}")
                 return
-            print(f"  {len(files)} fichier(s) trouvé(s) dans Dream_Inbox :")
-            for i, f in enumerate(files, 1):
+
+            print(f"  {len(filtered_files)} fichier(s) trouvé(s) dans Dream_Inbox :")
+            for i, f in enumerate(filtered_files, 1):
                 f_name = f.get("Name")
                 f_id = f.get("ID")
                 f_mod = f.get("ModTime", "")[:19]
-                print(f"  {i}. {BOLD}{f_name}{RESET} (ID: {f_id}, Date: {f_mod})")
+                status_tag = ""
+                if f_id in processed_map or f_name in processed_map:
+                    status_tag = f" {YELLOW}[déjà traité]{RESET}"
+                print(f"  {i}. {BOLD}{f_name}{RESET} (ID: {f_id}, Date: {f_mod}){status_tag}")
         except Exception as e:
             print(f"{RED}Error listing Dream_Inbox: {e}{RESET}")
 
@@ -431,15 +541,39 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             print(f"{RED}Error: please specify a document name or ID to read.{RESET}")
             return
         print(f"{DIM}Reading '{target}' from Dream_Inbox...{RESET}\n")
+
+        doc_id, doc_name = _resolve_dream_inbox_target(target)
+        target_filename = doc_name or (f"{target}.docx" if len(target) > 20 and "." not in target else target)
+
         with tempfile.TemporaryDirectory() as tmp_dir:
-            local_target = Path(tmp_dir) / "doc.docx"
+            local_target = Path(tmp_dir) / target_filename
+            downloaded = False
             try:
-                remote_path = f"Dream_Inbox/{target}"
+                remote_name = doc_name or target
+                remote_path = f"Dream_Inbox/{remote_name}"
                 subprocess.check_call(
                     ["rclone", "copyto", f"gdrive:{remote_path}", str(local_target)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )
+                downloaded = local_target.exists() and local_target.stat().st_size > 0
+            except Exception:
+                pass
+
+            if not downloaded and doc_id:
+                try:
+                    from aivc.config import get_storage_root
+                    from aivc.sync.drive import NativeDriveSyncManager
+                    mgr = NativeDriveSyncManager(get_storage_root())
+                    if getattr(mgr, "enabled", False):
+                        service = mgr._get_service()
+                        content = service.files().get_media(fileId=doc_id).execute()
+                        local_target.write_bytes(content)
+                        downloaded = True
+                except Exception:
+                    pass
+
+            if downloaded:
                 if zipfile.is_zipfile(local_target):
                     with zipfile.ZipFile(local_target) as z:
                         xml_content = z.read("word/document.xml")
@@ -453,8 +587,8 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
                     print("\n".join(paras))
                 else:
                     print(local_target.read_text(encoding="utf-8", errors="replace"))
-            except Exception as e:
-                print(f"{RED}Error reading file from Dream_Inbox: {e}{RESET}")
+            else:
+                print(f"{RED}Error reading file from Dream_Inbox: could not download '{target}'.{RESET}")
 
     elif action == "trash":
         target = args.target
@@ -463,20 +597,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             return
         print(f"{DIM}Attempting to trash '{target}' from Dream_Inbox...{RESET}")
 
-        doc_id = None
-        try:
-            out = subprocess.check_output(
-                ["rclone", "lsjson", "gdrive:Dream_Inbox"],
-                stderr=subprocess.DEVNULL,
-                encoding="utf-8"
-            )
-            files = json.loads(out)
-            for f in files:
-                if f.get("Name") == target or f.get("ID") == target:
-                    doc_id = f.get("ID")
-                    break
-        except Exception:
-            pass
+        doc_id, doc_name = _resolve_dream_inbox_target(target)
 
         if not doc_id and len(target) > 20:
             doc_id = target
@@ -497,11 +618,11 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
 
         if not trashed:
             try:
-                from aivc.config import get_home_dir
+                from aivc.config import resolve_workspace_path
                 import urllib.request
                 import urllib.parse
-                data_path = get_home_dir() / "Documents" / "VoiceNotes" / ".obsidian" / "plugins" / "gemini-sync" / "data.json"
-                if data_path.exists():
+                data_path = resolve_workspace_path(".obsidian/plugins/gemini-sync/data.json")
+                if data_path and data_path.exists():
                     data = json.loads(data_path.read_text(encoding="utf-8"))
                     params = {
                         "client_id": data["clientId"],
@@ -528,12 +649,58 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
             except Exception:
                 pass
 
+        if not trashed:
+            try:
+                fname = doc_name or (target if "." in target else None)
+                if fname:
+                    res_rclone = subprocess.run(
+                        ["rclone", "deletefile", f"gdrive:Dream_Inbox/{fname}"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    if res_rclone.returncode == 0:
+                        trashed = True
+            except Exception:
+                pass
+
+        # Persist to registry (local + Google Drive AIVC_Sync)
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        reg = _load_dream_inbox_processed()
+        primary_key = doc_id or target
+        entry = {
+            "trashed_at": now_iso,
+            "method": "drive_api" if trashed else "local_registry",
+            "name": doc_name or target,
+        }
+        if doc_id:
+            entry["doc_id"] = doc_id
+        reg.setdefault("processed", {})[primary_key] = entry
+        if doc_name and doc_name != primary_key:
+            reg["processed"][doc_name] = entry
+        if target and target != primary_key and target != doc_name:
+            reg["processed"][target] = entry
+        _save_dream_inbox_processed(reg)
+
         if trashed:
-            print(f"{GREEN}{CHECK_MARK} File '{target}' successfully moved to Google Drive Trash.{RESET}")
+            print(f"{GREEN}{CHECK_MARK} File '{target}' successfully moved to Google Drive Trash and recorded in processed registry.{RESET}")
         else:
+            print(f"{GREEN}{CHECK_MARK} Document '{target}' (ID: {doc_id or 'n/a'}) enregistré dans le registre persistant comme traité.")
+            print(f"Il est désormais masqué de 'dream-inbox list' (utiliser 'dream-inbox list --all' pour l'afficher).{RESET}")
             print(f"{YELLOW}Note : Les tokens locaux actuels sont restreints en écriture (scope 'drive.readonly' ou 'drive.file').{RESET}")
-            print(f"Pour purger ce document manuellement ou le mettre à la corbeille en 1 clic :")
+            print(f"Pour purger ce document manuellement sur Google Drive si vous le souhaitez :")
             print(f"  {CYAN}https://drive.google.com/drive/folders/1JsNgV7uD1c981dNQpYEprKdjVgitLDo8{RESET}")
+
+
+def cmd_backfill_main_project(args: argparse.Namespace) -> None:
+    """Deterministically backfills missing main_project_file in AIVC commit JSONs."""
+    from aivc.project_sync import backfill_missing_main_project_files
+    print(f"{CYAN}{BOLD}Starting deterministic main_project_file backfill...{RESET}")
+    res = backfill_missing_main_project_files(dry_run=getattr(args, "dry_run", False))
+    print(f"{GREEN}{CHECK_MARK} Backfill complete!{RESET}")
+    print(f"  Scanned commits:       {res.get('scanned')}")
+    print(f"  Already had main file: {res.get('already_had_mpf')}")
+    print(f"  Updated commits:       {res.get('updated')}")
 
 
 def cmd_sync_status(args: argparse.Namespace) -> None:
@@ -773,6 +940,22 @@ def main() -> None:
         default="",
         help="Target document name or ID (for read or trash)"
     )
+    parser_inbox.add_argument(
+        "--all",
+        action="store_true",
+        help="List all files including already processed/trashed documents"
+    )
+
+    # backfill-main-project
+    parser_backfill = subparsers.add_parser(
+        "backfill-main-project",
+        help="Deterministically backfill missing main_project_file in commit JSONs"
+    )
+    parser_backfill.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate backfill without writing to commit JSONs"
+    )
 
     args = parser.parse_args()
 
@@ -793,6 +976,8 @@ def main() -> None:
         cmd_sync_semantic(args)
     elif args.command == "dream-inbox":
         cmd_dream_inbox(args)
+    elif args.command == "backfill-main-project":
+        cmd_backfill_main_project(args)
     elif args.command == "sync":
         if args.sync_command == "setup":
             cmd_sync_setup(args)

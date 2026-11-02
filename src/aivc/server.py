@@ -234,31 +234,37 @@ def _format_changes_compressed(changes, machine_id=None, memory_id=None, parent_
 
 
 @mcp.tool()
-async def remember(
+async def task_commit(
     title: str,
-    journal: str,
-    main_project_file: str,
-    tasks: list[dict[str, Any]] | None = None,
-    user_items: list[dict[str, Any]] | None = None,
+    content: str = "",
+    main_project_file: str = "",
+    task_id: str | None = None,
+    task_status: str = "await_validation",
     edited_files: list[str] | None = None,
     read_files: list[str] | None = None,
     urls: list[str] | None = None,
+    journal: str = "",
+    tasks: list[dict[str, Any]] | None = None,
+    user_items: list[dict[str, Any]] | None = None,
     roadmap_items: list[dict[str, Any]] | None = None,
     completed_user_items: list[str] | None = None,
 ) -> str:
-    """Enregistre un souvenir structuré avec journal, tâches (états: new, await_validation, validated) et fichiers.
+    """Enregistre un souvenir atomique ou structuré dans AIVC (1 appel = 1 souvenir sur 1 tâche).
 
     Args:
-        title: Titre résumant le souvenir.
-        journal: Récit détaillé de session.
-        main_project_file: Chemin du fichier principal identifiant le projet ou sujet de ce souvenir (ex. la note maîtresse du projet dans un coffre Obsidian ou le README.md d'un dépôt de code). Doit exister sur le disque. Ajouté automatiquement aux fichiers consultés (read_files) s'il n'est ni dans read_files ni dans edited_files, et utilisé comme cible unique de rattachement des tâches (user_items).
-        tasks: Liste unifiée des tâches.
-        user_items: Actions utilisateur.
-        edited_files: Fichiers édités ou créés.
-        read_files: Fichiers consultés.
-        urls: URLs consultées.
-        roadmap_items: Tâches de roadmap.
-        completed_user_items: IDs des tâches terminées / validées.
+        title: Intitulé clair de la tâche ou de l'action.
+        main_project_file: Chemin de la note maîtresse du projet (ex. notes/MonProjet.md) ou README.md. Doit exister sur le disque. Cible unique de rattachement.
+        content: Paragraphe complet et fluide en pur langage naturel contenant le Contexte explicite, l'Action et le TL;DR (ce qui a été fait, observé, conclusions et chiffres clés), sans aucun chemin de fichier, bloc 'Source :' ni extrait de code brut.
+        task_id: Identifiant déterministe de la tâche (ex. 'r-123456-0' ou '123456-0'). Obligatoire pour mettre à jour ou changer le statut d'une tâche existante. Laisser None pour créer une nouvelle tâche.
+        task_status: Statut de la tâche ('new' pour la roadmap, 'await_validation' pour un livrable prêt, 'validated' pour une tâche terminée).
+        edited_files: Liste des fichiers modifiés ou créés (synchronisés et affichés en liens cliquables sous le souvenir).
+        read_files: Liste des fichiers consultés (synchronisés et affichés en liens cliquables sous le souvenir).
+        urls: URLs consultées ou référencées.
+        journal: Récit détaillé ou contexte de session (alias rétrocompatible pour content).
+        tasks: Liste unifiée des tâches (mode multi-tâches rétrocompatible).
+        user_items: Actions utilisateur (mode multi-tâches rétrocompatible).
+        roadmap_items: Tâches de roadmap (mode multi-tâches rétrocompatible).
+        completed_user_items: IDs des tâches terminées (déprécié).
     """
     import asyncio
     from pathlib import Path
@@ -266,29 +272,38 @@ async def remember(
     actual_read_files = read_files or []
     actual_edited_files = edited_files or []
     actual_urls = urls or []
-    actual_user_items = user_items or []
-    actual_tasks = tasks or []
+    actual_user_items = user_items if user_items is not None else []
+    effective_journal = journal or content or ""
+    effective_content = content or journal or ""
 
     engine = _get_engine()
 
-    engine_kwargs = {
+    commit_fn = getattr(engine, "task_commit", engine.remember)
+    engine_kwargs: dict[str, Any] = {
         "title": title,
-        "journal": journal,
+        "content": effective_content,
+        "journal": effective_journal,
         "main_project_file": main_project_file,
-        "user_items": actual_user_items,
         "read_files": actual_read_files,
         "edited_files": actual_edited_files,
         "urls": actual_urls,
     }
+    if user_items is not None:
+        engine_kwargs["user_items"] = user_items
     if tasks is not None:
         engine_kwargs["tasks"] = tasks
     if roadmap_items is not None:
         engine_kwargs["roadmap_items"] = roadmap_items
     if completed_user_items is not None:
         engine_kwargs["completed_user_items"] = completed_user_items
+    if task_id is not None:
+        engine_kwargs["task_id"] = task_id
+        engine_kwargs["task_status"] = task_status
+    elif task_status != "await_validation":
+        engine_kwargs["task_status"] = task_status
 
     memory = await asyncio.to_thread(
-        engine.remember,
+        commit_fn,
         **engine_kwargs
     )
 
@@ -306,13 +321,63 @@ async def remember(
     if memory.user_items:
         lines = []
         for it in memory.user_items:
-            task_id = it.get("id") or "task"
-            status = it.get("task_status") or ("validated" if it.get("done") else "new")
-            lines.append(f"[{task_id}] {status}")
+            t_id = it.get("id") or "task"
+            st = it.get("task_status") or ("validated" if it.get("done") else "new")
+            lines.append(f"[{t_id}] {st}")
         return "\n".join(lines)
 
     short_cid = memory.id[:8] if memory.id else "ok"
     return f"OK ({short_cid})"
+
+
+@mcp.tool()
+async def remember(
+    title: str,
+    content: str = "",
+    main_project_file: str = "",
+    task_id: str | None = None,
+    task_status: str = "await_validation",
+    edited_files: list[str] | None = None,
+    read_files: list[str] | None = None,
+    urls: list[str] | None = None,
+    journal: str = "",
+    tasks: list[dict[str, Any]] | None = None,
+    user_items: list[dict[str, Any]] | None = None,
+    roadmap_items: list[dict[str, Any]] | None = None,
+    completed_user_items: list[str] | None = None,
+) -> str:
+    """Enregistre un souvenir dans AIVC (alias rétrocompatible pour task_commit)."""
+    return await task_commit(
+        title=title,
+        main_project_file=main_project_file,
+        content=content,
+        task_id=task_id,
+        task_status=task_status,
+        edited_files=edited_files,
+        read_files=read_files,
+        urls=urls,
+        journal=journal,
+        tasks=tasks,
+        user_items=user_items,
+        roadmap_items=roadmap_items,
+        completed_user_items=completed_user_items,
+    )
+
+
+_orig_call_tool = mcp.call_tool
+
+
+async def _wrapped_call_tool(name: str, arguments: dict[str, Any] | None = None) -> Any:
+    args = dict(arguments or {})
+    if name in ("remember", "task_commit"):
+        if "content" in args and "journal" not in args:
+            args["journal"] = args["content"]
+        elif "journal" in args and "content" not in args:
+            args["content"] = args["journal"]
+    return await _orig_call_tool(name, args)
+
+
+mcp.call_tool = _wrapped_call_tool  # type: ignore[assignment]
 
 
 @mcp.tool()
@@ -322,7 +387,9 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
     top_n = min(top_n, 20)
 
     import os
-    disable_cross = os.environ.get("AIVC_DISABLE_CROSS_ENCODER", "False").lower() == "true"
+    import sys
+    default_disable = "True" if sys.platform == "win32" else "False"
+    disable_cross = os.environ.get("AIVC_DISABLE_CROSS_ENCODER", default_disable).lower() == "true"
     engine = _get_engine()
     if not disable_cross:
         try:
@@ -330,7 +397,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
             if searcher is not None:
                 _ = searcher._cross_encoder
         except Exception as e:
-            import sys
             print(f"[aivc] Failed to eagerly load CrossEncoder on main thread: {e}", file=sys.stderr)
 
     indexing_queue_size = engine.get_index_queue_size()
@@ -342,13 +408,6 @@ async def recall(query: str, top_n: int = 5, filter_glob: str = "", only_local: 
 
     if not results:
         return warning_header + _format_cold_start_payload()
-
-    for r in results:
-        try:
-            mem = engine.get_memory(r.memory_id)
-            engine.auto_restore_brain_files(mem)
-        except Exception:
-            pass
 
     memory_lines = []
     for i, r in enumerate(results, 1):
@@ -389,7 +448,7 @@ def consult_memory(memory_id: str) -> str:
     engine = _get_engine()
     memory = engine.get_memory(memory_id)
     try:
-        engine.auto_restore_brain_files(memory)
+        engine.auto_restore_brain_files(memory, background_drive=True)
     except Exception:
         pass
 
@@ -482,14 +541,23 @@ def get_file_history(file_path: str) -> str:
     lines = [f"## AIVC History for: `{file_path}`\n"]
     lines.append(f"{len(memories)} memory(ies) have touched this file:\n")
 
+    from aivc.config import to_portable_path
+    target_portable = to_portable_path(file_path).lower()
+
     for mem in memories:
         lines.append(f"- [{mem.timestamp[:10]}] **{mem.title}** (ID: `{mem.id}`)")
-        open_items = [it for it in getattr(mem, "user_items", []) if not it.get("done", False)]
-        if open_items:
-            for it in open_items:
-                it_id = it.get("id", "")
-                task = it.get("task", "")
-                lines.append(f"    - [ ] `[{it_id}]` {task}")
+        mpf = getattr(mem, "main_project_file", None)
+        mpf_portable = to_portable_path(mpf).lower() if mpf else ""
+        if not mpf_portable or mpf_portable == target_portable:
+            open_items = [
+                it for it in getattr(mem, "user_items", [])
+                if not it.get("done", False) and it.get("task_status") != "validated"
+            ]
+            if open_items:
+                for it in open_items:
+                    it_id = it.get("id", "")
+                    task = it.get("task", "")
+                    lines.append(f"    - [ ] `[{it_id}]` {task}")
 
     lines.append(
         "\n💡 Use `consult_memory(memory_id)` to read the full note of a specific memory."

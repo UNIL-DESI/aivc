@@ -3,6 +3,7 @@ Tests for the CLI module.
 """
 
 from unittest.mock import patch, MagicMock
+from pathlib import Path
 import pytest
 import os
 
@@ -121,3 +122,87 @@ def test_cmd_sync_push_error(capsys):
 
     captured = capsys.readouterr()
     assert "Error during sync push: API Error" in captured.out
+
+
+def test_dream_inbox_registry_and_filtering(tmp_path: Path, monkeypatch, capsys):
+    """Verify dream inbox registry persistence and document masking in list command."""
+    import argparse
+    import json
+    import subprocess
+    from aivc.cli import _load_dream_inbox_processed, _save_dream_inbox_processed, cmd_dream_inbox
+
+    monkeypatch.setattr("aivc.config.get_aivc_dir", lambda: tmp_path)
+
+    # 1. Initially registry is empty
+    reg = _load_dream_inbox_processed()
+    assert reg == {"processed": {}}
+
+    # 2. Add an item and save
+    reg["processed"]["doc-123"] = {
+        "trashed_at": "2026-10-29T12:00:00Z",
+        "method": "local_registry",
+        "name": "Notes.docx",
+    }
+    _save_dream_inbox_processed(reg)
+
+    reg_loaded = _load_dream_inbox_processed()
+    assert "doc-123" in reg_loaded["processed"]
+
+    # 3. Test cmd_dream_inbox list filtering
+    mock_files = [
+        {"Name": "Notes.docx", "ID": "doc-123", "ModTime": "2026-10-29T10:00:00Z"},
+        {"Name": "Fresh.docx", "ID": "doc-456", "ModTime": "2026-10-29T11:00:00Z"},
+    ]
+    monkeypatch.setattr(subprocess, "check_output", lambda *args, **kwargs: json.dumps(mock_files))
+
+    # Default list excludes doc-123
+    args_list = argparse.Namespace(inbox_action="list", all=False)
+    cmd_dream_inbox(args_list)
+    out1 = capsys.readouterr().out
+    assert "Fresh.docx" in out1
+    assert "Notes.docx" not in out1
+
+    # list --all includes doc-123 with status tag
+    args_all = argparse.Namespace(inbox_action="list", all=True)
+    cmd_dream_inbox(args_all)
+    out2 = capsys.readouterr().out
+    assert "Fresh.docx" in out2
+    assert "Notes.docx" in out2
+    assert "[déjà traité]" in out2
+
+
+def test_dream_inbox_read_and_trash_by_id(tmp_path: Path, monkeypatch, capsys):
+    """Verify dream inbox read and trash commands resolve ID correctly."""
+    import argparse
+    import json
+    import subprocess
+    from aivc.cli import _load_dream_inbox_processed, cmd_dream_inbox
+
+    monkeypatch.setattr("aivc.config.get_aivc_dir", lambda: tmp_path)
+
+    mock_files = [
+        {"Name": "Fresh.docx", "ID": "1AbCdEfGhIjKlMnOpQrStUvWxYz", "ModTime": "2026-10-29T11:00:00Z"},
+    ]
+    monkeypatch.setattr(subprocess, "check_output", lambda *args, **kwargs: json.dumps(mock_files))
+
+    def mock_check_call(cmd, **kwargs):
+        dest = Path(cmd[3])
+        dest.write_text("Hello dream inbox content", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(subprocess, "check_call", mock_check_call)
+
+    args_read = argparse.Namespace(inbox_action="read", target="1AbCdEfGhIjKlMnOpQrStUvWxYz")
+    cmd_dream_inbox(args_read)
+    out_read = capsys.readouterr().out
+    assert "Hello dream inbox content" in out_read
+
+    args_trash = argparse.Namespace(inbox_action="trash", target="1AbCdEfGhIjKlMnOpQrStUvWxYz")
+    cmd_dream_inbox(args_trash)
+    out_trash = capsys.readouterr().out
+    assert "1AbCdEfGhIjKlMnOpQrStUvWxYz" in out_trash
+
+    reg = _load_dream_inbox_processed()
+    assert "1AbCdEfGhIjKlMnOpQrStUvWxYz" in reg["processed"]
+    assert reg["processed"]["1AbCdEfGhIjKlMnOpQrStUvWxYz"]["name"] == "Fresh.docx"
+

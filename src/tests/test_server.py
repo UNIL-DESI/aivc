@@ -32,14 +32,15 @@ def _import_server():
     import aivc.server as srv
     if hasattr(srv, "_get_engine"):
         srv._get_engine = lambda: _mock_engine
-        
+    _mock_engine.task_commit = _mock_engine.remember
     return srv
 
 
 # We import once for all tests.
 _server = _import_server()
 
-# Grab the 6 active tool functions directly from the server module.
+# Grab the active tool functions directly from the server module.
+_task_commit = _server.task_commit
 _remember = _server.remember
 _recall = _server.recall
 _consult_memory = _server.consult_memory
@@ -105,8 +106,29 @@ class TestRemember(unittest.IsolatedAsyncioTestCase):
 
     async def test_returns_memory_id_and_files(self):
         _mock_engine.remember.return_value = _make_memory()
-        result = await _remember("Do something", "Detailed journal.", "main.py")
+        result = await _task_commit("Do something", "Detailed journal.", "main.py")
         self.assertEqual(result, "OK (abc-123)")
+        res_alias = await _remember("Do something", "Detailed journal.", "main.py")
+        self.assertEqual(res_alias, "OK (abc-123)")
+
+    async def test_mcp_list_tools_schema_and_names(self):
+        tools = await _server.mcp.list_tools()
+        tool_names = [t.name for t in tools]
+        self.assertIn("task_commit", tool_names)
+        self.assertNotIn("remember", tool_names)
+        tc_tool = [t for t in tools if t.name == "task_commit"][0]
+        schema = tc_tool.inputSchema
+        self.assertEqual(schema.get("required"), ["title", "journal", "main_project_file"])
+        for p in ("title", "journal", "main_project_file", "tasks", "user_items", "edited_files", "read_files", "urls", "roadmap_items"):
+            self.assertIn(p, schema.get("properties", {}))
+
+    async def test_mcp_call_tool_task_commit_and_remember_transition(self):
+        _mock_engine.remember.return_value = _make_memory()
+        res_tc = await _server.mcp.call_tool("task_commit", {"title": "T1", "journal": "J1", "main_project_file": "main.py"})
+        self.assertTrue(len(res_tc) > 0)
+        _mock_engine.remember.return_value = _make_memory()
+        res_rem = await _server.mcp.call_tool("remember", {"title": "T2", "journal": "J2", "main_project_file": "main.py"})
+        self.assertTrue(len(res_rem) > 0)
 
     async def test_delegates_to_engine(self):
         _mock_engine.remember.return_value = _make_memory()
@@ -208,6 +230,12 @@ class TestRecall(unittest.IsolatedAsyncioTestCase):
         await _recall("x", top_n=100)
         _mock_engine.search.assert_called_once_with("x", top_n=20, filter_glob="")
 
+    async def test_recall_does_not_call_auto_restore(self):
+        results = [_make_search_result("m1", "M1")]
+        _mock_engine.search.return_value = results
+        await _recall("test query")
+        _mock_engine.auto_restore_brain_files.assert_not_called()
+
 
 class TestConsultMemory(unittest.TestCase):
     def setUp(self):
@@ -291,6 +319,27 @@ class TestGetFileHistory(unittest.TestCase):
         _mock_engine._workspace.get_file_history.return_value = []
         result = _get_file_history("unknown.txt")
         self.assertIn("Aucun souvenir trouvé", result)
+
+    def test_filters_user_items_by_main_project_file(self):
+        mem_matching = _make_memory(
+            memory_id="mem-1",
+            title="Matching Project Commit",
+            user_items=[{"id": "match-1", "task": "Relevant task", "done": False}],
+        )
+        mem_matching.main_project_file = "~/Documents/VoiceNotes/notes/Project A.md"
+
+        mem_other = _make_memory(
+            memory_id="mem-2",
+            title="Other Project Commit",
+            user_items=[{"id": "parasite-1", "task": "Parasite task", "done": False}],
+        )
+        mem_other.main_project_file = "~/Documents/VoiceNotes/notes/Project B.md"
+
+        _mock_engine._workspace.get_file_history.return_value = [mem_matching, mem_other]
+
+        result = _get_file_history("~/Documents/VoiceNotes/notes/Project A.md")
+        self.assertIn("`[match-1]` Relevant task", result)
+        self.assertNotIn("parasite-1", result)
 
 
 class TestCompleteUserItems(unittest.TestCase):

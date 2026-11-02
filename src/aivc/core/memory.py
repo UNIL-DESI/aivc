@@ -177,15 +177,14 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
     """Serialise a Memory to a JSON-compatible dict."""
     edited_files = [c.path for c in memory.changes if c.action in ("edited", "added", "modified")]
     read_files = [c.path for c in memory.changes if c.action == "consulted"]
-    return {
+    d: dict[str, Any] = {
         "id": memory.id,
         "timestamp": memory.timestamp,
         "title": memory.title,
         "journal": memory.journal,
-        "main_project_file": memory.main_project_file,
+        "main_project_file": getattr(memory, "main_project_file", "") or "",
         "user_items": memory.user_items,
-        "completed_user_items": memory.completed_user_items,
-        "note": memory.note,
+        "completed_user_items": getattr(memory, "completed_user_items", []),
         "parent_id": memory.parent_id,
         "machine_id": memory.machine_id,
         "urls": list(memory.urls),
@@ -200,6 +199,13 @@ def memory_to_dict(memory: Memory) -> dict[str, Any]:
             for c in memory.changes
         ],
     }
+    # Non-duplication de note : n'inclure "note" que si legacy (aucun journal ni user_items)
+    has_journal = bool(memory.journal and memory.journal.strip())
+    has_user_items = bool(memory.user_items)
+    if not has_journal and not has_user_items:
+        d["note"] = memory.note
+
+    return d
 
 
 
