@@ -281,15 +281,15 @@ async def task_commit(
     commit_fn = getattr(engine, "task_commit", engine.remember)
     engine_kwargs: dict[str, Any] = {
         "title": title,
-        "content": effective_content,
         "journal": effective_journal,
         "main_project_file": main_project_file,
+        "user_items": actual_user_items,
         "read_files": actual_read_files,
         "edited_files": actual_edited_files,
         "urls": actual_urls,
     }
-    if user_items is not None:
-        engine_kwargs["user_items"] = user_items
+    if content:
+        engine_kwargs["content"] = effective_content
     if tasks is not None:
         engine_kwargs["tasks"] = tasks
     if roadmap_items is not None:
@@ -333,24 +333,24 @@ async def task_commit(
 @mcp.tool()
 async def remember(
     title: str,
-    content: str = "",
+    journal: str = "",
     main_project_file: str = "",
-    task_id: str | None = None,
-    task_status: str = "await_validation",
+    tasks: list[dict[str, Any]] | None = None,
+    user_items: list[dict[str, Any]] | None = None,
     edited_files: list[str] | None = None,
     read_files: list[str] | None = None,
     urls: list[str] | None = None,
-    journal: str = "",
-    tasks: list[dict[str, Any]] | None = None,
-    user_items: list[dict[str, Any]] | None = None,
     roadmap_items: list[dict[str, Any]] | None = None,
+    content: str = "",
+    task_id: str | None = None,
+    task_status: str = "await_validation",
     completed_user_items: list[str] | None = None,
 ) -> str:
     """Enregistre un souvenir dans AIVC (alias rétrocompatible pour task_commit)."""
     return await task_commit(
         title=title,
-        main_project_file=main_project_file,
         content=content,
+        main_project_file=main_project_file,
         task_id=task_id,
         task_status=task_status,
         edited_files=edited_files,
