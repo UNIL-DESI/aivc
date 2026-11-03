@@ -139,14 +139,11 @@ class SemanticEngine:
                         pushed_paths.add(str(c.path).replace("\\", "/").lower())
 
                 # Push latest versions of brain artifacts or local files referenced in content / details / journal
-                try:
-                    from aivc.project_sync import extract_referenced_files_from_memory
-                    for ref_path in extract_referenced_files_from_memory(memory):
-                        if ref_path.replace("\\", "/").lower() not in pushed_paths:
-                            self._sync_manager.push_latest_file(ref_path)
-                            pushed_paths.add(ref_path.replace("\\", "/").lower())
-                except Exception as e:
-                    logger.debug("Failed to push referenced files from content: %s", e)
+                from aivc.project_sync import extract_referenced_files_from_memory
+                for ref_path in extract_referenced_files_from_memory(memory):
+                    if ref_path.replace("\\", "/").lower() not in pushed_paths:
+                        self._sync_manager.push_latest_file(ref_path)
+                        pushed_paths.add(ref_path.replace("\\", "/").lower())
 
                 # Volet C: GC Drive files for tasks validated in this cycle
                 gc_files = getattr(self._workspace, "_last_gc_drive_files", [])

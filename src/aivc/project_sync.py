@@ -547,23 +547,34 @@ def linkify_unlinked_artifact_names(text: str, file_paths: list[Any]) -> str:
     # Sort candidates by length descending to match longest filenames first
     sorted_fnames = sorted(candidates.keys(), key=len, reverse=True)
 
+    # Set of lower-case links already present in text
+    existing_links_lower = [link.lower() for link in masked_links]
+
     for fname in sorted_fnames:
+        fname_lower = fname.lower()
+        # If filename already appears inside an existing Markdown link, skip
+        if any(fname_lower in lk for lk in existing_links_lower):
+            continue
+
         target_url = candidates[fname]
         esc = re.escape(fname)
 
         # Match either `fname` (with backticks) or bare fname with word/punctuation boundaries
         # Case A: with backticks `fname`
-        masked_text = re.sub(
+        new_masked, n_subs = re.subn(
             rf"`{esc}`",
             f"[📄 {fname}]({target_url})",
             masked_text,
+            count=1,
         )
-
-        # Case B: bare fname not preceded or followed by alphanumeric / path characters or inside another link
-        bare_pattern = re.compile(
-            rf"(?<![A-Za-z0-9_/\\])(?<!__AIVC_MD_LINK_){esc}(?![A-Za-z0-9_/\\])(?!__)",
-        )
-        masked_text = bare_pattern.sub(f"[📄 {fname}]({target_url})", masked_text)
+        if n_subs > 0:
+            masked_text = new_masked
+        else:
+            # Case B: bare fname not preceded or followed by alphanumeric / path characters or inside another link
+            bare_pattern = re.compile(
+                rf"(?<![A-Za-z0-9_/\\])(?<!__AIVC_MD_LINK_){esc}(?![A-Za-z0-9_/\\])(?!__)",
+            )
+            masked_text = bare_pattern.sub(f"[📄 {fname}]({target_url})", masked_text, count=1)
 
     # 3. Unmask original markdown links
     for idx, original_link in enumerate(masked_links):
@@ -657,41 +668,32 @@ def extract_referenced_files_from_memory(memory: Any) -> list[str]:
             # Remove leading slash before Windows drive letter if present
             if re.match(r"^/[A-Za-z]:", decoded):
                 decoded = decoded[1:]
-            try:
-                p = Path(decoded)
-                if p.is_file():
-                    referenced_paths.add(str(p.resolve()))
-                else:
-                    p_port = from_portable_path(decoded)
-                    if p_port.is_file():
-                        referenced_paths.add(str(p_port.resolve()))
-            except Exception:
-                pass
+            p = Path(decoded)
+            if p.is_file():
+                referenced_paths.add(str(p.resolve()))
+            else:
+                p_port = from_portable_path(decoded)
+                if p_port.is_file():
+                    referenced_paths.add(str(p_port.resolve()))
 
         for m in bare_path_pattern.finditer(txt):
             raw_p = m.group(0).split(":")[0].strip()
             decoded = urllib.parse.unquote(raw_p)
-            try:
-                p = Path(decoded)
-                if p.is_file():
-                    referenced_paths.add(str(p.resolve()))
-                else:
-                    p_port = from_portable_path(decoded)
-                    if p_port.is_file():
-                        referenced_paths.add(str(p_port.resolve()))
-            except Exception:
-                pass
+            p = Path(decoded)
+            if p.is_file():
+                referenced_paths.add(str(p.resolve()))
+            else:
+                p_port = from_portable_path(decoded)
+                if p_port.is_file():
+                    referenced_paths.add(str(p_port.resolve()))
 
     # Also check read_files: if any file is under brain/, include it
     for rf in read_files:
         rf_str = rf.get("path") if isinstance(rf, dict) else str(rf)
         if extract_brain_subpath(rf_str):
-            try:
-                p = from_portable_path(rf_str)
-                if p.is_file():
-                    referenced_paths.add(str(p.resolve()))
-            except Exception:
-                pass
+            p = from_portable_path(rf_str)
+            if p.is_file():
+                referenced_paths.add(str(p.resolve()))
 
     return sorted(list(referenced_paths))
 
@@ -822,10 +824,7 @@ def sync_project_views(
             return getattr(memory, "_tldr_synced_paths", [])
 
     # Process user items details (linkify unlinked files, rewrite paths, strip legacy lists)
-    try:
-        process_user_items_details(memory)
-    except Exception as e:
-        logger.debug("process_user_items_details in sync_project_views skipped: %s", e)
+    process_user_items_details(memory)
 
     # Restore missing brain files referenced by this memory or active tasks
     try:
