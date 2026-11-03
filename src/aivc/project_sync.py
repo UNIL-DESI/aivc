@@ -476,6 +476,226 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
 restore_brain_files_for_memory = restore_artifacts_for_memory
 
 
+def strip_legacy_file_lists(text: str) -> str:
+    """Removes legacy automated file list lines from markdown task views:
+    - ✏️ **Fichiers modifiés** : ...
+    - 📖 **Fichiers consultés** : ...
+    """
+    if not text:
+        return text
+    pattern = re.compile(
+        r"(?m)^[ \t]*-[ \t]*[✏️📖][ \t]*\*\*(?:Fichiers modifiés|Fichiers consultés)\*\*[ \t]*:.*(?:\n[ \t]{2,}.*)*\n?",
+        re.UNICODE,
+    )
+    return pattern.sub("", text)
+
+
+def linkify_unlinked_artifact_names(text: str, file_paths: list[Any]) -> str:
+    """Detects filenames from edited_files or read_files mentioned in plain text
+    and converts them to clickable Markdown links [📄 <filename>](file:///...).
+    Ignores filenames already part of markdown links or code blocks.
+    """
+    if not text or not file_paths:
+        return text
+
+    import aivc.config as _cfg
+
+    base_temp = _cfg.get_aivc_temp_dir()
+    artifacts_dir = Path(base_temp) / "artifacts"
+    artifacts_posix = artifacts_dir.as_posix().replace("\\", "/").lstrip("/")
+
+    # 1. Mask existing markdown links [label](url)
+    md_link_pattern = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+    masked_links: list[str] = []
+
+    def _mask_link(m: re.Match) -> str:
+        idx = len(masked_links)
+        masked_links.append(m.group(0))
+        return f"__AIVC_MD_LINK_{idx}__"
+
+    masked_text = md_link_pattern.sub(_mask_link, text)
+
+    # 2. Extract valid distinct targets (filename -> local_file_url)
+    candidates: dict[str, str] = {}
+    for item in file_paths:
+        if not item:
+            continue
+        p_str = item.get("path") if isinstance(item, dict) else str(item)
+        p_clean = str(p_str).strip().replace("\\", "/")
+        if not p_clean:
+            continue
+
+        fname = Path(p_clean).name
+        if not fname or len(fname) < 3 or "." not in fname:
+            continue
+
+        # Determine target file URL
+        sub = _cfg.extract_brain_subpath(p_clean)
+        if sub:
+            target_url = f"file:///{artifacts_posix}/{sub.replace('\\', '/').lstrip('/')}"
+        else:
+            loc_p = _cfg.from_portable_path(p_clean)
+            target_url = f"file:///{loc_p.as_posix().replace('\\', '/').lstrip('/')}"
+
+        # Avoid collision on same filename
+        if fname not in candidates:
+            candidates[fname] = target_url
+
+    if not candidates:
+        return text
+
+    # Sort candidates by length descending to match longest filenames first
+    sorted_fnames = sorted(candidates.keys(), key=len, reverse=True)
+
+    for fname in sorted_fnames:
+        target_url = candidates[fname]
+        esc = re.escape(fname)
+
+        # Match either `fname` (with backticks) or bare fname with word/punctuation boundaries
+        # Case A: with backticks `fname`
+        masked_text = re.sub(
+            rf"`{esc}`",
+            f"[📄 {fname}]({target_url})",
+            masked_text,
+        )
+
+        # Case B: bare fname not preceded or followed by alphanumeric / path characters or inside another link
+        bare_pattern = re.compile(
+            rf"(?<![A-Za-z0-9_/\\])(?<!__AIVC_MD_LINK_){esc}(?![A-Za-z0-9_/\\])(?!__)",
+        )
+        masked_text = bare_pattern.sub(f"[📄 {fname}]({target_url})", masked_text)
+
+    # 3. Unmask original markdown links
+    for idx, original_link in enumerate(masked_links):
+        masked_text = masked_text.replace(f"__AIVC_MD_LINK_{idx}__", original_link)
+
+    return masked_text
+
+
+def process_user_items_details(memory: Any) -> None:
+    """Pre-processes task details in memory in-place:
+    - rewrites brain artifact URLs to Public temp
+    - rewrites user home paths to current machine
+    - linkifies unlinked filenames from edited_files and read_files
+    - strips legacy automated file lists
+    """
+    if isinstance(memory, dict):
+        user_items = memory.get("user_items", []) or memory.get("tasks", []) or []
+        edited_files = memory.get("edited_files", []) or []
+        read_files = memory.get("read_files", []) or []
+    else:
+        user_items = getattr(memory, "user_items", []) or []
+        edited_files = getattr(memory, "edited_files", []) or []
+        read_files = getattr(memory, "read_files", []) or []
+
+    all_memory_files = list(edited_files) + list(read_files)
+
+    for item in user_items:
+        if not isinstance(item, dict):
+            continue
+        details = item.get("details", "")
+        if not details or not isinstance(details, str):
+            continue
+
+        item_files = list(all_memory_files)
+        item_files.extend(item.get("edited_files", []) or [])
+        item_files.extend(item.get("read_files", []) or [])
+
+        # 1. Rewrite brain paths & user paths
+        d_repaired = rewrite_artifact_paths_to_temp(details)
+
+        # 2. Linkify unlinked artifact filenames
+        d_linkified = linkify_unlinked_artifact_names(d_repaired, item_files)
+
+        # 3. Strip legacy lists
+        d_clean = strip_legacy_file_lists(d_linkified)
+
+        if d_clean != details:
+            item["details"] = d_clean
+
+
+def extract_referenced_files_from_memory(memory: Any) -> list[str]:
+    """Extracts local files or brain artifacts referenced in memory content/details/journal
+    that should be pushed to Google Drive during synchronization.
+    """
+    import urllib.parse
+    from aivc.config import extract_brain_subpath, from_portable_path
+
+    if isinstance(memory, dict):
+        user_items = memory.get("user_items", []) or memory.get("tasks", []) or []
+        texts = [memory.get("journal", ""), memory.get("note", ""), memory.get("content", "")]
+        read_files = memory.get("read_files", []) or []
+    else:
+        user_items = getattr(memory, "user_items", []) or []
+        texts = [getattr(memory, "journal", ""), getattr(memory, "note", ""), getattr(memory, "content", "")]
+        read_files = getattr(memory, "read_files", []) or []
+
+    for item in user_items:
+        if isinstance(item, dict):
+            texts.append(item.get("task", ""))
+            texts.append(item.get("details", ""))
+
+    referenced_paths: set[str] = set()
+
+    # Pattern for URLs and file paths in text
+    url_file_pattern = re.compile(
+        r"file://+([^\s\)\"\'\`<>]+)",
+        re.IGNORECASE,
+    )
+    bare_path_pattern = re.compile(
+        r"(?:[A-Za-z]:[\\/]|/(?:Users|home)[\\/]|~[\\/])[^\s\[\]\(\)\"\'\`<>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\[\]\(\)\"\'\`<>:]+)",
+        re.IGNORECASE,
+    )
+
+    for txt in texts:
+        if not txt or not isinstance(txt, str):
+            continue
+
+        for m in url_file_pattern.finditer(txt):
+            raw_url = m.group(1).split(":")[0].strip()
+            decoded = urllib.parse.unquote(raw_url)
+            # Remove leading slash before Windows drive letter if present
+            if re.match(r"^/[A-Za-z]:", decoded):
+                decoded = decoded[1:]
+            try:
+                p = Path(decoded)
+                if p.is_file():
+                    referenced_paths.add(str(p.resolve()))
+                else:
+                    p_port = from_portable_path(decoded)
+                    if p_port.is_file():
+                        referenced_paths.add(str(p_port.resolve()))
+            except Exception:
+                pass
+
+        for m in bare_path_pattern.finditer(txt):
+            raw_p = m.group(0).split(":")[0].strip()
+            decoded = urllib.parse.unquote(raw_p)
+            try:
+                p = Path(decoded)
+                if p.is_file():
+                    referenced_paths.add(str(p.resolve()))
+                else:
+                    p_port = from_portable_path(decoded)
+                    if p_port.is_file():
+                        referenced_paths.add(str(p_port.resolve()))
+            except Exception:
+                pass
+
+    # Also check read_files: if any file is under brain/, include it
+    for rf in read_files:
+        rf_str = rf.get("path") if isinstance(rf, dict) else str(rf)
+        if extract_brain_subpath(rf_str):
+            try:
+                p = from_portable_path(rf_str)
+                if p.is_file():
+                    referenced_paths.add(str(p.resolve()))
+            except Exception:
+                pass
+
+    return sorted(list(referenced_paths))
+
+
 def rewrite_artifact_paths_to_temp(text: str, temp_dir: Path | None = None) -> str:
     r"""Rewrites references to brain artifacts in markdown text to <temp>/aivc/artifacts/<subpath>.
 
@@ -484,6 +704,8 @@ def rewrite_artifact_paths_to_temp(text: str, temp_dir: Path | None = None) -> s
     2. URLs: file:///.../(.gemini/antigravity/brain|aivc/artifacts)/<subpath> -> file:///<temp>/aivc/artifacts/<subpath>
     3. Bare local paths: C:\...\brain\<subpath> -> <temp>\aivc\artifacts\<subpath>
        Strict lookbehind prevents rewriting inside file:/// URLs (avoiding 'filC:' corruption).
+    4. Foreign machine user home paths: file:///C:/Users/(Jamet|hjamet)/... -> file:///<local_home>/...
+    5. Stripping of legacy file lists (- ✏️ **Fichiers modifiés** and - 📖 **Fichiers consultés**)
     """
     if not text:
         return text
@@ -530,6 +752,21 @@ def rewrite_artifact_paths_to_temp(text: str, temp_dir: Path | None = None) -> s
 
     text = url_pattern.sub(_replace_url, text)
 
+    # Step 2b: Rewrite foreign user home paths in file:/// URLs to local user home
+    local_home = _cfg.get_home_dir()
+    local_home_posix = local_home.as_posix().replace("\\", "/").rstrip("/").lstrip("/")
+
+    user_home_url_pattern = re.compile(
+        r"file://+(?:[A-Za-z]:/Users/(?!Public(?:/|$))[^/\s\[\]\(\)\"\'\`<>]+|/home/[^/\s\[\]\(\)\"\'\`<>]+)/([^\s\[\]\(\)\"\'\`<>]+)",
+        re.IGNORECASE,
+    )
+
+    def _replace_user_home_url(m: re.Match) -> str:
+        sub_path = m.group(1).lstrip("/")
+        return f"file:///{local_home_posix}/{sub_path}"
+
+    text = user_home_url_pattern.sub(_replace_user_home_url, text)
+
     # Step 3: Rewrite bare local paths with strict lookbehind to avoid touching inside file:///
     local_pattern = re.compile(
         r"(?<![A-Za-z0-9_:/])(?<!file://)(?<!file:///)(?:[A-Za-z]:[\\/]|/(?:Users|home)[\\/]|~[\\/])[^\s\[\]\(\)\"\'\`<>]*?(?:\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain|aivc[\\/]artifacts)[\\/]([^\s\[\]\(\)\"\'\`<>:]+)",
@@ -557,6 +794,8 @@ def rewrite_artifact_paths_to_temp(text: str, temp_dir: Path | None = None) -> s
         text,
     )
     text = convert_wikilinks_to_markdown_links(text)
+    # Post-step: strip legacy automated file lists
+    text = strip_legacy_file_lists(text)
     return text
 
 
@@ -581,6 +820,12 @@ def sync_project_views(
     else:
         if getattr(memory, "_tldr_synced", False):
             return getattr(memory, "_tldr_synced_paths", [])
+
+    # Process user items details (linkify unlinked files, rewrite paths, strip legacy lists)
+    try:
+        process_user_items_details(memory)
+    except Exception as e:
+        logger.debug("process_user_items_details in sync_project_views skipped: %s", e)
 
     # Restore missing brain files referenced by this memory or active tasks
     try:

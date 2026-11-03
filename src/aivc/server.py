@@ -340,9 +340,10 @@ async def task_commit(
     4. content : un bon paragraphe complet et fluide en pur langage naturel contenant :
        - Le Contexte explicite (« Tu m'avais demandé de vérifier X... », « Suite à ton commentaire sur Y... »)
        - L'Action et le TL;DR (ce qui a été fait, observé, et les conclusions précises avec les chiffres clés)
-       - Zéro chemin de fichier, zéro bloc 'Source :' et zéro extrait de code brut dans content (mentionner tout au plus par leur nom simple 1 ou 2 artefacts principaux où figurent les détails complexes et preuves).
+       - Intégrer directement au fil de la phrase 1 ou 2 liens Markdown [📄 nom](file:///...) maximum vers les artefacts principaux à consulter (résultat final, walkthrough, unique artéfact diff_<sujet>.md pour un courriel /draft, ou duo <doc>.pdf + diff_<doc>.md pour un document compilé).
+       - Zéro wikilink [[...]], zéro bloc 'Source :' et zéro extrait de code brut dans content.
     5. main_project_file : chemin de la note maîtresse du projet (ex. notes/MonProjet.md ou README.md). Cible unique de rattachement.
-    6. edited_files & read_files : fichiers modifiés et consultés par cette tâche (automatiquement synchronisés et affichés en liens cliquables sous le souvenir dans 🤖 <Titre>.md).
+    6. edited_files & read_files : fichiers modifiés et consultés par cette tâche (toujours obligatoires pour le graphe AIVC et la synchronisation Drive de tous les artefacts).
     """
     return await _execute_memory_commit(
         title=title,
