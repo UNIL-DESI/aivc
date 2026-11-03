@@ -802,7 +802,7 @@ def _save_dream_inbox_local_copy(doc_name: str, doc_id: str, doc_text: str) -> P
     return local_path.resolve()
 
 
-def _trash_drive_file_by_id(doc_id: str | None) -> bool:
+def _trash_drive_file_by_id(doc_id: str | None, doc_name: str | None = None) -> bool:
     """Trash a file in Google Drive by doc_id via direct REST PATCH.
 
     Returns True if successfully moved to Google Drive Trash (HTTP 200/204),
@@ -811,6 +811,36 @@ def _trash_drive_file_by_id(doc_id: str | None) -> bool:
     if not doc_id:
         return False
 
+    display_name = doc_name or doc_id
+
+    # 1. First attempt: use AIVC OAuth token (~/.aivc/token.json) if available
+    try:
+        from aivc.config import get_token_path
+        token_path = get_token_path()
+        if token_path.exists():
+            from google.oauth2.credentials import Credentials
+            from google.auth.transport.requests import Request
+            creds = Credentials.from_authorized_user_file(str(token_path))
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                token_path.write_text(creds.to_json(), encoding="utf-8")
+            if creds and creds.token:
+                conn = http.client.HTTPSConnection("www.googleapis.com", timeout=20)
+                headers = {
+                    "Authorization": f"Bearer {creds.token}",
+                    "Content-Type": "application/json",
+                    "Connection": "close",
+                }
+                conn.request("PATCH", f"/drive/v3/files/{doc_id}?supportsAllDrives=true", body=b'{"trashed": true}', headers=headers)
+                resp = conn.getresponse()
+                status = resp.status
+                conn.close()
+                if status in (200, 204):
+                    return True
+    except Exception as e:
+        print(f"  {DIM}Note API Drive: Tentative OAuth token.json ({e}); bascule sur rclone...{RESET}", file=sys.stderr)
+
+    # 2. Second attempt: use rclone drive access token
     try:
         token = _get_rclone_drive_access_token()
         conn = http.client.HTTPSConnection("www.googleapis.com", timeout=20)
@@ -831,9 +861,9 @@ def _trash_drive_file_by_id(doc_id: str | None) -> bool:
             err_msg = err_data.get("error", {}).get("message", resp_body[:160])
         except Exception:
             err_msg = resp_body[:160]
-        print(f"  {YELLOW}Note API Drive: Impossible de mettre le fichier {doc_id} à la corbeille distante (HTTP {status}: {err_msg}).{RESET}", file=sys.stderr)
+        print(f"  {YELLOW}Note API Drive: Impossible de mettre le fichier {display_name} à la corbeille distante (HTTP {status}: {err_msg}).{RESET}", file=sys.stderr)
     except Exception as e:
-        print(f"  {YELLOW}Note API Drive: Échec de la requête REST PATCH pour {doc_id} ({e}).{RESET}", file=sys.stderr)
+        print(f"  {YELLOW}Note API Drive: Échec de la requête REST PATCH pour {display_name} ({e}).{RESET}", file=sys.stderr)
 
     return False
 
@@ -862,11 +892,24 @@ def _record_dream_inbox_processed_doc(
     if local_path:
         entry["local_path"] = local_path
 
-    reg.setdefault("processed", {})[primary_key] = entry
-    if doc_name and doc_name != primary_key:
-        reg["processed"][doc_name] = entry
-    if extra_key and extra_key != primary_key and extra_key != doc_name:
-        reg["processed"][extra_key] = entry
+    processed = reg.setdefault("processed", {})
+    processed[primary_key] = entry
+    if doc_id:
+        processed[doc_id] = entry
+    if doc_name:
+        processed[doc_name] = entry
+        stem = Path(doc_name).stem
+        if stem:
+            processed[stem] = entry
+            processed[f"{stem}.docx"] = entry
+            processed[f"{stem}.md"] = entry
+    if extra_key:
+        processed[extra_key] = entry
+        stem_extra = Path(extra_key).stem
+        if stem_extra:
+            processed[stem_extra] = entry
+            processed[f"{stem_extra}.docx"] = entry
+            processed[f"{stem_extra}.md"] = entry
     _save_dream_inbox_processed(reg)
 
 
@@ -882,6 +925,8 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     dry_run = getattr(args, "dry_run", False)
     workspace = getattr(args, "workspace", r"c:\Users\Jamet\Documents\VoiceNotes")
     model = getattr(args, "model", "gemini-4-argon-high") or "gemini-4-argon-high"
+
+    _watch_code_mtime = Path(__file__).stat().st_mtime
 
     print(f"{CYAN}{BOLD}=== AIVC Dream_Inbox Event Watcher ==={RESET}")
     print(f"  {DIM}Workspace:{RESET} {workspace}")
@@ -974,7 +1019,8 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     for f in all_existing_files:
         f_name = f.get("Name", "")
         f_id = f.get("ID", "")
-        if f_id not in processed_map and f_name not in processed_map:
+        f_stem = Path(f_name).stem if f_name else ""
+        if f_id not in processed_map and f_name not in processed_map and f_stem not in processed_map:
             unprocessed.append(f)
 
     if unprocessed:
@@ -998,6 +1044,15 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     try:
         while True:
             time.sleep(interval)
+            current_mtime = Path(__file__).stat().st_mtime
+            if current_mtime != _watch_code_mtime:
+                print(f"\n{YELLOW}{BOLD}Modification du code source détectée ({Path(__file__).name}). Rechargement à chaud du processus...{RESET}")
+                try:
+                    conn.close()
+                except Exception as e:
+                    print(f"Warning: Exception closing connection on reload: {e}", file=sys.stderr)
+                os.execv(sys.executable, [sys.executable, "-m", "aivc.cli"] + sys.argv[1:])
+
             try:
                 try:
                     new_token, changes = _drive_poll_changes(conn, access_token, page_token)
@@ -1022,11 +1077,12 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                     f_mime = f_info.get("mimeType", "")
                     f_parents = f_info.get("parents", [])
 
-                    is_inbox = any(p in folder_ids_set for p in f_parents) or f_name.startswith("Dream_Inbox_")
+                    is_inbox = any(p in folder_ids_set for p in f_parents)
                     if is_inbox:
                         reg = _load_dream_inbox_processed()
                         p_map = reg.get("processed", {})
-                        if f_id not in p_map and f_name not in p_map:
+                        f_stem = Path(f_name).stem if f_name else ""
+                        if f_id not in p_map and f_name not in p_map and f_stem not in p_map:
                             target_fid = next((p for p in f_parents if p in folder_ids_set), folder_ids[0])
                             _process_doc(f_name, f_id, target_fid, mime_type=f_mime)
 
