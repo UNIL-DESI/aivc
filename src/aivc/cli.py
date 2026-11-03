@@ -626,20 +626,26 @@ def _get_rclone_drive_access_token() -> str:
 
 
 def _drive_get_start_page_token(conn: http.client.HTTPSConnection, access_token: str) -> str:
-    """Fetch initial startPageToken for Drive changes.list."""
+    """Fetch initial startPageToken for Drive changes.list with transient retry."""
+    import time
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Connection": "keep-alive"
     }
-    conn.request("GET", "/drive/v3/changes/startPageToken?supportsAllDrives=true", headers=headers)
-    resp = conn.getresponse()
-    if resp.status == 401:
-        raise PermissionError("HTTP 401 Unauthorized: access token expired")
-    if resp.status != 200:
+    for attempt in range(3):
+        conn.request("GET", "/drive/v3/changes/startPageToken?supportsAllDrives=true", headers=headers)
+        resp = conn.getresponse()
+        if resp.status == 401:
+            raise PermissionError("HTTP 401 Unauthorized: access token expired")
         body = resp.read().decode("utf-8", errors="replace")
+        if resp.status == 200:
+            data = json.loads(body)
+            return data["startPageToken"]
+        if resp.status in (403, 429) and ("RATE_LIMIT_EXCEEDED" in body or "rateLimitExceeded" in body or resp.status == 429) and attempt < 2:
+            time.sleep(2 * (attempt + 1))
+            continue
         raise RuntimeError(f"Failed to get startPageToken (HTTP {resp.status}): {body}")
-    data = json.loads(resp.read().decode("utf-8"))
-    return data["startPageToken"]
+    raise RuntimeError("Failed to get startPageToken after retries.")
 
 
 def _drive_poll_changes(conn: http.client.HTTPSConnection, access_token: str, page_token: str) -> tuple[str, list[dict]]:
