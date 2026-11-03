@@ -888,7 +888,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     interval = getattr(args, "interval", 15)
     once = getattr(args, "once", False)
     dry_run = getattr(args, "dry_run", False)
-    workspace = getattr(args, "workspace", r"c:\Users\Jamet\Documents\VoiceNotes")
+    workspace = getattr(args, "workspace", None) or str(Path.home() / "Documents" / "VoiceNotes")
     model = getattr(args, "model", "gemini-4-argon-high") or "gemini-4-argon-high"
 
     _watch_code_mtime = Path(__file__).stat().st_mtime
@@ -1482,8 +1482,8 @@ def main() -> None:
     parser_inbox.add_argument(
         "--workspace",
         type=str,
-        default=r"c:\Users\Jamet\Documents\VoiceNotes",
-        help=r"Target workspace directory for agy (default: c:\Users\Jamet\Documents\VoiceNotes)"
+        default=str(Path.home() / "Documents" / "VoiceNotes"),
+        help="Target workspace directory for agy (default: ~/Documents/VoiceNotes)"
     )
     parser_inbox.add_argument(
         "--model",
