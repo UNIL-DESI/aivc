@@ -853,6 +853,47 @@ def _save_dream_inbox_local_copy(doc_name: str, doc_id: str, doc_text: str) -> P
     return local_path.resolve()
 
 
+def _get_drive_write_access_token() -> str:
+    """Retrieve an active Google Drive write-enabled OAuth access token.
+
+    Attempts to refresh or load the OAuth token from Gemini Sync configuration
+    (.obsidian/plugins/gemini-sync/data.json). Falls back to _get_rclone_drive_access_token().
+    """
+    import urllib.request
+    import urllib.parse
+    gs_path = Path.home() / "Documents" / "VoiceNotes" / ".obsidian" / "plugins" / "gemini-sync" / "data.json"
+    if gs_path.exists():
+        try:
+            gs_data = json.loads(gs_path.read_text(encoding="utf-8"))
+            client_id = gs_data.get("clientId")
+            client_secret = gs_data.get("clientSecret")
+            refresh_token = gs_data.get("refreshToken")
+            if client_id and client_secret and refresh_token:
+                post_data = urllib.parse.urlencode({
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    "https://oauth2.googleapis.com/token",
+                    data=post_data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    tok_data = json.loads(resp.read().decode("utf-8"))
+                    tok = tok_data.get("access_token")
+                    if tok:
+                        return tok
+            access_tok = gs_data.get("accessToken")
+            if access_tok:
+                return access_tok
+        except Exception as e:
+            print(f"  {YELLOW}Note: Impossible de rafraîchir le token Gemini Sync ({e}); repli sur rclone.{RESET}", file=sys.stderr)
+
+    return _get_rclone_drive_access_token()
+
+
 def _trash_drive_file_by_id(doc_id: str | None) -> bool:
     """Trash a file in Google Drive by doc_id via direct REST PATCH.
 
@@ -863,7 +904,7 @@ def _trash_drive_file_by_id(doc_id: str | None) -> bool:
         return False
 
     try:
-        token = _get_rclone_drive_access_token()
+        token = _get_drive_write_access_token()
         conn = http.client.HTTPSConnection("www.googleapis.com", timeout=20)
         headers = {
             "Authorization": f"Bearer {token}",
@@ -1057,8 +1098,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
 
         if res.returncode != 0:
             err_msg = res.stderr.strip() or res.stdout.strip()
-            print(f"{YELLOW}[AUTONOMIE /one-shot] project_memory_cli next-autonomous (code {res.returncode}): {err_msg[:200]}{RESET}", file=sys.stderr)
-            return False
+            raise RuntimeError(f"project_memory_cli.py next-autonomous failed (code {res.returncode}): {err_msg}")
 
         try:
             data = json.loads(res.stdout)

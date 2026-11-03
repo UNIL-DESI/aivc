@@ -254,6 +254,8 @@ def collect_tasks_from_commits(commits_dir: Path) -> tuple[dict[str, dict[str, A
         "await_validation": [],
         "validated": [],
     }
+    recurring_by_id: dict[str, bool] = {}
+    base_details_by_id: dict[str, str] = {}
 
     for m in memories:
         mpf = m.get("main_project_file", "")
@@ -274,12 +276,23 @@ def collect_tasks_from_commits(commits_dir: Path) -> tuple[dict[str, dict[str, A
             if not t_id:
                 continue
 
+            clean_tid = str(t_id).strip()
             raw_status = item.get("task_status")
             if not raw_status:
                 raw_status = "validated" if item.get("done") else "new"
 
             raw_task = item.get("task", "")
             raw_details = item.get("details", "")
+
+            # Track is_recurring and base_details
+            if item.get("is_recurring"):
+                recurring_by_id[clean_tid] = True
+
+            b_det = item.get("base_details")
+            if b_det:
+                base_details_by_id[clean_tid] = b_det
+            elif raw_status == "new" and raw_details and not (raw_details.startswith("[VALIDÉ") or raw_details.startswith("[ÉCARTÉ")):
+                base_details_by_id[clean_tid] = raw_details
 
             item_project = project_name
             if "Général" in item_project and not mpf:
@@ -294,7 +307,7 @@ def collect_tasks_from_commits(commits_dir: Path) -> tuple[dict[str, dict[str, A
                     item_project = fb
 
             entry = {
-                "id": str(t_id).strip(),
+                "id": clean_tid,
                 "task": clean_semantic_text(raw_task),
                 "details": clean_semantic_text(raw_details),
                 "journal": journal_text,
@@ -303,11 +316,14 @@ def collect_tasks_from_commits(commits_dir: Path) -> tuple[dict[str, dict[str, A
                 "status": raw_status,
                 "memory_title": memory_title,
                 "memory_id": memory_id,
+                "is_recurring": recurring_by_id.get(clean_tid, False),
+                "edited_files": list(item.get("edited_files", []) or []),
+                "read_files": list(item.get("read_files", []) or []),
             }
 
-            tasks_current[t_id] = entry
+            tasks_current[clean_tid] = entry
+
             if raw_status in history_by_status:
-                clean_tid = str(t_id).strip()
                 existing_idx = next(
                     (i for i, h_it in enumerate(history_by_status[raw_status]) if str(h_it.get("id")).strip() == clean_tid),
                     None,
@@ -316,6 +332,29 @@ def collect_tasks_from_commits(commits_dir: Path) -> tuple[dict[str, dict[str, A
                     history_by_status[raw_status][existing_idx] = entry
                 else:
                     history_by_status[raw_status].append(entry)
+
+            # Check if this task is recurring and just got validated
+            if recurring_by_id.get(clean_tid, False) and raw_status == "validated":
+                # In history_by_status["validated"], the validation commit is preserved.
+                # In tasks_current, automatically reset current status to "new", restore base_details, and clear files
+                restored_details = base_details_by_id.get(clean_tid, "")
+                reset_entry = dict(entry)
+                reset_entry["status"] = "new"
+                if restored_details:
+                    reset_entry["details"] = clean_semantic_text(restored_details)
+                reset_entry["edited_files"] = []
+                reset_entry["read_files"] = []
+                tasks_current[clean_tid] = reset_entry
+
+                # Also update/add in history_by_status["new"]
+                new_idx = next(
+                    (i for i, h_it in enumerate(history_by_status["new"]) if str(h_it.get("id")).strip() == clean_tid),
+                    None,
+                )
+                if new_idx is not None:
+                    history_by_status["new"][new_idx] = reset_entry
+                else:
+                    history_by_status["new"].append(reset_entry)
 
     return tasks_current, history_by_status
 
@@ -623,8 +662,11 @@ class SemanticDriveExporter:
 
         matching_by_status: dict[str, list[dict[str, Any]]] = {}
         for status_key, doc_name in live_specs:
-            # Current tasks filtered by status, sorted reverse chronologically (most recent first)
-            matching = [t for t in tasks_current.values() if t["status"] == status_key]
+            # For validated, use history_by_status so recurring task validations are preserved in history
+            if status_key == "validated":
+                matching = list(history_by_status.get("validated", []))
+            else:
+                matching = [t for t in tasks_current.values() if t["status"] == status_key]
             matching.sort(key=lambda x: x["timestamp"], reverse=True)
             matching_by_status[status_key] = matching
             top_items = matching[:batch_size]

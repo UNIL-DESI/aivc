@@ -252,6 +252,7 @@ async def _execute_memory_commit(
     user_items: list[dict[str, Any]] | None = None,
     roadmap_items: list[dict[str, Any]] | None = None,
     completed_user_items: list[str] | None = None,
+    is_recurring: bool = False,
 ) -> str:
     import asyncio
     from pathlib import Path
@@ -274,13 +275,29 @@ async def _execute_memory_commit(
         "urls": actual_urls,
     }
     if user_items is not None:
+        for it in user_items:
+            if isinstance(it, dict) and "is_recurring" not in it:
+                it["is_recurring"] = bool(is_recurring)
         engine_kwargs["user_items"] = user_items
-    elif not content:
+    elif content:
+        engine_kwargs["user_items"] = [{
+            "id": task_id.strip() if task_id else None,
+            "task": title,
+            "details": effective_content,
+            "task_status": task_status,
+            "edited_files": list(actual_edited_files),
+            "read_files": list(actual_read_files),
+            "is_recurring": bool(is_recurring),
+        }]
+    else:
         engine_kwargs["user_items"] = []
 
     if content:
         engine_kwargs["content"] = effective_content
     if tasks is not None:
+        for it in tasks:
+            if isinstance(it, dict) and "is_recurring" not in it:
+                it["is_recurring"] = bool(is_recurring)
         engine_kwargs["tasks"] = tasks
     if roadmap_items is not None:
         engine_kwargs["roadmap_items"] = roadmap_items
@@ -330,6 +347,7 @@ async def task_commit(
     edited_files: list[str] | None = None,
     read_files: list[str] | None = None,
     urls: list[str] | None = None,
+    is_recurring: bool = False,
 ) -> str:
     """Enregistre un souvenir atomique pour une unique tâche dans AIVC (1 appel = 1 tâche).
 
@@ -344,6 +362,7 @@ async def task_commit(
        - Zéro wikilink [[...]], zéro bloc 'Source :' et zéro extrait de code brut dans content.
     5. main_project_file : chemin de la note maîtresse du projet (ex. notes/MonProjet.md ou README.md). Cible unique de rattachement.
     6. edited_files & read_files : fichiers modifiés et consultés par cette tâche (toujours obligatoires pour le graphe AIVC et la synchronisation Drive de tous les artefacts).
+    7. is_recurring : booléen optionnel (défaut False) indiquant si la tâche est perpétuelle/récurrente (Evergreen). À la validation, une tâche récurrente repasse automatiquement en 'new' avec sa description de base restaurée tout en archivant la validation dans l'historique.
     """
     return await _execute_memory_commit(
         title=title,
@@ -354,6 +373,7 @@ async def task_commit(
         edited_files=edited_files,
         read_files=read_files,
         urls=urls,
+        is_recurring=is_recurring,
     )
 
 
@@ -372,6 +392,7 @@ async def remember(
     task_id: str | None = None,
     task_status: str = "await_validation",
     completed_user_items: list[str] | None = None,
+    is_recurring: bool = False,
 ) -> str:
     """Enregistre un souvenir dans AIVC (alias rétrocompatible pour task_commit)."""
     return await _execute_memory_commit(
@@ -388,6 +409,7 @@ async def remember(
         user_items=user_items,
         roadmap_items=roadmap_items,
         completed_user_items=completed_user_items,
+        is_recurring=is_recurring,
     )
 
 
@@ -400,7 +422,7 @@ async def _wrapped_call_tool(name: str, arguments: dict[str, Any] | None = None)
         if "journal" in args and "content" not in args:
             args["content"] = args.pop("journal")
         # Ensure only declared arguments are passed to FastMCP validator
-        valid_keys = {"title", "content", "main_project_file", "task_id", "task_status", "edited_files", "read_files", "urls"}
+        valid_keys = {"title", "content", "main_project_file", "task_id", "task_status", "edited_files", "read_files", "urls", "is_recurring"}
         filtered_args = {k: v for k, v in args.items() if k in valid_keys}
         return await _orig_call_tool("task_commit", filtered_args)
     elif name == "remember":
@@ -599,6 +621,13 @@ def get_file_history(file_path: str) -> str:
         "\n💡 Use `restore_file(file_path)` to restore the latest complete version from Google Drive."
     )
     return "\n".join(lines)
+
+
+@mcp.tool()
+def get_task_history(task_id: str) -> str:
+    """Affiche l'historique complet et chronologique de tous les souvenirs (commits successifs) rattachés à un même task_id."""
+    engine = _get_engine()
+    return engine._workspace.get_task_history_formatted(task_id)
 
 
 def complete_user_items(item_ids: list[str]) -> str:

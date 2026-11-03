@@ -543,6 +543,9 @@ class Workspace:
         first_seen: dict[str, tuple[str, int]] = {}
         project_active_tasks: dict[str, dict[str, Any]] = {}
 
+        task_is_recurring: dict[str, bool] = {}
+        task_base_details: dict[str, str] = {}
+
         for c_ts, p_name, p, c_data in raw_commits:
             commits_data[p] = c_data
             c_mpf = c_data.get("main_project_file") or ""
@@ -555,6 +558,15 @@ class Workspace:
                         if c_id not in first_seen:
                             first_seen[c_id] = (c_it.get("created_at") or c_ts, c_idx)
                         existing_tasks[c_id] = c_it
+
+                        if c_it.get("is_recurring"):
+                            task_is_recurring[c_id] = True
+                        if c_it.get("base_details"):
+                            task_base_details[c_id] = c_it.get("base_details")
+                        elif c_it.get("task_status") == "new" and c_it.get("details"):
+                            dt = str(c_it.get("details")).strip()
+                            if not (dt.startswith("[VALIDÉ") or dt.startswith("[ÉCARTÉ")):
+                                task_base_details[c_id] = dt
 
                         if is_same_proj:
                             c_st = c_it.get("task_status")
@@ -638,18 +650,26 @@ class Workspace:
             if not created_at:
                 created_at = now_ts
 
-            # Merge and attach edited_files & read_files to task item
-            existing_edited = list(prior_task.get("edited_files", [])) if prior_task else []
+            # Resolve is_recurring
+            is_rec = bool(item.get("is_recurring", False))
+            if not is_rec and final_id and task_is_recurring.get(final_id, False):
+                is_rec = True
+
+            # Resolve base_details
+            base_det = item.get("base_details") or task_base_details.get(final_id, "")
+            if not base_det and task_status == "new" and details and not (details.startswith("[VALIDÉ") or details.startswith("[ÉCARTÉ")):
+                base_det = details
+
+            # Attach edited_files & read_files to task item (strict replacement: no historical accumulation)
             item_edited = list(item.get("edited_files", []))
             if not item_edited and len(raw_task_entries) == 1 and actual_edited_files:
                 item_edited = list(actual_edited_files)
-            merged_edited = list(dict.fromkeys(existing_edited + item_edited))
+            merged_edited = list(dict.fromkeys(item_edited))
 
-            existing_read = list(prior_task.get("read_files", [])) if prior_task else []
             item_read = list(item.get("read_files", []))
             if not item_read and len(raw_task_entries) == 1 and actual_read_files:
                 item_read = [f for f in actual_read_files if to_portable_path(f).lower() != to_portable_path(main_project_file).lower()]
-            merged_read = list(dict.fromkeys(existing_read + item_read))
+            merged_read = list(dict.fromkeys(item_read))
 
             norm_item = {
                 "id": final_id,
@@ -662,6 +682,8 @@ class Workspace:
                 "updated_at": now_ts,
                 "edited_files": merged_edited,
                 "read_files": merged_read,
+                "is_recurring": is_rec,
+                "base_details": base_det,
             }
             norm_user_items.append(norm_item)
 
@@ -710,24 +732,29 @@ class Workspace:
                     except Exception:
                         pass
 
-        # Collect validated task ids from this update for Drive Garbage Collection (Dream #49)
-        validated_ids = {tid for tid, (st, _) in status_updates_by_id.items() if st == "validated"}
+        # Collect updated task ids from this update for Drive Garbage Collection
+        updated_ids = set(status_updates_by_id.keys())
         for it in norm_user_items:
-            if it.get("task_status") == "validated" and it.get("id"):
-                validated_ids.add(it.get("id"))
+            if it.get("id"):
+                updated_ids.add(it.get("id"))
 
-        if validated_ids:
+        if updated_ids:
             # 1. Map all currently active paths across the workspace
             active_paths: set[str] = set()
+
             for p_c, c_data in commits_data.items():
                 for c_it in c_data.get("user_items", []):
                     c_id = c_it.get("id")
+                    if c_id in updated_ids:
+                        continue
                     st = status_updates_by_id.get(c_id, (c_it.get("task_status"), False))[0]
                     if st in ("new", "await_validation"):
                         for lp in _extract_linked_file_paths(c_it.get("details", "")):
                             active_paths.add(to_portable_path(lp).lower())
                         for ep in c_it.get("edited_files", []):
                             active_paths.add(to_portable_path(ep).lower())
+                        for rp in c_it.get("read_files", []):
+                            active_paths.add(to_portable_path(rp).lower())
 
             for it in norm_user_items:
                 if it.get("task_status") in ("new", "await_validation"):
@@ -735,36 +762,47 @@ class Workspace:
                         active_paths.add(to_portable_path(lp).lower())
                     for ep in it.get("edited_files", []):
                         active_paths.add(to_portable_path(ep).lower())
+                    for rp in it.get("read_files", []):
+                        active_paths.add(to_portable_path(rp).lower())
 
-            # 2. Gather candidate paths from validated tasks
+            # 2. Gather candidate paths from updated tasks (especially prior commits)
             candidate_paths: list[str] = []
-            for it in norm_user_items:
-                if it.get("id") in validated_ids:
-                    candidate_paths.extend(_extract_linked_file_paths(it.get("details", "")))
-                    candidate_paths.extend(it.get("edited_files", []))
 
             for p_c, c_data in commits_data.items():
                 commit_task_ids = {c_it.get("id") for c_it in c_data.get("user_items", []) if c_it.get("id")}
-                if commit_task_ids & validated_ids:
+                if commit_task_ids & updated_ids:
                     for c_it in c_data.get("user_items", []):
-                        if c_it.get("id") in validated_ids:
+                        if c_it.get("id") in updated_ids:
                             candidate_paths.extend(_extract_linked_file_paths(c_it.get("details", "")))
                             candidate_paths.extend(c_it.get("edited_files", []))
+                            candidate_paths.extend(c_it.get("read_files", []))
 
                     # If this commit has no other tasks still in 'new' or 'await_validation'
                     commit_has_active_tasks = False
                     for c_it in c_data.get("user_items", []):
                         c_id = c_it.get("id")
-                        st = status_updates_by_id.get(c_id, (c_it.get("task_status"), False))[0]
-                        if st in ("new", "await_validation"):
-                            commit_has_active_tasks = True
-                            break
+                        if c_id in updated_ids:
+                            matching_norm = next((it for it in norm_user_items if it.get("id") == c_id), None)
+                            if matching_norm and matching_norm.get("task_status") in ("new", "await_validation"):
+                                commit_has_active_tasks = True
+                                break
+                        else:
+                            st = status_updates_by_id.get(c_id, (c_it.get("task_status"), False))[0]
+                            if st in ("new", "await_validation"):
+                                commit_has_active_tasks = True
+                                break
 
                     if not commit_has_active_tasks:
                         for ch in c_data.get("changes", []):
                             if isinstance(ch, dict) and ch.get("action") in ("edited", "added", "modified"):
                                 if ch.get("path"):
                                     candidate_paths.append(ch.get("path"))
+
+            for it in norm_user_items:
+                if it.get("task_status") == "validated":
+                    candidate_paths.extend(_extract_linked_file_paths(it.get("details", "")))
+                    candidate_paths.extend(it.get("edited_files", []))
+                    candidate_paths.extend(it.get("read_files", []))
 
             # 3. Filter out VoiceNotes (sanctuarisé), web URLs, and active paths
             seen_gc = set()
@@ -922,6 +960,7 @@ class Workspace:
         read_files: list[str] | None = None,
         urls: list[str] | None = None,
         machine_id: str = "",
+        is_recurring: bool = False,
     ) -> Memory:
         """Atomic task commit (1 call = 1 task memory) with flat parameters."""
         task_item = {
@@ -932,6 +971,7 @@ class Workspace:
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "edited_files": list(edited_files) if edited_files else [],
             "read_files": list(read_files) if read_files else [],
+            "is_recurring": bool(is_recurring),
         }
         return self.remember(
             title=title,
@@ -1047,6 +1087,88 @@ class Workspace:
 
         matching_memories.sort(key=lambda m: m.timestamp)
         return matching_memories
+
+    def get_task_history(self, task_id: str) -> list[dict[str, Any]]:
+        """Return chronological list of memories touching task_id."""
+        self._reload_state_if_needed()
+        clean_tid = str(task_id).strip()
+        if not clean_tid:
+            return []
+
+        commits: list[dict[str, Any]] = []
+        for p in self._commits_dir.glob("*.json"):
+            c_data = json.loads(p.read_text(encoding="utf-8"))
+            commits.append(c_data)
+
+        commits.sort(key=lambda c: str(c.get("timestamp") or ""))
+
+        history: list[dict[str, Any]] = []
+        for c in commits:
+            mid = c.get("id") or ""
+            ts = c.get("timestamp") or ""
+            m_title = c.get("title") or ""
+            journal = c.get("journal") or c.get("note") or ""
+
+            # Check user_items
+            matched_item = None
+            for it in c.get("user_items", []):
+                if isinstance(it, dict) and str(it.get("id", "")).strip() == clean_tid:
+                    matched_item = it
+                    break
+
+            completed_ids = [str(cid).strip() for cid in (c.get("completed_user_items") or [])]
+            is_completed = clean_tid in completed_ids
+
+            if matched_item or is_completed:
+                t_title = matched_item.get("task", "") if matched_item else ""
+                t_status = matched_item.get("task_status", "validated" if is_completed else "new") if matched_item else "validated"
+                is_rec = bool(matched_item.get("is_recurring", False)) if matched_item else False
+                details = matched_item.get("details", "") if matched_item else ""
+                edited = list(matched_item.get("edited_files", [])) if matched_item else []
+                read = list(matched_item.get("read_files", [])) if matched_item else []
+
+                history.append({
+                    "memory_id": mid,
+                    "timestamp": ts,
+                    "memory_title": m_title,
+                    "task_title": t_title,
+                    "task_status": t_status,
+                    "is_recurring": is_rec,
+                    "details": details,
+                    "journal": journal,
+                    "edited_files": edited,
+                    "read_files": read,
+                })
+
+        return history
+
+    def get_task_history_formatted(self, task_id: str) -> str:
+        """Return human/LLM-readable formatted markdown string of task history."""
+        hist = self.get_task_history(task_id)
+        if not hist:
+            return f"Aucun souvenir trouvé pour la tâche [{task_id}]."
+
+        clean_tid = str(task_id).strip()
+        lines = [f"# Historique de la tâche [{clean_tid}] ({len(hist)} souvenir(s))\n"]
+        for i, item in enumerate(hist, 1):
+            ts = item.get("timestamp", "")[:19]
+            st = item.get("task_status", "")
+            rec_tag = " (Récurrente / Evergreen)" if item.get("is_recurring") else ""
+            lines.append(f"## {i}. [{ts}] {item.get('memory_title', '')} — Statut: `{st}`{rec_tag}")
+            lines.append(f"- **Memory ID** : `{item.get('memory_id', '')}`")
+            if item.get("task_title"):
+                lines.append(f"- **Tâche** : {item.get('task_title')}")
+            if item.get("details"):
+                lines.append(f"- **Détails / Décisions** :\n{item.get('details')}")
+            if item.get("journal"):
+                lines.append(f"- **Journal de session** :\n{item.get('journal')}")
+            if item.get("edited_files"):
+                lines.append(f"- **Fichiers modifiés** : {', '.join(item.get('edited_files', []))}")
+            if item.get("read_files"):
+                lines.append(f"- **Fichiers consultés** : {', '.join(item.get('read_files', []))}")
+            lines.append("")
+
+        return "\n".join(lines).strip()
 
     def get_tracked_files_metadata(self) -> dict[str, dict]:
         """Return the current metadata (mtime, size) for all tracked files from state.
