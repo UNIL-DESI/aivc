@@ -790,6 +790,83 @@ def _find_agy_executable() -> Path:
     return Path("agy.exe")
 
 
+def _save_dream_inbox_local_copy(doc_name: str, doc_id: str, doc_text: str) -> Path:
+    """Save full text copy of detected Dream_Inbox document to local archive immediately."""
+    import re
+    archive_dir = Path(r"C:\Users\Public\aivc\dream_inbox_archive")
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    clean_stem = doc_name
+    for ch in '<>:"/\\|?*':
+        clean_stem = clean_stem.replace(ch, "_")
+    clean_stem = re.sub(r"\.(docx|txt|md)$", "", clean_stem, flags=re.IGNORECASE).strip()
+    if not clean_stem:
+        clean_stem = f"doc_{doc_id}"
+    local_path = archive_dir / f"{clean_stem}.md"
+    local_path.write_text(doc_text, encoding="utf-8")
+    return local_path.resolve()
+
+
+def _trash_drive_file_by_id(doc_id: str, folder_ids: list[str] | None = None, rclone_del_name: str | None = None) -> bool:
+    """Trash a file in Google Drive by doc_id via direct REST PATCH, falling back to googleapiclient / rclone."""
+    import subprocess
+    if not doc_id:
+        return False
+
+    # 1. Direct REST PATCH via rclone OAuth token
+    try:
+        token = _get_rclone_drive_access_token()
+        conn = http.client.HTTPSConnection("www.googleapis.com", timeout=20)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Connection": "close",
+        }
+        conn.request("PATCH", f"/drive/v3/files/{doc_id}?supportsAllDrives=true", body=b'{"trashed": true}', headers=headers)
+        resp = conn.getresponse()
+        status = resp.status
+        resp.read()
+        conn.close()
+        if status in (200, 204):
+            return True
+        print(f"  {YELLOW}REST PATCH trashed for {doc_id} returned HTTP {status}, trying fallbacks...{RESET}", file=sys.stderr)
+    except Exception as e:
+        print(f"  {YELLOW}REST PATCH trashed failed for {doc_id}: {e}, trying fallbacks...{RESET}", file=sys.stderr)
+
+    # 2. Fallback to googleapiclient discovery if credentials available
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+        from aivc.config import get_token_path
+        t_path = get_token_path()
+        if t_path.exists():
+            creds = Credentials.from_authorized_user_file(str(t_path))
+            svc = build("drive", "v3", credentials=creds, cache_discovery=False)
+            svc.files().update(fileId=doc_id, body={"trashed": True}, supportsAllDrives=True).execute()
+            return True
+    except Exception:
+        pass
+
+    # 3. Fallback to rclone deletefile
+    if rclone_del_name and folder_ids:
+        rclone_name = rclone_del_name
+        if not rclone_name.endswith(".docx") and not rclone_name.endswith(".txt") and not rclone_name.endswith(".md"):
+            rclone_name = f"{rclone_name}.docx"
+        for fid in folder_ids:
+            try:
+                del_res = subprocess.run(
+                    ["rclone", "deletefile", "--drive-root-folder-id", fid, f"gdrive:{rclone_name}"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=15,
+                )
+                if del_res.returncode == 0:
+                    return True
+            except Exception:
+                pass
+
+    return False
+
+
 def _watch_dream_inbox(args: argparse.Namespace) -> None:
     """Differential event-driven watcher for Google Drive Dream_Inbox via changes.list."""
     import subprocess
@@ -800,9 +877,11 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     once = getattr(args, "once", False)
     dry_run = getattr(args, "dry_run", False)
     workspace = getattr(args, "workspace", r"c:\Users\Jamet\Documents\VoiceNotes")
+    model = getattr(args, "model", "gemini-4-argon-high") or "gemini-4-argon-high"
 
     print(f"{CYAN}{BOLD}=== AIVC Dream_Inbox Event Watcher ==={RESET}")
     print(f"  {DIM}Workspace:{RESET} {workspace}")
+    print(f"  {DIM}Model:{RESET}     {model}")
     print(f"  {DIM}Interval:{RESET}  {interval}s (mode: {'once' if once else 'continuous'}{', dry-run' if dry_run else ''})")
 
     folder_ids = _get_dream_inbox_folder_ids()
@@ -835,63 +914,58 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
         print(preview)
         print(f"{DIM}--------------------------------------------------{RESET}")
 
+        local_archive_path = _save_dream_inbox_local_copy(doc_name, doc_id, doc_text)
+        print(f"  {GREEN}{CHECK_MARK} Copie locale sauvegardée immédiatement : {local_archive_path} ({len(doc_text)} caractères){RESET}")
+
         prompt = (
             f"Tu es réveillé en mode événementiel par `aivc dream-inbox watch` suite à l'arrivée du document Google Drive `{doc_name}` (ID: `{doc_id}`) dans `Dream_Inbox`.\n"
-            f"Voici le contenu intégral du document :\n"
-            f"================================================================================\n"
-            f"{doc_text}\n"
-            f"================================================================================\n"
-            f"Instructions d'exécution immédiate (mode ciblé type /one-shot multi-projets, sans durée forcée de 45 min) :\n"
-            f"1. Mets à jour sobrement les notes maîtresses Obsidian concernées (avec les citations exactes de la section 'Verbatim Exact d'Henri') et ajuste les scores de priorité via `project_memory_cli.py set-score` si demandé.\n"
-            f"2. Lance en parallèle un sous-agent `superviseur-projet` (`Model: 'inherit'`) par projet mentionné afin de réaliser immédiatement les demandes et tâches décrites dans ce document.\n"
-            f"3. Enregistre chaque livrable, réponse ou clôture de tâche via `mcp-cli call aivc task_commit` sur la note maîtresse de chaque projet concerné afin que les Google Docs `Live_*` dans `AIVC_Sync/` soient mis à jour pour Gemini.\n"
+            f"Une copie locale intégrale du document a été sauvegardée sur le disque à l'emplacement suivant :\n"
+            f"Fichier local : `{local_archive_path}`\n"
+            f"Le fichier distant sur Google Drive a déjà été supprimé dès le début de la tâche pour éviter toute double exécution.\n\n"
+            f"Instructions d'exécution immédiate (mode ciblé multi-projets, sans durée forcée de 45 min) :\n"
+            f"1. Lis directement le fichier local `{local_archive_path}`. Identifie tous les projets ciblés par ce document, mets à jour sobrement les notes maîtresses Obsidian concernées (avec les citations exactes de la section 'Verbatim Exact d'Henri') et ajuste les scores de priorité via `project_memory_cli.py set-score` si demandé.\n"
+            f"2. Lance en parallèle un sous-agent `superviseur-projet` (`Model: 'inherit'`) distinct sur chaque projet concerné.\n"
+            f"3. RÈGLE STRICTE DE NON-RÉÉCRITURE : Ne réécris JAMAIS et ne reformule JAMAIS le propos d'Henri lorsque tu invoques un sous-agent `superviseur-projet`. Dans l'artefact de mission que tu passes à chaque `superviseur-projet`, donne-lui directement le lien/chemin vers le fichier téléchargé localement (`{local_archive_path}`) et demande-lui de lire directement ce fichier et de traiter uniquement les tâches qui concernent son projet dans ce fichier.\n"
+            f"4. Enregistre chaque livrable, réponse ou clôture de tâche via `mcp-cli call aivc task_commit` sur la note maîtresse de chaque projet concerné afin que les Google Docs `Live_*` dans `AIVC_Sync/` soient mis à jour pour Gemini.\n"
         )
 
-        agy_cmd = [str(agy_path), "--mode", "auto", "-p", prompt]
+        agy_cmd = [str(agy_path), "--mode", "auto", "--model", model, "-p", prompt]
         if dry_run or is_demo:
             print(f"{CYAN}{BOLD}[DRY-RUN] Commande agy.exe préparée :{RESET}")
-            print(f"  Executable: {agy_path}")
+            print(f"  Executable:  {agy_path}")
             print(f"  Working Dir: {workspace}")
+            print(f"  Model:       {model}")
             print(f"  Prompt size: {len(prompt)} caractères")
-            print(f"  Mode: --mode auto -p <prompt>")
+            print(f"  Local Copy:  {local_archive_path}")
+            print(f"  Mode:        --mode auto --model {model} -p <prompt>")
             return True
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        reg = _load_dream_inbox_processed()
+        entry = {
+            "trashed_at": now_iso,
+            "method": "watch_event_start",
+            "name": doc_name,
+            "doc_id": doc_id,
+            "local_path": str(local_archive_path),
+        }
+        reg.setdefault("processed", {})[doc_id] = entry
+        reg["processed"][doc_name] = entry
+        _save_dream_inbox_processed(reg)
+
+        trashed_ok = _trash_drive_file_by_id(doc_id, folder_ids=folder_ids, rclone_del_name=doc_name)
+        if trashed_ok:
+            print(f"  {GREEN}{CHECK_MARK} Fichier distant supprimé de Google Drive dès le début de la tâche (ID: {doc_id}).{RESET}")
+        else:
+            print(f"  {YELLOW}Mise à la corbeille distante non confirmée pour {doc_id} : document verrouillé dans dream_inbox_processed.json.{RESET}")
 
         print(f"{CYAN}Exécution d'agy.exe pour traiter le document...{RESET}")
         res = subprocess.run(agy_cmd, cwd=workspace)
         if res.returncode == 0:
-            print(f"{GREEN}{CHECK_MARK} Traitement agy réussi (returncode 0).{RESET}")
-            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            reg = _load_dream_inbox_processed()
-            entry = {
-                "trashed_at": now_iso,
-                "method": "watch_event",
-                "name": doc_name,
-                "doc_id": doc_id,
-            }
-            reg.setdefault("processed", {})[doc_id] = entry
-            reg["processed"][doc_name] = entry
-            _save_dream_inbox_processed(reg)
-
-            rclone_del_name = doc_name
-            if mime_type == "application/vnd.google-apps.document" and not rclone_del_name.endswith(".docx"):
-                rclone_del_name = f"{rclone_del_name}.docx"
-
-            try:
-                del_res = subprocess.run(
-                    ["rclone", "deletefile", "--drive-root-folder-id", fid, f"gdrive:{rclone_del_name}"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=15
-                )
-                if del_res.returncode == 0:
-                    print(f"  {GREEN}{CHECK_MARK} Fichier distant supprimé/purgé du dossier {fid}.{RESET}")
-                else:
-                    print(f"  {YELLOW}Suppression distante non autorisée ou ignorée (rclone code {del_res.returncode}) : document archivé et masqué dans dream_inbox_processed.json.{RESET}")
-            except Exception as e:
-                print(f"  {YELLOW}Avertissement lors de la suppression rclone: {e}{RESET}")
+            print(f"{GREEN}{CHECK_MARK} Traitement agy réussi (returncode 0). Archive locale conservée dans {local_archive_path}.{RESET}")
             return True
         else:
-            print(f"{RED}Erreur: agy.exe a échoué avec le code retour {res.returncode}. Document conservé pour un prochain cycle.{RESET}")
+            print(f"{RED}Erreur: agy.exe a échoué avec le code retour {res.returncode}. Archive locale conservée dans {local_archive_path}.{RESET}")
             return False
 
     reg = _load_dream_inbox_processed()
@@ -1465,6 +1539,12 @@ def main() -> None:
         type=str,
         default=r"c:\Users\Jamet\Documents\VoiceNotes",
         help=r"Target workspace directory for agy (default: c:\Users\Jamet\Documents\VoiceNotes)"
+    )
+    parser_inbox.add_argument(
+        "--model",
+        type=str,
+        default="gemini-4-argon-high",
+        help="Model passed to agy.exe in watch mode (default: gemini-4-argon-high)"
     )
 
     # backfill-main-project
