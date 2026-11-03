@@ -939,6 +939,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     interval = getattr(args, "interval", 15)
     once = getattr(args, "once", False)
     dry_run = getattr(args, "dry_run", False)
+    no_autonomous = getattr(args, "no_autonomous", False)
     workspace = getattr(args, "workspace", None) or str(Path.home() / "Documents" / "VoiceNotes")
     model = getattr(args, "model", "gemini-4-argon-high") or "gemini-4-argon-high"
 
@@ -947,7 +948,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
     print(f"{CYAN}{BOLD}=== AIVC Dream_Inbox Event Watcher ==={RESET}")
     print(f"  {DIM}Workspace:{RESET} {workspace}")
     print(f"  {DIM}Model:{RESET}     {model}")
-    print(f"  {DIM}Interval:{RESET}  {interval}s (mode: {'once' if once else 'continuous'}{', dry-run' if dry_run else ''})")
+    print(f"  {DIM}Interval:{RESET}  {interval}s (mode: {'once' if once else 'continuous'}{', dry-run' if dry_run else ''}{', sans autonomie' if no_autonomous else ', autonomie active'})")
 
     folder_ids = _get_dream_inbox_folder_ids()
     folder_ids_set = set(folder_ids)
@@ -991,7 +992,8 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
             f"1. Lis directement le fichier local `{local_archive_path}`. Identifie tous les projets ciblés par ce document, mets à jour sobrement les notes maîtresses Obsidian concernées (avec les citations exactes de la section 'Verbatim Exact d'Henri') et ajuste les scores de priorité via `project_memory_cli.py set-score` si demandé.\n"
             f"2. Lance en parallèle un sous-agent `superviseur-projet` (`Model: 'inherit'`) distinct sur chaque projet concerné.\n"
             f"3. RÈGLE STRICTE DE NON-RÉÉCRITURE : Ne réécris JAMAIS et ne reformule JAMAIS le propos d'Henri lorsque tu invoques un sous-agent `superviseur-projet`. Dans l'artefact de mission que tu passes à chaque `superviseur-projet`, donne-lui directement le lien/chemin vers le fichier téléchargé localement (`{local_archive_path}`) et demande-lui de lire directement ce fichier et de traiter uniquement les tâches qui concernent son projet dans ce fichier.\n"
-            f"4. Enregistre chaque livrable, réponse ou clôture de tâche via `mcp-cli call aivc task_commit` sur la note maîtresse de chaque projet concerné afin que les Google Docs `Live_*` dans `AIVC_Sync/` soient mis à jour pour Gemini.\n"
+            f"4. Traite chaque tâche sur la branche principale (`main` / `master`) avec garde-fou obligatoire `/draft` (`doc-version`), et RESPECTE L'INTERDICTION ABSOLUE de commettre toute action impossible à annuler ou impliquant d'autres personnes (aucun envoi d'e-mail/message, aucune soumission de formulaire, aucun paiement, aucune publication externe) sans validation directe d'Henri.\n"
+            f"5. Enregistre chaque livrable, réponse ou clôture de tâche via `mcp-cli call aivc task_commit` sur la note maîtresse de chaque projet concerné afin que les Google Docs `Live_*` dans `AIVC_Sync/` soient mis à jour pour Gemini.\n"
         )
 
         agy_cmd = [str(agy_path), "--mode", "auto", "--model", model, "-p", prompt]
@@ -1027,6 +1029,89 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
             print(f"{RED}Erreur: agy.exe a échoué avec le code retour {res.returncode}. Archive locale conservée dans {local_archive_path}.{RESET}")
             return False
 
+    def _execute_autonomous_step() -> bool:
+        """Execute one autonomous /one-shot task on the highest-priority eligible project.
+
+        Returns True if a project task was executed, False if no project was selected or error occurred.
+        """
+        script_path = Path(workspace) / "_agents" / "scripts-for-skills" / "project_memory_cli.py"
+        if not script_path.exists():
+            vn_path = Path.home() / "Documents" / "VoiceNotes" / "_agents" / "scripts-for-skills" / "project_memory_cli.py"
+            if vn_path.exists():
+                script_path = vn_path
+            else:
+                print(f"{YELLOW}[AUTONOMIE] Script project_memory_cli.py introuvable ({script_path}).{RESET}", file=sys.stderr)
+                return False
+
+        try:
+            res = subprocess.run(
+                [sys.executable, str(script_path), "next-autonomous", "--json"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except Exception as e:
+            print(f"{RED}[AUTONOMIE] Erreur lors de l'exécution de next-autonomous: {e}{RESET}", file=sys.stderr)
+            return False
+
+        if res.returncode != 0:
+            err_msg = res.stderr.strip() or res.stdout.strip()
+            print(f"{YELLOW}[AUTONOMIE /one-shot] project_memory_cli next-autonomous (code {res.returncode}): {err_msg[:200]}{RESET}", file=sys.stderr)
+            return False
+
+        try:
+            data = json.loads(res.stdout)
+        except Exception as err:
+            print(f"{RED}[AUTONOMIE] Échec du parsing JSON retourné par next-autonomous: {err} (sortie: {res.stdout[:150]}){RESET}", file=sys.stderr)
+            return False
+
+        if not data.get("selected"):
+            reason = data.get("reason", "unknown")
+            print(f"{DIM}[AUTONOMIE /one-shot] Aucun projet éligible (raison: {reason}).{RESET}")
+            return False
+
+        proj_title = data.get("title", "")
+        proj_file = data.get("file", "")
+        proj_abs = data.get("abs_path", "")
+        tldr_path = data.get("tldr_path", "")
+        eff_score = data.get("effective_score", 0.0)
+
+        print(f"{CYAN}{BOLD}[AUTONOMIE /one-shot] Dream_Inbox vide -> Projet sélectionné : {proj_title} (score effectif: {eff_score}, 0 tâche en await_validation){RESET}")
+
+        auto_prompt = (
+            f"Tu es lancé en mode autonome `/one-shot` par `watch-inbox` (1 projet = 1 tâche) sur le projet `{proj_title}`.\n"
+            f"Note maîtresse : `{proj_abs}` (`{proj_file}`)\n"
+            f"Fichier de suivi des tâches : `{tldr_path}`\n\n"
+            f"Instructions strictes d'exécution (1 seule tâche `new` en `/one-shot`) :\n"
+            f"1. Lis `{proj_abs}` et `{tldr_path}`.\n"
+            f"2. Parmi les tâches au statut `new` (dans `## 📋 Roadmap du Projet` de `{tldr_path}`), identifie LA SEULE tâche la plus urgente qui soit immédiatement accessible et réalisable (en écartant toute tâche bloquée par une attente externe). Si aucune tâche spécifique `new` n'est immédiatement réalisable ou plus urgente, sélectionne la tâche récurrente `Rasoir d'Ockham` (`[ockham-...]` : vérification et nettoyage des informations obsolètes, fusion des redondances, suppression du code mort et factorisation sobre sans perte de fonctionnalité).\n"
+            f"3. Consulte l'historique complet de la tâche sélectionnée via `mcp-cli call aivc get_task_history '{{\"task_id\": \"<id>\"}}'` pour connaître toutes les itérations passées.\n"
+            f"4. Traite UNIQUEMENT cette seule tâche de bout en bout selon les règles de `/one-shot` et `bonnes-pratiques-developpement.md` : travaille directement sur la branche principale (`main` / `master`), fais auditer et tester manuellement par `auditeur-alignement` (`Model: 'inherit'`), utilise obligatoirement `/draft` (`doc-version`) pour tout texte destiné à un humain ou refonte de note, et RESPECTE L'INTERDICTION ABSOLUE de commettre toute action impossible à annuler ou impliquant d'autres personnes (aucun envoi d'e-mail/message, aucune soumission de formulaire, aucun paiement, aucune publication externe).\n"
+            f"5. Enregistre le livrable prêt sur le MÊME `task_id` avec `task_status=\"await_validation\"` via `mcp-cli call aivc task_commit` (ce qui gèle automatiquement ce projet pour l'autonomie jusqu'à la revue d'Henri).\n"
+            f"6. Clôture la session en exécutant `python \"{Path(workspace) / '_agents/scripts-for-skills/project_memory_cli.py'}\" feedback \"{proj_title}\" ok --agent`, puis arrête-toi immédiatement.\n"
+        )
+
+        if dry_run:
+            print(f"{CYAN}{BOLD}[DRY-RUN] Commande agy.exe autonome préparée :{RESET}")
+            print(f"  Executable:  {agy_path}")
+            print(f"  Working Dir: {workspace}")
+            print(f"  Model:       {model}")
+            print(f"  Project:     {proj_title}")
+            print(f"  Prompt size: {len(auto_prompt)} caractères")
+            print(f"  TLDR Path:   {tldr_path}")
+            print(f"  Command:     {agy_path} --mode auto --model {model} -p <auto_prompt>")
+            return False
+
+        agy_cmd = [str(agy_path), "--mode", "auto", "--model", model, "-p", auto_prompt]
+        print(f"{CYAN}Exécution d'agy.exe en mode autonome /one-shot sur {proj_title}...{RESET}")
+        res_agy = subprocess.run(agy_cmd, cwd=workspace)
+        if res_agy.returncode == 0:
+            print(f"{GREEN}{CHECK_MARK} Session autonome /one-shot terminée avec succès sur {proj_title} (code 0).{RESET}")
+        else:
+            print(f"{RED}Session autonome /one-shot sur {proj_title} terminée avec le code {res_agy.returncode}.{RESET}")
+        return True
+
     reg = _load_dream_inbox_processed()
     processed_map = reg.get("processed", {})
     all_existing_files = _list_all_dream_inbox_files(folder_ids)
@@ -1045,21 +1130,23 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
             _process_doc(f.get("Name"), f.get("ID"), f.get("FolderID", folder_ids[0]), mime_type=f.get("MimeType") or f.get("mimeType", ""))
     else:
         print(f"{GREEN}{CHECK_MARK} Scan initial : aucun document non traité en attente.{RESET}")
-        if dry_run and once and all_existing_files:
+        if dry_run and once and all_existing_files and no_autonomous:
             sorted_files = sorted(all_existing_files, key=lambda x: x.get("ModTime", ""), reverse=True)
             demo_f = sorted_files[0]
             _process_doc(demo_f.get("Name"), demo_f.get("ID"), demo_f.get("FolderID", folder_ids[0]), is_demo=True, mime_type=demo_f.get("MimeType") or demo_f.get("mimeType", ""))
 
     if once:
+        if not unprocessed and not no_autonomous:
+            _execute_autonomous_step()
         print(f"\n{GREEN}{CHECK_MARK} Cycle unique terminé (--once).{RESET}")
         conn.close()
         return
 
     print(f"\n{CYAN}Démarrage de la boucle de surveillance (intervalle: {interval}s)... Pressez Ctrl+C pour arrêter.{RESET}")
     err_count = 0
+    check_autonomy_immediately = not unprocessed
     try:
         while True:
-            time.sleep(interval)
             current_mtime = Path(__file__).stat().st_mtime
             if current_mtime != _watch_code_mtime:
                 print(f"\n{YELLOW}{BOLD}Modification du code source détectée ({Path(__file__).name}). Rechargement à chaud du processus...{RESET}")
@@ -1067,6 +1154,10 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                 os.execv(sys.executable, [sys.executable, "-m", "aivc.cli"] + sys.argv[1:])
 
             try:
+                if not check_autonomy_immediately:
+                    time.sleep(interval)
+                check_autonomy_immediately = False
+
                 try:
                     new_token, changes = _drive_poll_changes(conn, access_token, page_token)
                 except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError, PermissionError):
@@ -1078,6 +1169,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                 page_token = new_token
                 err_count = 0
 
+                inbox_docs_count = 0
                 for ch in changes:
                     f_info = ch.get("file", {})
                     if not f_info or f_info.get("trashed"):
@@ -1094,7 +1186,18 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                         f_stem = Path(f_name).stem if f_name else ""
                         if f_id not in p_map and f_name not in p_map and f_stem not in p_map:
                             target_fid = next((p for p in f_parents if p in folder_ids_set), folder_ids[0])
-                            _process_doc(f_name, f_id, target_fid, mime_type=f_mime)
+                            if _process_doc(f_name, f_id, target_fid, mime_type=f_mime):
+                                inbox_docs_count += 1
+
+                if inbox_docs_count > 0:
+                    check_autonomy_immediately = True
+                    continue
+
+                if not no_autonomous:
+                    task_ran = _execute_autonomous_step()
+                    if task_ran:
+                        check_autonomy_immediately = True
+                        continue
 
             except KeyboardInterrupt:
                 raise
@@ -1536,6 +1639,12 @@ def main() -> None:
         default="gemini-4-argon-high",
         help="Model passed to agy.exe in watch mode (default: gemini-4-argon-high)"
     )
+    parser_inbox.add_argument(
+        "--no-autonomous",
+        action="store_true",
+        help="Disable autonomous /one-shot loop when Dream_Inbox is empty (autonomy enabled by default)"
+    )
+
 
     # backfill-main-project
     parser_backfill = subparsers.add_parser(
