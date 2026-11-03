@@ -291,7 +291,7 @@ Follow these steps (takes ~2 minutes):
                 if "code" in query:
                     code = query["code"][0]
             except Exception:
-                pass
+                code = code_input.strip()
 
         print(f"\n{DIM}Exchanging authorization code for access token...{RESET}")
         try:
@@ -399,8 +399,8 @@ def _load_dream_inbox_processed() -> dict:
             loaded = json.loads(local_path.read_text(encoding="utf-8"))
             if isinstance(loaded, dict) and "processed" in loaded:
                 data = loaded
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: could not parse local dream_inbox_processed.json: {e}", file=sys.stderr)
 
     # Attempt to sync/merge from Google Drive AIVC_Sync (scope drive.file compatible)
     if not os.environ.get("PYTEST_CURRENT_TEST"):
@@ -421,8 +421,8 @@ def _load_dream_inbox_processed() -> dict:
                         for k, v in remote_data["processed"].items():
                             if k not in data["processed"]:
                                 data["processed"][k] = v
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: could not sync dream_inbox_processed from Drive: {e}", file=sys.stderr)
 
     return data
 
@@ -456,8 +456,8 @@ def _save_dream_inbox_processed(data: dict) -> None:
                 else:
                     meta = {"name": "dream_inbox_processed.json", "parents": [root_id]}
                     service.files().create(body=meta, media_body=media).execute()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: could not save dream_inbox_processed to Drive: {e}", file=sys.stderr)
 
 
 _DREAM_INBOX_FOLDER_IDS_CACHE: list[str] | None = None
@@ -566,8 +566,8 @@ def _get_rclone_config_path() -> Path:
                 p = Path(line)
                 if p.exists():
                     return p
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: could not resolve rclone config via CLI ({e}); using APPDATA default", file=sys.stderr)
     return Path(os.environ.get("APPDATA", "")) / "rclone" / "rclone.conf"
 
 
@@ -807,12 +807,14 @@ def _save_dream_inbox_local_copy(doc_name: str, doc_id: str, doc_text: str) -> P
 
 
 def _trash_drive_file_by_id(doc_id: str, folder_ids: list[str] | None = None, rclone_del_name: str | None = None) -> bool:
-    """Trash a file in Google Drive by doc_id via direct REST PATCH, falling back to googleapiclient / rclone."""
-    import subprocess
+    """Trash a file in Google Drive by doc_id via direct REST PATCH.
+
+    Returns True if successfully moved to Google Drive Trash (HTTP 200/204),
+    or False with explicit diagnostic if scopes are insufficient or file is uneditable.
+    """
     if not doc_id:
         return False
 
-    # 1. Direct REST PATCH via rclone OAuth token
     try:
         token = _get_rclone_drive_access_token()
         conn = http.client.HTTPSConnection("www.googleapis.com", timeout=20)
@@ -824,47 +826,53 @@ def _trash_drive_file_by_id(doc_id: str, folder_ids: list[str] | None = None, rc
         conn.request("PATCH", f"/drive/v3/files/{doc_id}?supportsAllDrives=true", body=b'{"trashed": true}', headers=headers)
         resp = conn.getresponse()
         status = resp.status
-        resp.read()
+        resp_body = resp.read().decode("utf-8", errors="replace")
         conn.close()
         if status in (200, 204):
             return True
-        print(f"  {YELLOW}REST PATCH trashed for {doc_id} returned HTTP {status}, trying fallbacks...{RESET}", file=sys.stderr)
+        try:
+            err_data = json.loads(resp_body)
+            err_msg = err_data.get("error", {}).get("message", resp_body[:160])
+        except Exception:
+            err_msg = resp_body[:160]
+        print(f"  {YELLOW}Note API Drive: Impossible de mettre le fichier {doc_id} à la corbeille distante (HTTP {status}: {err_msg}).{RESET}", file=sys.stderr)
     except Exception as e:
-        print(f"  {YELLOW}REST PATCH trashed failed for {doc_id}: {e}, trying fallbacks...{RESET}", file=sys.stderr)
-
-    # 2. Fallback to googleapiclient discovery if credentials available
-    try:
-        from google.oauth2.credentials import Credentials
-        from googleapiclient.discovery import build
-        from aivc.config import get_token_path
-        t_path = get_token_path()
-        if t_path.exists():
-            creds = Credentials.from_authorized_user_file(str(t_path))
-            svc = build("drive", "v3", credentials=creds, cache_discovery=False)
-            svc.files().update(fileId=doc_id, body={"trashed": True}, supportsAllDrives=True).execute()
-            return True
-    except Exception:
-        pass
-
-    # 3. Fallback to rclone deletefile
-    if rclone_del_name and folder_ids:
-        rclone_name = rclone_del_name
-        if not rclone_name.endswith(".docx") and not rclone_name.endswith(".txt") and not rclone_name.endswith(".md"):
-            rclone_name = f"{rclone_name}.docx"
-        for fid in folder_ids:
-            try:
-                del_res = subprocess.run(
-                    ["rclone", "deletefile", "--drive-root-folder-id", fid, f"gdrive:{rclone_name}"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=15,
-                )
-                if del_res.returncode == 0:
-                    return True
-            except Exception:
-                pass
+        print(f"  {YELLOW}Note API Drive: Échec de la requête REST PATCH pour {doc_id} ({e}).{RESET}", file=sys.stderr)
 
     return False
+
+
+def _record_dream_inbox_processed_doc(
+    doc_id: str | None = None,
+    doc_name: str | None = None,
+    method: str = "manual_trash",
+    local_path: str | None = None,
+    extra_key: str | None = None,
+) -> None:
+    """Record a document as processed in both local dream_inbox_processed.json and Drive AIVC_Sync."""
+    import datetime
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    reg = _load_dream_inbox_processed()
+    primary_key = doc_id or doc_name or extra_key
+    if not primary_key:
+        return
+    entry = {
+        "trashed_at": now_iso,
+        "method": method,
+        "name": doc_name or extra_key or primary_key,
+    }
+    if doc_id:
+        entry["doc_id"] = doc_id
+    if local_path:
+        entry["local_path"] = local_path
+
+    reg.setdefault("processed", {})[primary_key] = entry
+    if doc_name and doc_name != primary_key:
+        reg["processed"][doc_name] = entry
+    if extra_key and extra_key != primary_key and extra_key != doc_name:
+        reg["processed"][extra_key] = entry
+    _save_dream_inbox_processed(reg)
+
 
 
 def _watch_dream_inbox(args: argparse.Namespace) -> None:
@@ -940,18 +948,12 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
             print(f"  Mode:        --mode auto --model {model} -p <prompt>")
             return True
 
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        reg = _load_dream_inbox_processed()
-        entry = {
-            "trashed_at": now_iso,
-            "method": "watch_event_start",
-            "name": doc_name,
-            "doc_id": doc_id,
-            "local_path": str(local_archive_path),
-        }
-        reg.setdefault("processed", {})[doc_id] = entry
-        reg["processed"][doc_name] = entry
-        _save_dream_inbox_processed(reg)
+        _record_dream_inbox_processed_doc(
+            doc_id=doc_id,
+            doc_name=doc_name,
+            method="watch_event_start",
+            local_path=str(local_archive_path),
+        )
 
         trashed_ok = _trash_drive_file_by_id(doc_id, folder_ids=folder_ids, rclone_del_name=doc_name)
         if trashed_ok:
@@ -1059,7 +1061,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
     if hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
+        except (AttributeError, io.UnsupportedOperation, OSError):
             pass
 
     action = args.inbox_action
@@ -1144,8 +1146,8 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
                             data = service.files().get_media(fileId=doc_id).execute()
                             local_target.write_bytes(data)
                             downloaded = True
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"  {YELLOW}Note: Native drive download failed for {doc_id}: {e}{RESET}", file=sys.stderr)
                 if downloaded:
                     if zipfile.is_zipfile(local_target):
                         with zipfile.ZipFile(local_target) as z:
@@ -1176,91 +1178,20 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
         if not doc_id and len(target) > 20:
             doc_id = target
 
-        trashed = False
-        try:
-            from google.oauth2.credentials import Credentials
-            from googleapiclient.discovery import build
-            from aivc.config import get_token_path
-            t_path = get_token_path()
-            if t_path.exists():
-                creds = Credentials.from_authorized_user_file(str(t_path))
-                svc = build("drive", "v3", credentials=creds, cache_discovery=False)
-                svc.files().update(fileId=doc_id, body={"trashed": True}).execute()
-                trashed = True
-        except Exception:
-            pass
-
-        if not trashed:
-            try:
-                from aivc.config import resolve_workspace_path
-                import urllib.request
-                import urllib.parse
-                data_path = resolve_workspace_path(".obsidian/plugins/gemini-sync/data.json")
-                if data_path and data_path.exists():
-                    data = json.loads(data_path.read_text(encoding="utf-8"))
-                    params = {
-                        "client_id": data["clientId"],
-                        "client_secret": data["clientSecret"],
-                        "refresh_token": data["refreshToken"],
-                        "grant_type": "refresh_token"
-                    }
-                    req = urllib.request.Request("https://oauth2.googleapis.com/token", data=urllib.parse.urlencode(params).encode("utf-8"), method="POST")
-                    with urllib.request.urlopen(req) as resp:
-                        tok_resp = json.loads(resp.read().decode("utf-8"))
-                    svc = build("drive", "v3", credentials=Credentials(token=tok_resp["access_token"]), cache_discovery=False)
-                    svc.files().update(fileId=doc_id, body={"trashed": True}).execute()
-                    trashed = True
-            except Exception:
-                pass
-
-        if not trashed and doc_id:
-            try:
-                gdrive_script = Path.home() / ".gemini" / "config" / "plugins" / "gdrive" / "skills" / "gdrive" / "scripts" / "gdrive.cmd"
-                if gdrive_script.exists():
-                    res = subprocess.run([str(gdrive_script), "mutate", "trash", doc_id], capture_output=True, text=True)
-                    if res.returncode == 0:
-                        trashed = True
-            except Exception:
-                pass
-
-        if not trashed:
-            try:
-                fname = doc_name or (target if "." in target else None)
-                if fname:
-                    res_rclone = subprocess.run(
-                        ["rclone", "deletefile", "--drive-root-folder-id", fid, f"gdrive:{fname}"],
-                        capture_output=True,
-                        text=True,
-                        timeout=15,
-                    )
-                    if res_rclone.returncode == 0:
-                        trashed = True
-            except Exception:
-                pass
-
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        reg = _load_dream_inbox_processed()
-        primary_key = doc_id or target
-        entry = {
-            "trashed_at": now_iso,
-            "method": "drive_api" if trashed else "local_registry",
-            "name": doc_name or target,
-        }
-        if doc_id:
-            entry["doc_id"] = doc_id
-        reg.setdefault("processed", {})[primary_key] = entry
-        if doc_name and doc_name != primary_key:
-            reg["processed"][doc_name] = entry
-        if target and target != primary_key and target != doc_name:
-            reg["processed"][target] = entry
-        _save_dream_inbox_processed(reg)
+        trashed = _trash_drive_file_by_id(doc_id, folder_ids=folder_ids, rclone_del_name=doc_name)
+        _record_dream_inbox_processed_doc(
+            doc_id=doc_id,
+            doc_name=doc_name,
+            method="drive_api" if trashed else "local_registry",
+            extra_key=target,
+        )
 
         if trashed:
             print(f"{GREEN}{CHECK_MARK} File '{target}' successfully moved to Google Drive Trash and recorded in processed registry.{RESET}")
         else:
             print(f"{GREEN}{CHECK_MARK} Document '{target}' (ID: {doc_id or 'n/a'}) enregistré dans le registre persistant comme traité.")
             print(f"Il est désormais masqué de 'dream-inbox list' (utiliser 'dream-inbox list --all' pour l'afficher).{RESET}")
-            print(f"{YELLOW}Note : Les tokens locaux actuels sont restreints en écriture (scope 'drive.readonly' ou 'drive.file').{RESET}")
+            print(f"{YELLOW}Note : Les tokens locaux actuels sont restreints en lecture seule (scope 'drive.readonly') ou par application ('drive.file').{RESET}")
             print(f"Pour purger ce document manuellement sur Google Drive si vous le souhaitez :")
             print(f"  {CYAN}https://drive.google.com/drive/folders/{fid}{RESET}")
 
