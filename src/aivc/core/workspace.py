@@ -1277,6 +1277,8 @@ class Workspace:
                     )
                     if needs_mirror:
                         try:
+                            if target.parent.is_file():
+                                target.parent.unlink(missing_ok=True)
                             target.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copy2(local_path, target)
                         except OSError:
@@ -1335,11 +1337,15 @@ class Workspace:
                     else:
                         try:
                             if getattr(sync_manager, "enabled", False):
+                                if local_path.parent.is_file():
+                                    local_path.parent.unlink(missing_ok=True)
                                 dest = sync_manager.pull_latest_file(portable, target_path=local_path)
                                 if dest and dest.is_file():
                                     restored.append(str(local_path))
                                     for target in extra_targets:
                                         try:
+                                            if target.parent.is_file():
+                                                target.parent.unlink(missing_ok=True)
                                             target.parent.mkdir(parents=True, exist_ok=True)
                                             shutil.copy2(local_path, target)
                                         except OSError:
@@ -1402,11 +1408,15 @@ class Workspace:
                     pull_ok = False
                     try:
                         if getattr(mgr, "enabled", False):
+                            if l_path.parent.is_file():
+                                l_path.parent.unlink(missing_ok=True)
                             dest = mgr.pull_latest_file(port_path, target_path=l_path)
                             if dest and dest.is_file():
                                 pull_ok = True
                                 for t_path in targets:
                                     try:
+                                        if t_path.parent.is_file():
+                                            t_path.parent.unlink(missing_ok=True)
                                         t_path.parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copy2(l_path, t_path)
                                     except OSError:

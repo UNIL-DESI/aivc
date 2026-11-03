@@ -239,6 +239,8 @@ class NativeDriveSyncManager:
         service = self._get_service()
         request = service.files().get_media(fileId=file_id)
 
+        if local_path.parent.is_file():
+            local_path.parent.unlink(missing_ok=True)
         local_path.parent.mkdir(parents=True, exist_ok=True)
         with open(local_path, "wb") as f:
             downloader = MediaIoBaseDownload(f, request)
@@ -379,18 +381,39 @@ class NativeDriveSyncManager:
             return self._pull_single_file(file_path, target_path=target_path)
         except FileNotFoundError:
             p_str = str(file_path).replace("\\", "/")
-            alt_path = None
+            alt_candidates = []
             if "/.gemini/antigravity/brain/" in p_str:
-                alt_path = p_str.replace("/.gemini/antigravity/brain/", "/.gemini/antigravity-cli/brain/")
+                alt_candidates.append(p_str.replace("/.gemini/antigravity/brain/", "/.gemini/antigravity-cli/brain/"))
             elif "/.gemini/antigravity-cli/brain/" in p_str:
-                alt_path = p_str.replace("/.gemini/antigravity-cli/brain/", "/.gemini/antigravity/brain/")
+                alt_candidates.append(p_str.replace("/.gemini/antigravity-cli/brain/", "/.gemini/antigravity/brain/"))
             elif p_str.startswith("~/.gemini/antigravity/brain/"):
-                alt_path = "~/.gemini/antigravity-cli/brain/" + p_str[len("~/.gemini/antigravity/brain/"):]
+                sub = p_str[len("~/.gemini/antigravity/brain/"):]
+                alt_candidates.append(f"~/.gemini/antigravity-cli/brain/{sub}")
+                alt_candidates.append(f"~/AppData/Local/Temp/aivc/artifacts/{sub}")
             elif p_str.startswith("~/.gemini/antigravity-cli/brain/"):
-                alt_path = "~/.gemini/antigravity/brain/" + p_str[len("~/.gemini/antigravity-cli/brain/"):]
+                sub = p_str[len("~/.gemini/antigravity-cli/brain/"):]
+                alt_candidates.append(f"~/.gemini/antigravity/brain/{sub}")
+                alt_candidates.append(f"~/AppData/Local/Temp/aivc/artifacts/{sub}")
 
-            if alt_path:
-                return self._pull_single_file(alt_path, target_path=target_path)
+            # Extraction générique de sous-chemin d'artefact
+            import re
+            m_art = re.search(r"(?:aivc[\\/]artifacts|\.?gemini[\\/]antigravity(?:-cli)?[\\/]brain)[\\/]([^\s]+)", p_str, re.IGNORECASE)
+            if m_art:
+                sub_clean = m_art.group(1).lstrip("/\\")
+                for prefix in (
+                    "~/.gemini/antigravity-cli/brain/",
+                    "~/.gemini/antigravity/brain/",
+                    "~/AppData/Local/Temp/aivc/artifacts/",
+                ):
+                    cand = f"{prefix}{sub_clean}"
+                    if cand not in alt_candidates and cand != file_path:
+                        alt_candidates.append(cand)
+
+            for alt_cand in alt_candidates:
+                try:
+                    return self._pull_single_file(alt_cand, target_path=target_path)
+                except FileNotFoundError:
+                    continue
             raise
 
     def delete_remote_file(self, file_path: str | Path) -> bool:
@@ -602,32 +625,64 @@ class NativeDriveSyncManager:
                         candidate_subpaths.add(raw)
 
         import shutil
-        # Download any missing files
-        for sub in candidate_subpaths:
-            local_path = home / ".gemini" / "antigravity" / "brain" / Path(sub)
-            local_cli_path = home / ".gemini" / "antigravity-cli" / "brain" / Path(sub)
+        from aivc.config import get_aivc_temp_dir, get_aivc_user_temp_dir
 
-            if local_path.is_file():
-                continue
-            if local_cli_path.is_file():
-                try:
-                    local_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(local_cli_path, local_path)
+        temp_artifacts_dir = get_aivc_temp_dir() / "artifacts"
+        user_temp_artifacts_dir = get_aivc_user_temp_dir() / "artifacts"
+        mirror_user = (user_temp_artifacts_dir.resolve() != temp_artifacts_dir.resolve())
+
+        # Download any missing files and materialize to artifacts directory
+        for sub in candidate_subpaths:
+            sub_p = Path(sub)
+            local_path = home / ".gemini" / "antigravity" / "brain" / sub_p
+            local_cli_path = home / ".gemini" / "antigravity-cli" / "brain" / sub_p
+            temp_path = temp_artifacts_dir / sub_p
+            user_temp_path = user_temp_artifacts_dir / sub_p if mirror_user else None
+
+            all_targets = [local_path, local_cli_path, temp_path]
+            if user_temp_path is not None:
+                all_targets.append(user_temp_path)
+
+            existing_candidates = [p for p in all_targets if p.is_file() and p.stat().st_size != 8]
+            existing_file = max(existing_candidates, key=lambda p: p.stat().st_mtime) if existing_candidates else None
+
+            if existing_file:
+                for target in all_targets:
+                    if target == existing_file:
+                        continue
+                    try:
+                        if target.parent.is_file():
+                            target.parent.unlink(missing_ok=True)
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        if not target.is_file() or target.stat().st_size != existing_file.stat().st_size:
+                            shutil.copy2(existing_file, target)
+                    except Exception:
+                        pass
+                if existing_file != local_path and not local_path.is_file():
                     restored.append(str(local_path))
-                    continue
-                except OSError:
-                    pass
+                continue
 
             sub_posix = sub.replace("\\", "/")
             dest = None
             for portable in (
                 f"~/.gemini/antigravity/brain/{sub_posix}",
                 f"~/.gemini/antigravity-cli/brain/{sub_posix}",
+                f"~/AppData/Local/Temp/aivc/artifacts/{sub_posix}",
             ):
                 try:
                     dest = self.pull_latest_file(portable, target_path=local_path)
                     if dest and dest.is_file():
                         restored.append(str(local_path))
+                        for target in (local_cli_path, temp_path, user_temp_path):
+                            if target is None:
+                                continue
+                            try:
+                                if target.parent.is_file():
+                                    target.parent.unlink(missing_ok=True)
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(local_path, target)
+                            except Exception:
+                                pass
                         break
                 except Exception:
                     pass

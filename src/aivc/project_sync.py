@@ -405,6 +405,8 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
 
                 if needs_copy:
                     try:
+                        if target.parent.is_file():
+                            target.parent.unlink(missing_ok=True)
                         target.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(existing_file, target)
                         if target == local_path:
@@ -424,14 +426,19 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
             def _async_advance_drive_worker(candidates: list[tuple[str, Path, list[Path]]], d_mgr: Any) -> None:
                 for sub_posix, l_p, targets in candidates:
                     for port_p in (
-                        f"~/.gemini/antigravity/brain/{sub_posix}",
                         f"~/.gemini/antigravity-cli/brain/{sub_posix}",
+                        f"~/.gemini/antigravity/brain/{sub_posix}",
+                        f"~/AppData/Local/Temp/aivc/artifacts/{sub_posix}",
                     ):
                         try:
+                            if l_p.parent.is_file():
+                                l_p.parent.unlink(missing_ok=True)
                             dest = d_mgr.pull_latest_file(port_p, target_path=l_p)
                             if dest and dest.is_file():
                                 for t in targets:
                                     try:
+                                        if t.parent.is_file():
+                                            t.parent.unlink(missing_ok=True)
                                         t.parent.mkdir(parents=True, exist_ok=True)
                                         shutil.copy2(l_p, t)
                                     except OSError:
@@ -452,10 +459,13 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
             for sub_posix, local_path, targets in drive_candidates:
                 dest = None
                 for port_p in (
-                    f"~/.gemini/antigravity/brain/{sub_posix}",
                     f"~/.gemini/antigravity-cli/brain/{sub_posix}",
+                    f"~/.gemini/antigravity/brain/{sub_posix}",
+                    f"~/AppData/Local/Temp/aivc/artifacts/{sub_posix}",
                 ):
                     try:
+                        if local_path.parent.is_file():
+                            local_path.parent.unlink(missing_ok=True)
                         dest = mgr.pull_latest_file(port_p, target_path=local_path)
                         if dest and dest.is_file():
                             break
@@ -465,6 +475,8 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
                     restored.append(str(local_path))
                     for t in targets:
                         try:
+                            if t.parent.is_file():
+                                t.parent.unlink(missing_ok=True)
                             t.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copy2(local_path, t)
                         except OSError:
