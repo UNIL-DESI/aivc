@@ -572,13 +572,35 @@ class Workspace:
                             c_st = c_it.get("task_status")
                             c_dn = bool(c_it.get("done", False))
                             if c_st == "validated" or c_dn:
-                                project_active_tasks.pop(c_id, None)
+                                if task_is_recurring.get(c_id) or c_it.get("is_recurring"):
+                                    project_active_tasks[c_id] = {
+                                        "id": c_id,
+                                        "task_status": "new",
+                                        "done": False,
+                                        "task": c_it.get("task", ""),
+                                        "details": task_base_details.get(c_id, ""),
+                                        "base_details": task_base_details.get(c_id, ""),
+                                        "edited_files": [],
+                                        "read_files": [],
+                                        "is_recurring": True,
+                                    }
+                                else:
+                                    project_active_tasks.pop(c_id, None)
                             elif c_st in ("new", "await_validation"):
                                 project_active_tasks[c_id] = c_it
 
             if is_same_proj:
                 for cid in c_data.get("completed_user_items", []) or []:
-                    project_active_tasks.pop(str(cid).strip(), None)
+                    c_clean = str(cid).strip()
+                    if task_is_recurring.get(c_clean):
+                        if c_clean in project_active_tasks:
+                            project_active_tasks[c_clean]["task_status"] = "new"
+                            project_active_tasks[c_clean]["done"] = False
+                            project_active_tasks[c_clean]["details"] = task_base_details.get(c_clean, "")
+                            project_active_tasks[c_clean]["edited_files"] = []
+                            project_active_tasks[c_clean]["read_files"] = []
+                    else:
+                        project_active_tasks.pop(c_clean, None)
 
         norm_user_items: list[dict[str, Any]] = []
         status_updates_by_id: dict[str, tuple[str, bool]] = {}
@@ -588,7 +610,15 @@ class Workspace:
                 c_id_clean = str(cid).strip()
                 if c_id_clean:
                     status_updates_by_id[c_id_clean] = ("validated", True)
-                    project_active_tasks.pop(c_id_clean, None)
+                    if task_is_recurring.get(c_id_clean):
+                        if c_id_clean in project_active_tasks:
+                            project_active_tasks[c_id_clean]["task_status"] = "new"
+                            project_active_tasks[c_id_clean]["done"] = False
+                            project_active_tasks[c_id_clean]["details"] = task_base_details.get(c_id_clean, "")
+                            project_active_tasks[c_id_clean]["edited_files"] = []
+                            project_active_tasks[c_id_clean]["read_files"] = []
+                    else:
+                        project_active_tasks.pop(c_id_clean, None)
 
         self._last_gc_drive_files = []
 
@@ -704,33 +734,6 @@ class Workspace:
         indexed_items = list(enumerate(norm_user_items, 1))
         indexed_items.sort(key=_task_sort_key)
         norm_user_items = [it for _, it in indexed_items]
-
-        # Event-sourcing update on previous commits if status changed
-        if status_updates_by_id:
-            for p, c_data in commits_data.items():
-                c_items = c_data.get("user_items", [])
-                c_modified = False
-                for c_it in c_items:
-                    c_id = c_it.get("id")
-                    if c_id in status_updates_by_id:
-                        new_st, new_dn = status_updates_by_id[c_id]
-                        if c_it.get("task_status") != new_st or c_it.get("done") != new_dn:
-                            c_it["task_status"] = new_st
-                            c_it["done"] = new_dn
-                            c_it["updated_at"] = now_ts
-                            c_modified = True
-                if c_modified:
-                    c_data["user_items"] = c_items
-                    c_data["note"] = _compose_note(
-                        c_data.get("journal", ""),
-                        c_items,
-                        fallback_note=c_data.get("note", ""),
-                    )
-                    try:
-                        p.write_text(json.dumps(c_data, indent=2), encoding="utf-8")
-                        self._last_modified_commit_ids.append(p.stem)
-                    except Exception:
-                        pass
 
         # Collect updated task ids from this update for Drive Garbage Collection
         updated_ids = set(status_updates_by_id.keys())
@@ -1097,6 +1100,8 @@ class Workspace:
 
         commits: list[dict[str, Any]] = []
         for p in self._commits_dir.glob("*.json"):
+            if p.stat().st_size == 0:
+                continue
             c_data = json.loads(p.read_text(encoding="utf-8"))
             commits.append(c_data)
 
