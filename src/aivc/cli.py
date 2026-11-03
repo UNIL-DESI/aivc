@@ -284,14 +284,10 @@ Follow these steps (takes ~2 minutes):
 
         from urllib.parse import urlparse, parse_qs
         code = user_input
-        if "code=" in user_input or user_input.startswith("http://") or user_input.startswith("https://"):
-            try:
-                parsed = urlparse(user_input)
-                query = parse_qs(parsed.query)
-                if "code" in query:
-                    code = query["code"][0]
-            except Exception:
-                code = code_input.strip()
+        if "code=" in user_input or user_input.startswith(("http://", "https://")):
+            query = parse_qs(urlparse(user_input).query)
+            if "code" in query and query["code"]:
+                code = query["code"][0]
 
         print(f"\n{DIM}Exchanging authorization code for access token...{RESET}")
         try:
@@ -806,7 +802,7 @@ def _save_dream_inbox_local_copy(doc_name: str, doc_id: str, doc_text: str) -> P
     return local_path.resolve()
 
 
-def _trash_drive_file_by_id(doc_id: str, folder_ids: list[str] | None = None, rclone_del_name: str | None = None) -> bool:
+def _trash_drive_file_by_id(doc_id: str | None) -> bool:
     """Trash a file in Google Drive by doc_id via direct REST PATCH.
 
     Returns True if successfully moved to Google Drive Trash (HTTP 200/204),
@@ -955,7 +951,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
             local_path=str(local_archive_path),
         )
 
-        trashed_ok = _trash_drive_file_by_id(doc_id, folder_ids=folder_ids, rclone_del_name=doc_name)
+        trashed_ok = _trash_drive_file_by_id(doc_id)
         if trashed_ok:
             print(f"  {GREEN}{CHECK_MARK} Fichier distant supprimé de Google Drive dès le début de la tâche (ID: {doc_id}).{RESET}")
         else:
@@ -1178,7 +1174,7 @@ def cmd_dream_inbox(args: argparse.Namespace) -> None:
         if not doc_id and len(target) > 20:
             doc_id = target
 
-        trashed = _trash_drive_file_by_id(doc_id, folder_ids=folder_ids, rclone_del_name=doc_name)
+        trashed = _trash_drive_file_by_id(doc_id)
         _record_dream_inbox_processed_doc(
             doc_id=doc_id,
             doc_name=doc_name,
