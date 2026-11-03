@@ -1364,7 +1364,7 @@ class Workspace:
                                 continue
                             else:
                                 is_neg_cached = True
-                        except Exception:
+                        except FileNotFoundError:
                             is_neg_cached = True
 
                     if is_neg_cached:
@@ -1423,7 +1423,7 @@ class Workspace:
                                         pass
                                 for k in c_keys:
                                     m_cache.pop(k, None)
-                    except Exception:
+                    except FileNotFoundError:
                         pull_ok = False
 
                     if not pull_ok:

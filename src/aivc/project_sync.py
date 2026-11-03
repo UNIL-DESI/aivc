@@ -444,7 +444,7 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
                                     except OSError:
                                         pass
                                 break
-                        except Exception:
+                        except FileNotFoundError:
                             pass
 
             import threading
@@ -469,7 +469,7 @@ def restore_artifacts_for_memory(memory: Any, sync_manager: Any = None, backgrou
                         dest = mgr.pull_latest_file(port_p, target_path=local_path)
                         if dest and dest.is_file():
                             break
-                    except Exception:
+                    except FileNotFoundError:
                         pass
                 if dest and dest.is_file():
                     restored.append(str(local_path))

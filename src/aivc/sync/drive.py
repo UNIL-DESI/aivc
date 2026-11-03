@@ -656,7 +656,7 @@ class NativeDriveSyncManager:
                         target.parent.mkdir(parents=True, exist_ok=True)
                         if not target.is_file() or target.stat().st_size != existing_file.stat().st_size:
                             shutil.copy2(existing_file, target)
-                    except Exception:
+                    except OSError:
                         pass
                 if existing_file != local_path and not local_path.is_file():
                     restored.append(str(local_path))
@@ -681,10 +681,10 @@ class NativeDriveSyncManager:
                                     target.parent.unlink(missing_ok=True)
                                 target.parent.mkdir(parents=True, exist_ok=True)
                                 shutil.copy2(local_path, target)
-                            except Exception:
+                            except OSError:
                                 pass
                         break
-                except Exception:
+                except FileNotFoundError:
                     pass
 
         return restored
