@@ -457,16 +457,25 @@ def _save_dream_inbox_processed(data: dict) -> None:
 
 
 _DREAM_INBOX_FOLDER_IDS_CACHE: list[str] | None = None
+_DREAM_INBOX_FOLDERS_CACHE_FILE: Path | None = None
 
 
-def _get_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
-    """Retrieve all Google Drive folder IDs named 'Dream_Inbox' at root."""
+def _get_dream_inbox_folders_cache_file() -> Path:
+    global _DREAM_INBOX_FOLDERS_CACHE_FILE
+    if _DREAM_INBOX_FOLDERS_CACHE_FILE is not None:
+        return _DREAM_INBOX_FOLDERS_CACHE_FILE
+    from aivc.config import get_aivc_dir
+    _DREAM_INBOX_FOLDERS_CACHE_FILE = get_aivc_dir() / "dream_inbox_folders.json"
+    return _DREAM_INBOX_FOLDERS_CACHE_FILE
+
+
+def _resolve_all_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
+    """Retrieve all Google Drive folder IDs named 'Dream_Inbox' at root via direct REST API."""
     global _DREAM_INBOX_FOLDER_IDS_CACHE
     if use_cache and _DREAM_INBOX_FOLDER_IDS_CACHE:
         return _DREAM_INBOX_FOLDER_IDS_CACHE
 
-    from aivc.config import get_aivc_dir
-    cache_file = get_aivc_dir() / "dream_inbox_folders.json"
+    cache_file = _get_dream_inbox_folders_cache_file()
     if use_cache and cache_file.exists():
         try:
             cache_data = json.loads(cache_file.read_text(encoding="utf-8"))
@@ -480,36 +489,39 @@ def _get_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
         except Exception as e:
             print(f"Warning: Failed to read Dream_Inbox folder cache: {e}", file=sys.stderr)
 
-    import subprocess
-    folder_ids = []
+    import urllib.parse
+    import time
+    access_token = _get_rclone_drive_access_token()
+    params = {
+        "q": "name = 'Dream_Inbox' and mimeType = 'application/vnd.google-apps.folder' and 'root' in parents and trashed = false",
+        "fields": "files(id,name)",
+        "supportsAllDrives": "true",
+        "includeItemsFromAllDrives": "true",
+    }
+    path = f"/drive/v3/files?{urllib.parse.urlencode(params)}"
+    data, conn = _drive_api_get_json(path, access_token)
     try:
-        out = subprocess.check_output(
-            ["rclone", "lsf", "--dirs-only", "--format", "ip", "gdrive:"],
-            stderr=subprocess.DEVNULL,
-            encoding="utf-8"
-        )
-        for line in out.splitlines():
-            line = line.strip()
-            if not line or ";" not in line:
-                continue
-            parts = line.split(";", 1)
-            f_id, f_path = parts[0].strip(), parts[1].strip()
-            if f_path.rstrip("/") == "Dream_Inbox":
-                folder_ids.append(f_id)
-    except Exception as e:
-        print(f"Warning: Failed to list Dream_Inbox folder IDs via rclone lsf: {e}", file=sys.stderr)
+        conn.close()
+    except Exception:
+        pass
+
+    files = data.get("files", [])
+    folder_ids = [f["id"] for f in files if isinstance(f, dict) and f.get("id")]
 
     if not folder_ids:
-        folder_ids = ["1ZLsrkwRBhH2Xz82eooQC3ahsePFjm28h", "1JsNgV7uD1c981dNQpYEprKdjVgitLDo8"]
+        raise RuntimeError("Aucun dossier Google Drive nommé 'Dream_Inbox' trouvé à la racine.")
 
     _DREAM_INBOX_FOLDER_IDS_CACHE = folder_ids
     try:
-        import time
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps({"folder_ids": folder_ids, "timestamp": time.time()}), encoding="utf-8")
     except Exception as e:
         print(f"Warning: Failed to write Dream_Inbox folder cache: {e}", file=sys.stderr)
 
     return folder_ids
+
+
+_get_dream_inbox_folder_ids = _resolve_all_dream_inbox_folder_ids
 
 
 def _list_all_dream_inbox_files(folder_ids: list[str] | None = None) -> list[dict]:
@@ -625,27 +637,94 @@ def _get_rclone_drive_access_token() -> str:
     raise RuntimeError("Failed to obtain Google Drive access token from rclone configuration.")
 
 
-def _drive_get_start_page_token(conn: http.client.HTTPSConnection, access_token: str) -> str:
-    """Fetch initial startPageToken for Drive changes.list with transient retry."""
+def _drive_api_get_json(
+    path: str,
+    access_token: str,
+    conn: http.client.HTTPSConnection | None = None,
+) -> tuple[dict, http.client.HTTPSConnection]:
+    """Execute a Google Drive REST GET request with transient rate-limit backoff across a 60s window.
+
+    Handles 403 rate limits, 429, and 5xx server errors with backoffs (5, 10, 20, 30)s.
+    Re-establishes TCP/TLS connection if dropped during keep-alive idle or sleep.
+    Raises PermissionError immediately on 401.
+    Raises RuntimeError Fail-Fast if all retries are exhausted or non-transient error occurs.
+    """
     import time
+    delays = (5, 10, 20, 30)
+    max_attempts = len(delays) + 1
+
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Connection": "keep-alive"
+        "Connection": "keep-alive",
     }
-    for attempt in range(3):
-        conn.request("GET", "/drive/v3/changes/startPageToken?supportsAllDrives=true", headers=headers)
-        resp = conn.getresponse()
-        if resp.status == 401:
-            raise PermissionError("HTTP 401 Unauthorized: access token expired")
+
+    if conn is None:
+        conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
+
+    for attempt in range(max_attempts):
+        try:
+            conn.request("GET", path, headers=headers)
+            resp = conn.getresponse()
+        except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError, TimeoutError, OSError) as net_err:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
+            if attempt < len(delays):
+                delay = delays[attempt]
+                print(f"Warning: Google Drive API connection dropped ({net_err}), retrying in {delay}s...", file=sys.stderr)
+                time.sleep(delay)
+                continue
+            raise RuntimeError(f"Google Drive API GET failed on {path} after retries: {net_err}") from net_err
+
         body = resp.read().decode("utf-8", errors="replace")
+
         if resp.status == 200:
-            data = json.loads(body)
-            return data["startPageToken"]
-        if resp.status in (403, 429) and ("RATE_LIMIT_EXCEEDED" in body or "rateLimitExceeded" in body or resp.status == 429) and attempt < 2:
-            time.sleep(2 * (attempt + 1))
+            return json.loads(body), conn
+
+        if resp.status == 401:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise PermissionError("HTTP 401 Unauthorized: access token expired")
+
+        is_transient = (
+            resp.status in (429, 500, 502, 503, 504)
+            or (
+                resp.status == 403
+                and any(m in body for m in ("RATE_LIMIT_EXCEEDED", "rateLimitExceeded", "userRateLimitExceeded", "Quota exceeded", "quotaExceeded"))
+            )
+        )
+        if is_transient and attempt < len(delays):
+            delay = delays[attempt]
+            print(f"Warning: Google Drive API transient error (HTTP {resp.status}), retrying in {delay}s...", file=sys.stderr)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
+            time.sleep(delay)
             continue
-        raise RuntimeError(f"Failed to get startPageToken (HTTP {resp.status}): {body}")
-    raise RuntimeError("Failed to get startPageToken after retries.")
+
+        try:
+            conn.close()
+        except Exception:
+            pass
+        raise RuntimeError(f"Google Drive API GET failed on {path} (HTTP {resp.status}): {body}")
+
+    try:
+        conn.close()
+    except Exception:
+        pass
+    raise RuntimeError(f"Google Drive API GET failed on {path} after {max_attempts} attempts.")
+
+
+def _drive_get_start_page_token(conn: http.client.HTTPSConnection, access_token: str) -> str:
+    """Fetch initial startPageToken for Drive changes.list with transient retry."""
+    data, _ = _drive_api_get_json("/drive/v3/changes/startPageToken?supportsAllDrives=true", access_token, conn=conn)
+    return data["startPageToken"]
 
 
 def _drive_poll_changes(conn: http.client.HTTPSConnection, access_token: str, page_token: str) -> tuple[str, list[dict]]:
@@ -653,10 +732,6 @@ def _drive_poll_changes(conn: http.client.HTTPSConnection, access_token: str, pa
     import urllib.parse
     all_changes = []
     current_token = page_token
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Connection": "keep-alive"
-    }
     while True:
         params = {
             "pageToken": current_token,
@@ -667,14 +742,7 @@ def _drive_poll_changes(conn: http.client.HTTPSConnection, access_token: str, pa
             "fields": "newStartPageToken,nextPageToken,changes(fileId,removed,file(id,name,parents,trashed,mimeType,modifiedTime))"
         }
         path = f"/drive/v3/changes?{urllib.parse.urlencode(params)}"
-        conn.request("GET", path, headers=headers)
-        resp = conn.getresponse()
-        if resp.status == 401:
-            raise PermissionError("HTTP 401 Unauthorized: access token expired")
-        if resp.status != 200:
-            body = resp.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Failed to poll changes (HTTP {resp.status}): {body}")
-        data = json.loads(resp.read().decode("utf-8"))
+        data, conn = _drive_api_get_json(path, access_token, conn=conn)
         changes = data.get("changes", [])
         all_changes.extend(changes)
         if "nextPageToken" in data and data["nextPageToken"]:
@@ -683,6 +751,7 @@ def _drive_poll_changes(conn: http.client.HTTPSConnection, access_token: str, pa
             return data["newStartPageToken"], all_changes
         else:
             return current_token, all_changes
+
 
 
 def _extract_dream_inbox_doc_text(folder_id: str, file_name: str, file_id: str = "", mime_type: str = "") -> str:
