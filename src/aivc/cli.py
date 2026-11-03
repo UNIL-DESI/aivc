@@ -477,17 +477,14 @@ def _resolve_all_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
 
     cache_file = _get_dream_inbox_folders_cache_file()
     if use_cache and cache_file.exists():
-        try:
-            cache_data = json.loads(cache_file.read_text(encoding="utf-8"))
-            if isinstance(cache_data, dict) and "folder_ids" in cache_data:
-                cached_ids = cache_data["folder_ids"]
-                cached_time = cache_data.get("timestamp", 0)
-                import time
-                if time.time() - cached_time < 3600 and cached_ids:
-                    _DREAM_INBOX_FOLDER_IDS_CACHE = cached_ids
-                    return cached_ids
-        except Exception as e:
-            print(f"Warning: Failed to read Dream_Inbox folder cache: {e}", file=sys.stderr)
+        cache_data = json.loads(cache_file.read_text(encoding="utf-8"))
+        if isinstance(cache_data, dict) and "folder_ids" in cache_data:
+            cached_ids = cache_data["folder_ids"]
+            cached_time = cache_data.get("timestamp", 0)
+            import time
+            if time.time() - cached_time < 3600 and cached_ids:
+                _DREAM_INBOX_FOLDER_IDS_CACHE = cached_ids
+                return cached_ids
 
     import urllib.parse
     import time
@@ -500,10 +497,7 @@ def _resolve_all_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
     }
     path = f"/drive/v3/files?{urllib.parse.urlencode(params)}"
     data, conn = _drive_api_get_json(path, access_token)
-    try:
-        conn.close()
-    except Exception:
-        pass
+    conn.close()
 
     files = data.get("files", [])
     folder_ids = [f["id"] for f in files if isinstance(f, dict) and f.get("id")]
@@ -512,11 +506,8 @@ def _resolve_all_dream_inbox_folder_ids(use_cache: bool = True) -> list[str]:
         raise RuntimeError("Aucun dossier Google Drive nommé 'Dream_Inbox' trouvé à la racine.")
 
     _DREAM_INBOX_FOLDER_IDS_CACHE = folder_ids
-    try:
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps({"folder_ids": folder_ids, "timestamp": time.time()}), encoding="utf-8")
-    except Exception as e:
-        print(f"Warning: Failed to write Dream_Inbox folder cache: {e}", file=sys.stderr)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps({"folder_ids": folder_ids, "timestamp": time.time()}), encoding="utf-8")
 
     return folder_ids
 
@@ -666,10 +657,7 @@ def _drive_api_get_json(
             conn.request("GET", path, headers=headers)
             resp = conn.getresponse()
         except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError, TimeoutError, OSError) as net_err:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            conn.close()
             conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
             if attempt < len(delays):
                 delay = delays[attempt]
@@ -684,10 +672,7 @@ def _drive_api_get_json(
             return json.loads(body), conn
 
         if resp.status == 401:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            conn.close()
             raise PermissionError("HTTP 401 Unauthorized: access token expired")
 
         is_transient = (
@@ -700,24 +685,15 @@ def _drive_api_get_json(
         if is_transient and attempt < len(delays):
             delay = delays[attempt]
             print(f"Warning: Google Drive API transient error (HTTP {resp.status}), retrying in {delay}s...", file=sys.stderr)
-            try:
-                conn.close()
-            except Exception:
-                pass
+            conn.close()
             conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
             time.sleep(delay)
             continue
 
-        try:
-            conn.close()
-        except Exception:
-            pass
+        conn.close()
         raise RuntimeError(f"Google Drive API GET failed on {path} (HTTP {resp.status}): {body}")
 
-    try:
-        conn.close()
-    except Exception:
-        pass
+    conn.close()
     raise RuntimeError(f"Google Drive API GET failed on {path} after {max_attempts} attempts.")
 
 
@@ -1094,10 +1070,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                 try:
                     new_token, changes = _drive_poll_changes(conn, access_token, page_token)
                 except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError, PermissionError):
-                    try:
-                        conn.close()
-                    except Exception as e:
-                        print(f"Warning: Exception closing connection on reset: {e}", file=sys.stderr)
+                    conn.close()
                     access_token = _get_rclone_drive_access_token()
                     conn = http.client.HTTPSConnection("www.googleapis.com", timeout=30)
                     new_token, changes = _drive_poll_changes(conn, access_token, page_token)
@@ -1131,10 +1104,7 @@ def _watch_dream_inbox(args: argparse.Namespace) -> None:
                 print(f"{RED}Erreur lors de l'interrogation Drive ({e}). Attente {backoff}s...{RESET}", file=sys.stderr)
                 time.sleep(backoff)
     finally:
-        try:
-            conn.close()
-        except Exception as e:
-            print(f"Warning: Exception closing connection on exit: {e}", file=sys.stderr)
+        conn.close()
 
 
 def cmd_dream_inbox(args: argparse.Namespace) -> None:
