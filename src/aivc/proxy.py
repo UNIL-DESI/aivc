@@ -104,14 +104,13 @@ def ensure_daemon_running(port: int, timeout: float = 15.0) -> None:
         _cleanup_zombie(port)
 
     if sys.platform == "win32":
-        venv_pythonw = Path(sys.executable).with_name("pythonw.exe")
-        if not venv_pythonw.exists():
-            venv_pythonw = Path(sys.executable).resolve().with_name("pythonw.exe")
-        if not venv_pythonw.exists():
-            venv_pythonw = Path(sys.executable).resolve()
-        exe = str(venv_pythonw)
+        venv_pythonw = Path(sys.executable).parent / "pythonw.exe"
+        if venv_pythonw.exists():
+            exe = str(venv_pythonw)
+        else:
+            exe = sys.executable
     else:
-        exe = str(Path(sys.executable).resolve())
+        exe = sys.executable
 
     cmd_line = f'"{exe}" -m aivc.daemon'
     cwd_str = str(Path.home())

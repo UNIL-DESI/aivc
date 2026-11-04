@@ -544,10 +544,12 @@ def linkify_unlinked_artifact_names(text: str, file_paths: list[Any]) -> str:
         # Determine target file URL
         sub = _cfg.extract_brain_subpath(p_clean)
         if sub:
-            target_url = f"file:///{artifacts_posix}/{sub.replace('\\', '/').lstrip('/')}"
+            sub_posix = sub.replace("\\", "/").lstrip("/")
+            target_url = f"file:///{artifacts_posix}/{sub_posix}"
         else:
             loc_p = _cfg.from_portable_path(p_clean)
-            target_url = f"file:///{loc_p.as_posix().replace('\\', '/').lstrip('/')}"
+            loc_posix = loc_p.as_posix().replace("\\", "/").lstrip("/")
+            target_url = f"file:///{loc_posix}"
 
         # Avoid collision on same filename
         if fname not in candidates:
