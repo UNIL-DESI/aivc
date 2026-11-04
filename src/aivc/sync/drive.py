@@ -208,8 +208,17 @@ class NativeDriveSyncManager:
         """Upload a file to a specific Drive folder. Returns file ID."""
         from googleapiclient.http import MediaFileUpload
 
-        service = self._get_service()
         target_name = filename or local_path.name
+
+        # Refuse to upload 0-byte JSON files (e.g. corrupted commits)
+        if target_name.endswith(".json") and local_path.exists():
+            try:
+                if local_path.stat().st_size == 0:
+                    raise ValueError(f"Refusing to upload 0-byte JSON file '{target_name}' to Drive: {local_path}")
+            except OSError as e:
+                raise ValueError(f"Cannot stat local file before upload '{local_path}': {e}")
+
+        service = self._get_service()
 
         # Check if file already exists in folder
         query = f"name = '{target_name}' and '{folder_id}' in parents and trashed = false"
@@ -233,7 +242,9 @@ class NativeDriveSyncManager:
             return result["id"]
 
     def _download_file(self, file_id: str, local_path: Path) -> None:
-        """Download a file from Drive to disk."""
+        """Download a file from Drive to disk atomically."""
+        import os
+        import threading
         from googleapiclient.http import MediaIoBaseDownload
 
         service = self._get_service()
@@ -242,11 +253,31 @@ class NativeDriveSyncManager:
         if local_path.parent.is_file():
             local_path.parent.unlink(missing_ok=True)
         local_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(local_path, "wb") as f:
-            downloader = MediaIoBaseDownload(f, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
+
+        tmp_path = Path(f"{local_path}.tmp.{os.getpid()}.{threading.get_ident()}")
+        try:
+            with open(tmp_path, "wb") as f:
+                downloader = MediaIoBaseDownload(f, request)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
+
+            # Fail-fast verification: check size
+            downloaded_size = tmp_path.stat().st_size
+            if downloaded_size == 0 and (local_path.suffix == ".json" or "commit" in str(local_path).lower()):
+                raise RuntimeError(
+                    f"Downloaded 0-byte file from Drive for {local_path.name} (file_id={file_id}). "
+                    f"Corrupted or empty download."
+                )
+
+            os.replace(tmp_path, local_path)
+        except Exception:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
 
     # ------------------------------------------------------------------
     # Public API (same interface as old RcloneSyncManager)
@@ -259,6 +290,13 @@ class NativeDriveSyncManager:
 
         local_path = self.storage_root / "commits" / f"{memory_id}.json"
         if not local_path.exists():
+            return
+
+        try:
+            if local_path.stat().st_size == 0:
+                logger.warning("Refusing to push 0-byte local memory commit: %s", local_path)
+                return
+        except OSError:
             return
 
         folder_id = self._get_memories_folder_id()
@@ -534,7 +572,17 @@ class NativeDriveSyncManager:
         if not local_memories_dir.exists():
             return {"memories_pushed": 0}
             
-        local_memories = {f.name for f in local_memories_dir.iterdir() if f.suffix == ".json"}
+        local_memories = set()
+        for f in local_memories_dir.iterdir():
+            if f.suffix == ".json":
+                try:
+                    if f.stat().st_size == 0:
+                        f.unlink(missing_ok=True)
+                        logger.warning("Purged 0-byte local commit in push_missing: %s", f.name)
+                        continue
+                except OSError:
+                    continue
+                local_memories.add(f.name)
         
         # 2. Get remote memories for this machine
         query = f"'{memories_folder_id}' in parents and trashed = false"
@@ -643,7 +691,7 @@ class NativeDriveSyncManager:
             if user_temp_path is not None:
                 all_targets.append(user_temp_path)
 
-            existing_candidates = [p for p in all_targets if p.is_file() and p.stat().st_size != 8]
+            existing_candidates = [p for p in all_targets if p.is_file() and p.stat().st_size > 0 and p.stat().st_size != 8]
             existing_file = max(existing_candidates, key=lambda p: p.stat().st_mtime) if existing_candidates else None
 
             if existing_file:
@@ -719,10 +767,20 @@ class NativeDriveSyncManager:
 
         local_memories_dir = self.storage_root / "commits"
         local_memories_dir.mkdir(parents=True, exist_ok=True)
-        existing_memories = {f.name for f in local_memories_dir.iterdir() if f.suffix == ".json"}
+        existing_memories = set()
+        for f in local_memories_dir.iterdir():
+            if f.suffix == ".json":
+                try:
+                    if f.stat().st_size == 0:
+                        f.unlink(missing_ok=True)
+                        logger.warning("Purged 0-byte local commit: %s", f.name)
+                        continue
+                except OSError:
+                    continue
+                existing_memories.add(f.name)
 
-        # Collect all missing files to download in parallel
-        missing_files = []
+        # Collect best candidate for each remote commit across all machine folders
+        best_remote_commits: dict[str, dict] = {}
 
         for mf in machine_folders:
             if mf["name"] == self.machine_id or mf["name"] == "blobs":
@@ -742,25 +800,45 @@ class NativeDriveSyncManager:
 
             memories_folder_id = memories_folders[0]["id"]
 
-            # List memory files
+            # List memory files with size field
             files_query = f"'{memories_folder_id}' in parents and trashed = false"
 
             page_token = None
             while True:
                 files_result = service.files().list(
-                    q=files_query, spaces="drive", fields="nextPageToken, files(id, name)",
+                    q=files_query, spaces="drive", fields="nextPageToken, files(id, name, size)",
                     pageSize=1000, pageToken=page_token
                 ).execute()
 
                 for remote_file in files_result.get("files", []):
-                    if remote_file["name"] in existing_memories:
+                    fname = remote_file.get("name", "")
+                    if not fname or fname in existing_memories:
                         continue
-                    missing_files.append((remote_file["id"], local_memories_dir / remote_file["name"]))
-                    existing_memories.add(remote_file["name"])
+                    try:
+                        remote_size = int(remote_file.get("size", 1))
+                    except (ValueError, TypeError):
+                        remote_size = 1
+
+                    # Ignore 0-byte remote entries
+                    if remote_size == 0:
+                        continue
+
+                    # If duplicate commit across multiple machines, pick the one with size > 0 or largest size
+                    if fname not in best_remote_commits:
+                        best_remote_commits[fname] = remote_file
+                    else:
+                        prev_size = int(best_remote_commits[fname].get("size", 1))
+                        if remote_size > prev_size:
+                            best_remote_commits[fname] = remote_file
 
                 page_token = files_result.get("nextPageToken")
                 if not page_token:
                     break
+
+        missing_files = [
+            (f_data["id"], local_memories_dir / fname)
+            for fname, f_data in best_remote_commits.items()
+        ]
 
         if not missing_files:
             return 0
@@ -798,7 +876,7 @@ class NativeDriveSyncManager:
         # Auto-restore brain files and sync advance_tldr for newly downloaded memories
         for file_id, dest_path in missing_files:
             try:
-                if dest_path.is_file():
+                if dest_path.is_file() and dest_path.stat().st_size > 0:
                     mem_data = json.loads(dest_path.read_text(encoding="utf-8"))
                     self.auto_restore_brain_files_from_data(mem_data)
                     try:
