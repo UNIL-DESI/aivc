@@ -354,10 +354,10 @@ async def task_commit(
     Règles impératives :
     1. 1 appel = 1 souvenir atomique sur 1 tâche (task_id).
     2. task_id : obligatoire pour mettre à jour ou changer le statut ('new' -> 'await_validation' -> 'validated') d'une tâche existante dans l'artefact persistant 🤖 <Titre>.md. Interdiction d'inventer un nouvel ID si la tâche existe déjà (même si son titre est affiné). Laisser None uniquement pour créer une nouvelle tâche.
-    3. title : intitulé clair de la tâche ou de l'action.
-    4. content : un bon paragraphe complet et fluide en pur langage naturel contenant :
+    3. title : intitulé court, fluide et agréable à lire en français naturel (zéro liste d'identifiants, de hashs, de pseudonymes ou de parenthèses techniques).
+    4. content : un vrai souvenir sémantique rédigé dans un français très naturel, fluide, libre et agréable à lire :
        - Le Contexte explicite (« Tu m'avais demandé de vérifier X... », « Suite à ton commentaire sur Y... »)
-       - L'Action et le TL;DR (ce qui a été fait, observé, et les conclusions précises avec les chiffres clés)
+       - Les informations et conclusions importantes présentées simplement, SANS saturer de détails, de listes de chiffres/pourcentages secondaires, d'identifiants techniques, de pseudonymes, de codes ni de parenthèses imbriquées qui cassent la lecture.
        - Intégrer directement au fil de la phrase 1 ou 2 liens Markdown [📄 nom](file:///...) maximum vers les artefacts principaux à consulter (résultat final, walkthrough, unique artéfact diff_<sujet>.md pour un courriel /draft, ou duo <doc>.pdf + diff_<doc>.md pour un document compilé).
        - Zéro wikilink [[...]], zéro bloc 'Source :' et zéro extrait de code brut dans content.
     5. main_project_file : chemin de la note maîtresse du projet (ex. notes/MonProjet.md ou README.md). Cible unique de rattachement.
