@@ -355,11 +355,13 @@ async def task_commit(
     1. 1 appel = 1 souvenir atomique sur 1 tâche (task_id).
     2. task_id : obligatoire pour mettre à jour ou changer le statut ('new' -> 'await_validation' -> 'validated') d'une tâche existante dans l'artefact persistant 🤖 <Titre>.md. Interdiction d'inventer un nouvel ID si la tâche existe déjà (même si son titre est affiné). Laisser None uniquement pour créer une nouvelle tâche.
     3. title : intitulé court, fluide et agréable à lire en français naturel (zéro liste d'identifiants, de hashs, de pseudonymes ou de parenthèses techniques).
-    4. content : un vrai souvenir sémantique rédigé dans un français très naturel, fluide, libre et agréable à lire :
-       - Le Contexte explicite (« Tu m'avais demandé de vérifier X... », « Suite à ton commentaire sur Y... »)
-       - Les informations et conclusions importantes présentées simplement, SANS saturer de détails, de listes de chiffres/pourcentages secondaires, d'identifiants techniques, de pseudonymes, de codes ni de parenthèses imbriquées qui cassent la lecture.
-       - Intégrer directement au fil de la phrase 1 ou 2 liens Markdown [📄 nom](file:///...) maximum vers les artefacts principaux à consulter (résultat final, walkthrough, unique artéfact diff_<sujet>.md pour un courriel /draft, ou duo <doc>.pdf + diff_<doc>.md pour un document compilé).
-       - Zéro wikilink [[...]], zéro bloc 'Source :' et zéro extrait de code brut dans content.
+    4. content : un vrai souvenir sémantique rédigé dans un français très lisible, fait de phrases courtes, simples et directes :
+       - Des phrases courtes, simples et directes : interdiction formelle des phrases à rallonge à propositions subordonnées multiples et des énumérations compactes '(1)... (2)...'.
+       - Contexte explicite court (« Suite à ta demande sur... », « Tu m'avais demandé de vérifier X... ») suivi de l'essentiel de l'action et de la conclusion principale en phrases courtes.
+       - Zéro nom ou chemin de fichier système, de script ou de règle dans le texte (content) : interdiction absolue de citer des noms ou chemins de fichiers techniques (coffre-obsidian.md, task-tracking.md, project_memory_cli.py, virtual_draft_*.md, etc.) dans content (ces fichiers vont uniquement dans edited_files et read_files pour le graphe AIVC).
+       - Informations et conclusions importantes présentées simplement, sans saturer de détails, de listes de chiffres/pourcentages secondaires, d'identifiants techniques, de pseudonymes, de codes ni de parenthèses imbriquées qui cassent la lecture.
+       - 1 ou 2 liens Markdown maximum avec un libellé en français naturel (ex. [📄 Brouillon de réponse](file:///...) pour un courriel /draft, ou [📕 Manuscrit compilé](file:///...) + [📄 Diff des modifications](file:///...) pour un document compilé), uniquement lorsqu'il y a un livrable final qu'Henri doit ouvrir et lire.
+       - Zéro wikilink [[...]], zéro bloc 'Source :', zéro .tex brut et zéro extrait de code dans content.
     5. main_project_file : chemin de la note maîtresse du projet (ex. notes/MonProjet.md ou README.md). Cible unique de rattachement.
     6. edited_files & read_files : fichiers modifiés et consultés par cette tâche (toujours obligatoires pour le graphe AIVC et la synchronisation Drive de tous les artefacts).
     7. is_recurring : booléen optionnel (défaut False) indiquant si la tâche est perpétuelle/récurrente (Evergreen). À la validation, une tâche récurrente repasse automatiquement en 'new' avec sa description de base restaurée tout en archivant la validation dans l'historique.
