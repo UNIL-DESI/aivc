@@ -879,12 +879,8 @@ class NativeDriveSyncManager:
                 if dest_path.is_file() and dest_path.stat().st_size > 0:
                     mem_data = json.loads(dest_path.read_text(encoding="utf-8"))
                     self.auto_restore_brain_files_from_data(mem_data)
-                    try:
-                        from aivc.project_sync import sync_project_views
-                        sync_project_views(mem_data)
-                    except ImportError:
-                        from aivc.advance_sync import sync_advance_tldr
-                        sync_advance_tldr(mem_data)
+                    # Note: sync_project_views / sync_advance_tldr disabled to avoid overwriting doc-version AST diffs
+                    pass
             except Exception as e:
                 logger.debug("Post-pull restore/tldr sync skipped for %s: %s", dest_path, e)
 

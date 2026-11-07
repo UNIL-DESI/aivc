@@ -916,12 +916,8 @@ class Workspace:
         self._state["head_commit_id"] = memory.id
         self._save_state()
 
-        # Step: Auto-sync advance_tldr notes for Obsidian projects
-        try:
-            from aivc.advance_sync import sync_advance_tldr
-            sync_advance_tldr(memory)
-        except Exception as e:
-            logger.warning("Failed to auto-sync advance_tldr in workspace.remember: %s", e)
+        # Step: Auto-sync advance_tldr notes for Obsidian projects (disabled: doc-version owns _agents/project_diffs/)
+        # sync_advance_tldr is disabled to avoid overwriting doc-version AST project diffs
 
         return memory
 
