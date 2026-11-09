@@ -35,6 +35,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 TOGETHER_BASE_URL = "https://api.together.ai/v1/chat/completions"
 TOGETHER_BATCH_ENDPOINT = "https://api.together.ai/v1/batches"
 TOGETHER_FILES_ENDPOINT = "https://api.together.ai/v1/files"
+OLLAMA_DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1"
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +273,12 @@ load_env_file()
 def get_model_provider_mapping() -> Dict[str, str]:
     """Return model_id -> provider mapping combining default mappings and models.yaml registry."""
     mapping: Dict[str, str] = {
+        # 0. Local Cluster GPU (Ollama / vLLM)
+        "ollama/qwen2.5-coder:7b": "ollama",
+        "ollama/gemma4:31b-8k": "ollama",
+        "qwen2.5-coder:7b": "ollama",
+        "gemma4:31b-8k": "ollama",
+
         # 1. Closed-source Frontier API (OpenRouter)
         "google/gemini-3.7-flash": "openrouter",
         "openai/gpt-5.6-luna-pro": "openrouter",
@@ -294,18 +301,21 @@ def get_model_provider_mapping() -> Dict[str, str]:
         "qwen/qwen-2.5-7b-instruct": "together",
     }
 
-    try:
-        yaml_path = Path(__file__).resolve().parent / "config" / "models.yaml"
-        if yaml_path.exists():
-            import yaml
-            with open(yaml_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-                if isinstance(data, dict) and "models" in data:
-                    for m_id, m_info in data["models"].items():
-                        if isinstance(m_info, dict) and "provider" in m_info:
-                            mapping[m_id] = m_info["provider"]
-    except Exception:
-        pass
+    for yaml_name in ("models.yaml", "models_openrouter.yaml"):
+        try:
+            yaml_path = Path(__file__).resolve().parent / "config" / yaml_name
+            if yaml_path.exists():
+                import yaml
+                with open(yaml_path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+                    if isinstance(data, dict) and "models" in data:
+                        for m_id, m_info in data["models"].items():
+                            if isinstance(m_info, dict) and "provider" in m_info:
+                                mapping[m_id] = m_info["provider"]
+                            elif str(m_id).startswith("ollama/"):
+                                mapping[m_id] = "ollama"
+        except Exception:
+            pass
 
     return mapping
 
@@ -316,10 +326,10 @@ def get_model_provider_mapping() -> Dict[str, str]:
 
 class InferenceClient:
     """
-    Production-grade LLM inference client supporting OpenRouter, Together AI, and OpenAI compatible APIs.
+    Production-grade LLM inference client supporting Ollama/Local GPU, OpenRouter, Together AI, and OpenAI compatible APIs.
 
     Features:
-    - Multi-provider dynamic routing (OpenRouter, Together AI, OpenAI)
+    - Multi-provider dynamic routing (Ollama/local, OpenRouter, Together AI, OpenAI)
     - Full jitter exponential backoff with Retry-After header parsing
     - Automatic JSON payload sanitization
     - Together AI Batch API integration support (-50% discount)
@@ -330,7 +340,7 @@ class InferenceClient:
         self,
         api_key: Optional[str] = None,
         provider: Optional[str] = None,
-        default_model: str = "qwen/qwen3.7-flash",
+        default_model: str = "ollama/qwen2.5-coder:7b",
         fallback_model: Optional[str] = "deepseek/deepseek-v4-flash-0731",
         max_retries: int = 5,
         base_delay: float = 1.5,
@@ -361,6 +371,11 @@ class InferenceClient:
         # Resolve base URL
         if base_url:
             self.base_url = base_url
+        elif self.provider in ("ollama", "local"):
+            self.base_url = os.environ.get(
+                "OLLAMA_BASE_URL",
+                os.environ.get("OPENAI_BASE_URL", OLLAMA_DEFAULT_BASE_URL),
+            )
         elif self.provider == "together":
             self.base_url = TOGETHER_BASE_URL
         else:
@@ -375,16 +390,34 @@ class InferenceClient:
         base_url: Optional[str],
         model: Optional[str],
     ) -> str:
-        """Infer provider ('together', 'openrouter', 'openai') based on parameters."""
+        """Infer provider ('ollama', 'local', 'together', 'openrouter', 'openai') based on parameters."""
         if explicit_provider:
-            return explicit_provider.lower().strip()
+            prov = explicit_provider.lower().strip()
+            if prov in ("ollama", "local"):
+                return prov
+            if model and (model.lower().startswith("ollama/") or model.lower().startswith("local/")):
+                return "ollama"
+            if base_url and any(h in base_url.lower() for h in ("11434", "localhost", "127.0.0.1")):
+                return "ollama"
+            if os.environ.get("AIVC_LOCAL_LLM") == "1" or os.environ.get("OLLAMA_BASE_URL"):
+                return "ollama"
+            return prov
+        if model:
+            m_low = model.lower().strip()
+            if m_low.startswith("ollama/") or m_low.startswith("local/"):
+                return "ollama"
         if base_url:
-            if "together.ai" in base_url:
+            b_low = base_url.lower()
+            if any(h in b_low for h in ("11434", "localhost", "127.0.0.1")):
+                return "ollama"
+            if "together.ai" in b_low:
                 return "together"
-            if "openrouter.ai" in base_url:
+            if "openrouter.ai" in b_low:
                 return "openrouter"
-            if "openai.com" in base_url:
+            if "openai.com" in b_low:
                 return "openai"
+        if os.environ.get("AIVC_LOCAL_LLM") == "1" or os.environ.get("OLLAMA_BASE_URL"):
+            return "ollama"
         if model:
             if model.startswith("meta-models/") or model.startswith("together/") or "glimmer" in model.lower() or "gpt-oss" in model.lower():
                 return "together"
@@ -395,7 +428,14 @@ class InferenceClient:
         """Resolve the appropriate API key from explicit argument or environment variables."""
         clean_key = explicit_key.strip() if explicit_key else ""
 
-        if provider == "together":
+        if provider in ("ollama", "local"):
+            return (
+                clean_key
+                or os.getenv("OLLAMA_API_KEY")
+                or os.getenv("OPENAI_API_KEY")
+                or "ollama"
+            )
+        elif provider == "together":
             # If explicit key was passed but is clearly an OpenRouter key, prefer TOGETHER_API_KEY from env
             if clean_key and not clean_key.startswith("sk-or-"):
                 return clean_key
@@ -426,6 +466,23 @@ class InferenceClient:
                 or ""
             )
 
+    @staticmethod
+    def _resolve_endpoint_url(base_url: str, provider: str) -> str:
+        """Ensure OpenAI-compatible /v1/chat/completions path for local Ollama/vLLM endpoints."""
+        url = (base_url or "").strip()
+        if provider in ("ollama", "local"):
+            if not url or "openrouter.ai" in url or "together.ai" in url:
+                url = os.environ.get(
+                    "OLLAMA_BASE_URL",
+                    os.environ.get("OPENAI_BASE_URL", OLLAMA_DEFAULT_BASE_URL),
+                )
+            trimmed = url.rstrip("/")
+            if trimmed.endswith("/chat/completions") or trimmed.endswith("/api/chat"):
+                return trimmed
+            if trimmed.endswith("/v1"):
+                return f"{trimmed}/chat/completions"
+            return f"{trimmed}/v1/chat/completions"
+        return url
 
     def _build_headers(self, provider: Optional[str] = None) -> Dict[str, str]:
         """Construct standard HTTP request headers based on the active provider."""
@@ -624,31 +681,18 @@ class InferenceClient:
     ) -> Dict[str, Any]:
         """
         Execute chat completion request with resilient retries, provider routing, and validation.
-
-        Args:
-            messages: List of message dictionaries with roles (system, user, assistant, tool).
-            tools: Optional tool/function schema definitions.
-            max_tokens: Maximum completion tokens to generate.
-            temperature: Sampling temperature (default 0.2).
-            extra_body: Additional raw payload attributes.
-            model: Primary model override (defaults to self.default_model).
-            fallback_model: Fallback model override (defaults to self.fallback_model).
-            provider: Provider override ('openrouter', 'together', etc.).
-            enable_cache_control: Enable KV-cache breakpoint tagging (cache_control ephemeral).
-            **kwargs: Extra parameters passed to the request payload.
-
-        Returns:
-            Decoded JSON dictionary from the completion API.
         """
         primary_model = model or self.default_model
-        req_provider = provider or self._infer_provider(self.provider, self.base_url, primary_model)
+        req_provider = provider or self._infer_provider(self.explicit_provider, self.base_url, primary_model)
 
         # Dynamic key & URL resolution if provider differs
         target_api_key = self.api_key
-        if not target_api_key:
-            target_api_key = self._resolve_api_key(None, req_provider)
+        if not target_api_key or req_provider in ("ollama", "local"):
+            target_api_key = self._resolve_api_key(self.api_key, req_provider)
 
-        if not target_api_key:
+        if req_provider in ("ollama", "local"):
+            target_api_key = target_api_key or "ollama"
+        elif not target_api_key:
             key_name = "TOGETHER_API_KEY" if req_provider == "together" else "OPENROUTER_API_KEY"
             raise InferenceAuthError(
                 status_code=401,
@@ -657,28 +701,34 @@ class InferenceClient:
             )
 
         target_url = self.base_url
-        if req_provider == "together" and "openrouter.ai" in target_url:
+        if req_provider in ("ollama", "local"):
+            target_url = self._resolve_endpoint_url(target_url, req_provider)
+        elif req_provider == "together" and "openrouter.ai" in target_url:
             target_url = TOGETHER_BASE_URL
         elif req_provider == "openrouter" and "together.ai" in target_url:
             target_url = OPENROUTER_BASE_URL
 
         resolved_fallback = fallback_model if fallback_model is not None else self.fallback_model
 
-        # KV-cache optimization / cache_control injection
+        # KV-cache optimization / cache_control injection (skip for local Ollama)
         should_cache = self.enable_cache_control if enable_cache_control is None else enable_cache_control
-        if should_cache:
+        if should_cache and req_provider not in ("ollama", "local"):
             messages, tools = apply_cache_control(messages, tools)
 
         # Sanitize messages (preserves structured cache_control blocks)
         clean_messages = sanitize_messages(messages)
 
-        if not target_api_key:
-            logger.info(f"[InferenceClient] No remote API key found for {primary_model}. Executing via native real LLM engine...")
-            return self._execute_native_agent_inference(primary_model, clean_messages, tools, max_tokens)
+        # Clean 'ollama/' or 'local/' prefix when sending JSON payload to local server
+        wire_model = primary_model
+        if req_provider in ("ollama", "local"):
+            if wire_model.startswith("ollama/"):
+                wire_model = wire_model[len("ollama/"):]
+            elif wire_model.startswith("local/"):
+                wire_model = wire_model[len("local/"):]
 
         # Build payload
         payload: Dict[str, Any] = {
-            "model": primary_model,
+            "model": wire_model,
             "messages": clean_messages,
             "max_tokens": max_tokens,
             "temperature": temperature,

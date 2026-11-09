@@ -749,7 +749,7 @@ class SWEBenchCLRunner:
     def __init__(
         self,
         arm: str = "aivc",
-        model_name: str = "qwen/qwen3.7-flash",
+        model_name: str = "ollama/qwen2.5-coder:7b",
         api_key: str = "",
         max_turns: int = 50,
         max_tokens: int = 4096,
@@ -760,16 +760,17 @@ class SWEBenchCLRunner:
         interactions_paths: Optional[List[Path]] = None,
         run_id: Optional[str] = None,
         workspace_dir: Optional[Path] = None,
+        base_url: Optional[str] = None,
     ):
         self.arm = arm.lower()
         self.model_name = model_name
-        self.api_key = api_key
         self.max_turns = max_turns
         self.max_tokens = max_tokens
         self.max_cost_per_instance_usd = max_cost_per_instance_usd
         self.interactions_paths = interactions_paths or []
         self.run_id = run_id
         self.workspace_dir = workspace_dir
+        self.base_url = base_url or os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
         self.analyzer = TrajectoryAnalyzer(model_name=model_name)
         self.repo_envs: Dict[str, AIVCEnvironment] = {}
         self._aivc_env = AIVCEnvironment(run_id=self.run_id, workspace_dir=self.workspace_dir)
@@ -779,21 +780,30 @@ class SWEBenchCLRunner:
         self.system_prompt = get_aivc_system_prompt(benchmark_type="swebench_cl", arm=self.arm)
         self.tools_schema = get_benchmark_tools_schema(include_workspace=True, benchmark_type="swebench_cl", arm=self.arm)
 
+        is_local = (
+            model_name.lower().startswith("ollama/")
+            or model_name.lower().startswith("local/")
+            or bool(self.base_url and any(h in self.base_url.lower() for h in ("11434", "localhost", "127.0.0.1")))
+            or os.environ.get("AIVC_LOCAL_LLM") == "1"
+        )
+
         # Resilient Inference Client
         self.client = InferenceClient(
-            api_key=self.api_key,
+            api_key=api_key or ("ollama" if is_local else ""),
             default_model=self.model_name,
             fallback_model=fallback_model,
             max_retries=5,
             base_delay=1.5,
             max_delay=30.0,
             timeout=60.0,
+            base_url=self.base_url,
             app_title=f"AIVC SWE-bench-CL Benchmark Runner ({self.arm.upper()})",
         )
+        self.api_key = self.client.api_key
 
         # Pricing per 1M tokens
-        self.prompt_price_per_1m = prompt_price_per_1m if prompt_price_per_1m is not None else 0.03
-        self.completion_price_per_1m = completion_price_per_1m if completion_price_per_1m is not None else 0.13
+        self.prompt_price_per_1m = 0.0 if is_local else (prompt_price_per_1m if prompt_price_per_1m is not None else 0.03)
+        self.completion_price_per_1m = 0.0 if is_local else (completion_price_per_1m if completion_price_per_1m is not None else 0.13)
 
     def get_env_for_repo(self, repo: str) -> AIVCEnvironment:
         """Get or create a dedicated, hermetically isolated AIVC memory environment for a repository."""
@@ -1218,13 +1228,45 @@ class SWEBenchCLRunner:
         status = "resolved" if resolved else "unresolved"
 
         # Trajectory metrics computation
-        baseline_est_cost = (total_prompt_tokens + total_completion_tokens) * 0.000005 + 0.002
-        ep_metrics: TrajectoryMetrics = self.analyzer.analyze(
+        episode_analyzer = TrajectoryAnalyzer(
+            cost_tracker=CostTracker(
+                model_name=self.model_name,
+                prompt_price_per_1m=self.prompt_price_per_1m,
+                completion_price_per_1m=self.completion_price_per_1m,
+            )
+        )
+        is_free_local = (self.prompt_price_per_1m == 0.0 and self.completion_price_per_1m == 0.0)
+        total_tokens = total_prompt_tokens + total_completion_tokens
+
+        if self.arm in ("baseline", "naive"):
+            baseline_est_cost = total_instance_cost
+        else:
+            baseline_ckpt = EVAL_DIR / "checkpoints" / "swebench_cl_baseline_checkpoint.jsonl"
+            baseline_rec = None
+            if baseline_ckpt.exists():
+                b_mgr = CheckpointManager(baseline_ckpt)
+                for rec in b_mgr.records:
+                    if rec.get("instance_id") == instance_id:
+                        baseline_rec = rec
+                        break
+            if is_free_local:
+                baseline_est_cost = 0.0
+            elif baseline_rec and baseline_rec.get("tokens", {}).get("cost_usd", 0.0) > 0:
+                baseline_est_cost = float(baseline_rec["tokens"]["cost_usd"])
+            else:
+                baseline_est_cost = total_tokens * 0.000005 + 0.002
+
+        ep_metrics: TrajectoryMetrics = episode_analyzer.analyze(
             trajectory=trajectory_steps,
             baseline_cost=baseline_est_cost,
-            recalled_memories_count=recalled_memories_count,
-            used_memories_count=used_memories_count,
         )
+        if self.arm in ("baseline", "naive"):
+            ccsr_val = 0.0
+        elif is_free_local:
+            b_tokens = float(baseline_rec.get("tokens", {}).get("total_tokens", 0)) if baseline_rec else 0.0
+            ccsr_val = compute_ccsr(b_tokens, float(total_tokens)) if b_tokens > 0 else 0.0
+        else:
+            ccsr_val = ep_metrics.ccsr
 
         ir_metrics = compute_retrieval_metrics(
             retrieved_files=all_inspected_files,
@@ -1247,14 +1289,14 @@ class SWEBenchCLRunner:
             "used_memories": used_memories_count,
             "eor": ep_metrics.eor,
             "mui": ep_metrics.mui,
-            "ccsr": ep_metrics.ccsr,
+            "ccsr": ccsr_val,
             "retrieval_metrics": ir_metrics,
             "ground_truth_files": ground_truth_files,
             "inspected_files": all_inspected_files,
             "tokens": {
                 "prompt_tokens": total_prompt_tokens,
                 "completion_tokens": total_completion_tokens,
-                "total_tokens": total_prompt_tokens + total_completion_tokens,
+                "total_tokens": total_tokens,
                 "cost_usd": round(total_instance_cost, 6),
             },
             "baseline_est_cost_usd": round(baseline_est_cost, 6),
@@ -1263,7 +1305,7 @@ class SWEBenchCLRunner:
         }
 
         print(f"\n--> Instance Result: {status.upper()} | Turns: {len(trajectory_steps)} | Cost: ${total_instance_cost:.6f} | Duration: {duration}s")
-        print(f"--> Metrics: EOR={ep_metrics.eor:.4f} | MUI={ep_metrics.mui:.4f} | CCSR={ep_metrics.ccsr:.4f} | NDCG@5={ir_metrics.get('ndcg_at_5', 0.0):.4f}")
+        print(f"--> Metrics: EOR={ep_metrics.eor:.4f} | MUI={ep_metrics.mui:.4f} | CCSR={ccsr_val:.4f} | NDCG@5={ir_metrics.get('ndcg_at_5', 0.0):.4f}")
 
         return episode_record
 
@@ -1531,9 +1573,20 @@ def main() -> None:
     print(f"Curves Output  : {curves_file}")
     print("=" * 70)
 
-    # Load API key based on provider
-    provider = cfg.model_spec.provider if cfg.model_spec else "openrouter"
-    api_key = os.getenv("TOGETHER_API_KEY", "") if provider == "together" else os.getenv("OPENROUTER_API_KEY", "")
+    # Load API key and base_url based on provider
+    base_url = os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+    is_local_ollama = (
+        cfg.model.startswith("ollama/")
+        or os.environ.get("AIVC_LOCAL_LLM") == "1"
+        or bool(os.environ.get("OLLAMA_BASE_URL"))
+        or (cfg.model_spec is not None and cfg.model_spec.provider in ("ollama", "local"))
+    )
+    if is_local_ollama:
+        provider = "ollama"
+        api_key = os.getenv("OLLAMA_API_KEY", "ollama")
+    else:
+        provider = cfg.model_spec.provider if cfg.model_spec else "openrouter"
+        api_key = os.getenv("TOGETHER_API_KEY", "") if provider == "together" else os.getenv("OPENROUTER_API_KEY", "")
 
     # Initialize CheckpointManager
     ckpt_mgr = CheckpointManager(checkpoint_file)
@@ -1569,9 +1622,10 @@ def main() -> None:
         max_turns=cfg.max_turns,
         max_tokens=cfg.max_tokens,
         max_cost_per_instance_usd=cfg.max_cost_per_instance_usd,
-        prompt_price_per_1m=cfg.model_spec.prompt_price_per_1m if cfg.model_spec else None,
-        completion_price_per_1m=cfg.model_spec.completion_price_per_1m if cfg.model_spec else None,
+        prompt_price_per_1m=0.0 if is_local_ollama else (cfg.model_spec.prompt_price_per_1m if cfg.model_spec else None),
+        completion_price_per_1m=0.0 if is_local_ollama else (cfg.model_spec.completion_price_per_1m if cfg.model_spec else None),
         interactions_paths=interactions_paths,
+        base_url=base_url,
     )
 
     skipped_count = 0

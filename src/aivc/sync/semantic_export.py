@@ -445,24 +445,6 @@ def format_archive_document(
     return "\n".join(lines)
 
 
-def is_test_environment() -> bool:
-    """Detects if code is executing under pytest or unittest."""
-    import os
-    import sys
-    if os.environ.get("PYTEST_CURRENT_TEST") or ("pytest" in sys.modules):
-        return True
-    if os.environ.get("UNITTEST_CURRENT_TEST") or os.environ.get("AIVC_TEST_MODE"):
-        return True
-    # unittest est importé transitivement par googleapiclient en production :
-    # ne le considérer en test que si unittest est le script principal (__main__)
-    main_mod = sys.modules.get("__main__")
-    if main_mod and getattr(main_mod, "__file__", None):
-        main_file = str(main_mod.__file__).lower()
-        if "test" in os.path.basename(main_file) or "pytest" in main_file or "unittest" in main_file:
-            return True
-    return False
-
-
 def is_canonical_storage(storage_root: Path | str | None) -> bool:
     """Verifies that storage_root points strictly to canonical ~/.aivc/storage.
 
@@ -613,31 +595,21 @@ class SemanticDriveExporter:
         Returns:
             dict summarizing synced files and counts.
         """
-        import os
-        from aivc.config import get_storage_root
-
-        # Strict Guard: prevent exporting to Google Drive if pytest/unittest is running OR if storage_root != canonical
-        is_in_test = is_test_environment()
+        # Strict Guard: prevent exporting to Google Drive if storage_root != canonical
         is_canonical = is_canonical_storage(self.storage_root)
 
-        if is_in_test or not is_canonical:
-            # Allow mock testing if manager is an explicit Mock/MagicMock
-            from unittest.mock import Mock, MagicMock
-            if isinstance(self.manager, (Mock, MagicMock)):
-                pass
-            else:
-                logger.warning(
-                    "SemanticDriveExporter: Blocked export to Google Drive (is_test=%s, is_canonical=%s, storage=%s)",
-                    is_in_test,
-                    is_canonical,
-                    self.storage_root,
-                )
-                return {
-                    "status": "blocked",
-                    "reason": "pytest_active" if is_in_test else "non_canonical_storage",
-                    "synced_live": 0,
-                    "synced_archives": 0,
-                }
+        if not is_canonical:
+            logger.warning(
+                "SemanticDriveExporter: Blocked export to Google Drive (is_canonical=%s, storage=%s)",
+                is_canonical,
+                self.storage_root,
+            )
+            return {
+                "status": "blocked",
+                "reason": "non_canonical_storage",
+                "synced_live": 0,
+                "synced_archives": 0,
+            }
 
         if not getattr(self.manager, "enabled", False):
             logger.info("SemanticDriveExporter: Drive sync is disabled.")
@@ -734,11 +706,6 @@ class SemanticDriveExporter:
 def trigger_semantic_export_async(storage_root: Path | None = None) -> None:
     """Fires semantic export in a detached background daemon thread."""
     import threading
-
-    # Strict Guard: do not trigger async export during pytest or unittest
-    if is_test_environment():
-        logger.debug("Skipping async semantic export: running inside test environment.")
-        return
 
     # Strict Guard: must point strictly to canonical storage root
     if not is_canonical_storage(storage_root):

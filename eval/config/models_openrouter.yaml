@@ -1,11 +1,34 @@
-# OpenRouter Models Configuration for AIVC Evaluation
+# OpenRouter & Local Cluster GPU (Ollama) Models Configuration for AIVC Evaluation
 # Active model as specified in the evaluation protocol
 
-active_model: "qwen/qwen3.7-flash"
+active_model: "ollama/qwen2.5-coder:7b"
 
 models:
+  "ollama/qwen2.5-coder:7b":
+    name: "Qwen 2.5 Coder 7B (Local Ollama GPU)"
+    provider: "ollama"
+    prompt_cost_per_1m: 0.0
+    completion_cost_per_1m: 0.0
+    prompt_price_per_1m: 0.0
+    completion_price_per_1m: 0.0
+    context_window: 32768
+    supports_tools: true
+
+  "ollama/gemma4:31b-8k":
+    name: "Gemma 4 31B 8K (Local Ollama GPU)"
+    provider: "ollama"
+    prompt_cost_per_1m: 0.0
+    completion_cost_per_1m: 0.0
+    prompt_price_per_1m: 0.0
+    completion_price_per_1m: 0.0
+    context_window: 8192
+    supports_tools: true
+
   "qwen/qwen3.7-flash":
     name: "Qwen 3.7 Flash"
+    provider: "openrouter"
+    prompt_cost_per_1m: 0.03
+    completion_cost_per_1m: 0.13
     prompt_price_per_1m: 0.03
     completion_price_per_1m: 0.13
     context_window: 128000

@@ -673,7 +673,7 @@ class DevBenchRunner:
     def __init__(
         self,
         arm: str = "aivc",
-        model_name: str = "qwen/qwen3.7-flash",
+        model_name: str = "ollama/qwen2.5-coder:7b",
         checkpoint_path: Optional[Path] = None,
         metrics_path: Optional[Path] = None,
         plots_path: Optional[Path] = None,
@@ -688,10 +688,10 @@ class DevBenchRunner:
         run_id: Optional[str] = None,
         workspace_dir: Optional[Path] = None,
         dry_run: bool = False,
+        base_url: Optional[str] = None,
     ):
         self.arm = arm.lower()
         self.model_name = model_name
-        self.api_key = api_key
         self.max_turns = max_turns
         self.max_tokens = max_tokens
         self.max_cost_per_phase_usd = max_cost_per_phase_usd
@@ -702,16 +702,26 @@ class DevBenchRunner:
         self.run_id = run_id
         self.workspace_dir = workspace_dir
         self.dry_run = dry_run
+        self.base_url = base_url or os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
 
         # System prompt and tool schemas dynamically configured for active arm
         self.system_prompt = get_aivc_system_prompt(benchmark_type="devbench", arm=self.arm)
         self.tools_schema = get_benchmark_tools_schema(include_workspace=True, benchmark_type="devbench", arm=self.arm)
 
-        # Resolve pricing per 1M tokens from registry if not explicitly provided
+        # Resolve pricing per 1M tokens from registry (and models_openrouter.yaml) if not explicitly provided
         models_reg = load_models_registry()
-        model_spec = models_reg.get(model_name)
-        self.prompt_price_per_1m = prompt_price_per_1m if prompt_price_per_1m is not None else (model_spec.prompt_price_per_1m if model_spec else 0.03)
-        self.completion_price_per_1m = completion_price_per_1m if completion_price_per_1m is not None else (model_spec.completion_price_per_1m if model_spec else 0.13)
+        openrouter_reg = load_models_registry(EVAL_DIR / "config" / "models_openrouter.yaml")
+        model_spec = openrouter_reg.get(model_name) or models_reg.get(model_name)
+        is_local = (
+            model_name.lower().startswith("ollama/")
+            or model_name.lower().startswith("local/")
+            or bool(self.base_url and any(h in self.base_url.lower() for h in ("11434", "localhost", "127.0.0.1")))
+            or os.environ.get("AIVC_LOCAL_LLM") == "1"
+        )
+        default_p = 0.0 if is_local else (model_spec.prompt_price_per_1m if model_spec else 0.03)
+        default_c = 0.0 if is_local else (model_spec.completion_price_per_1m if model_spec else 0.13)
+        self.prompt_price_per_1m = 0.0 if is_local else (prompt_price_per_1m if prompt_price_per_1m is not None else default_p)
+        self.completion_price_per_1m = 0.0 if is_local else (completion_price_per_1m if completion_price_per_1m is not None else default_c)
 
         self.checkpoint_manager = DevBenchCheckpointManager(self.checkpoint_path)
         self.repo_envs: Dict[str, DevBenchAIVCEnvironment] = {}
@@ -721,15 +731,17 @@ class DevBenchRunner:
 
         # Resilient Inference Client
         self.client = InferenceClient(
-            api_key=self.api_key,
+            api_key=api_key or ("ollama" if is_local else ""),
             default_model=self.model_name,
             fallback_model=fallback_model,
             max_retries=5,
             base_delay=1.5,
             max_delay=30.0,
             timeout=60.0,
+            base_url=self.base_url,
             app_title=f"AIVC DevBench Runner ({self.arm.upper()})",
         )
+        self.api_key = self.client.api_key
 
     def get_env_for_repo(self, repo_id: str) -> DevBenchAIVCEnvironment:
         """Get or create a dedicated, hermetically isolated AIVC memory environment for a repository."""
@@ -1131,14 +1143,33 @@ class DevBenchRunner:
 
         duration = round(time.time() - start_time, 3)
         total_tokens = total_prompt_tokens + total_completion_tokens
-        baseline_phase_cost = round(repo["baseline_est_cost"] / len(SDLC_PHASES), 6)
+        is_free_local = (self.prompt_price_per_1m == 0.0 and self.completion_price_per_1m == 0.0)
+
+        if self.arm in ("baseline", "naive"):
+            baseline_phase_cost = round(total_phase_cost, 6)
+            ccsr = 0.0
+        else:
+            baseline_ckpt = EVAL_DIR / "checkpoints" / "devbench_baseline_checkpoint.jsonl"
+            baseline_rec = None
+            if baseline_ckpt.exists():
+                b_mgr = DevBenchCheckpointManager(baseline_ckpt)
+                baseline_rec = b_mgr.get_completed_record(repo_id, phase)
+            if is_free_local:
+                baseline_phase_cost = 0.0
+                b_tokens = float(baseline_rec.get("total_tokens", 0)) if baseline_rec else 0.0
+                ccsr = compute_ccsr(b_tokens, float(total_tokens)) if b_tokens > 0 else 0.0
+            else:
+                if baseline_rec and baseline_rec.get("cost_usd", 0.0) > 0:
+                    baseline_phase_cost = round(float(baseline_rec["cost_usd"]), 6)
+                else:
+                    baseline_phase_cost = round(repo["baseline_est_cost"] / len(SDLC_PHASES), 6)
+                ccsr = compute_ccsr(baseline_phase_cost, total_phase_cost)
 
         total_tool_calls = len(tools_called_list)
         exploration_tool_calls = sum(1 for t in tools_called_list if t in EXPLORATION_TOOLS)
 
         eor = compute_eor(total_tool_calls, exploration_tool_calls)
         mui = compute_mui(recalled_count, used_count, eor)
-        ccsr = compute_ccsr(baseline_phase_cost, total_phase_cost)
 
         ir_metrics = compute_retrieval_metrics(
             retrieved_files=all_inspected_files,
@@ -1258,7 +1289,12 @@ class DevBenchRunner:
 
         avg_eor = round(sum(r.get("eor", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
         avg_mui = round(sum(r.get("mui", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
-        overall_ccsr = compute_ccsr(total_baseline_cost, total_cost_usd)
+        if self.arm in ("baseline", "naive"):
+            overall_ccsr = 0.0
+        elif total_baseline_cost > 0.0:
+            overall_ccsr = compute_ccsr(total_baseline_cost, total_cost_usd)
+        else:
+            overall_ccsr = round(sum(r.get("ccsr", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
 
         avg_p1 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_1", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
         avg_p3 = round(sum(r.get("retrieval_metrics", {}).get("precision_at_3", 0.0) for r in records) / float(total_phases), 4) if total_phases > 0 else 0.0
@@ -1479,8 +1515,19 @@ def main() -> None:
     print(f"Curves Output  : {plots_path}")
     print("=" * 70)
 
-    provider = cfg.model_spec.provider if cfg.model_spec else "openrouter"
-    api_key = os.getenv("TOGETHER_API_KEY", "") if provider == "together" else os.getenv("OPENROUTER_API_KEY", "")
+    base_url = os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+    is_local_ollama = (
+        cfg.model.startswith("ollama/")
+        or os.environ.get("AIVC_LOCAL_LLM") == "1"
+        or bool(os.environ.get("OLLAMA_BASE_URL"))
+        or (cfg.model_spec is not None and cfg.model_spec.provider in ("ollama", "local"))
+    )
+    if is_local_ollama:
+        provider = "ollama"
+        api_key = os.getenv("OLLAMA_API_KEY", "ollama")
+    else:
+        provider = cfg.model_spec.provider if cfg.model_spec else "openrouter"
+        api_key = os.getenv("TOGETHER_API_KEY", "") if provider == "together" else os.getenv("OPENROUTER_API_KEY", "")
 
     # Configure tool interaction paths
     profile_interactions = paths.metrics_dir / "tool_interactions.jsonl"
@@ -1506,9 +1553,10 @@ def main() -> None:
         max_turns=cfg.max_turns,
         max_tokens=cfg.max_tokens,
         max_cost_per_phase_usd=cfg.max_cost_per_instance_usd,
-        prompt_price_per_1m=cfg.model_spec.prompt_price_per_1m if cfg.model_spec else None,
-        completion_price_per_1m=cfg.model_spec.completion_price_per_1m if cfg.model_spec else None,
+        prompt_price_per_1m=0.0 if is_local_ollama else (cfg.model_spec.prompt_price_per_1m if cfg.model_spec else None),
+        completion_price_per_1m=0.0 if is_local_ollama else (cfg.model_spec.completion_price_per_1m if cfg.model_spec else None),
         interactions_paths=interactions_paths,
+        base_url=base_url,
     )
 
     runner.run_benchmark(phase_limit=cfg.limit, reset_checkpoint=cfg.reset_checkpoint)
