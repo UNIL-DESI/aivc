@@ -51,6 +51,7 @@ os.environ.setdefault("AIVC_DISABLE_SYNC", "1")
 # Import TrajectoryAnalyzer & metrics from eval.metrics
 from metrics.trajectory_analyzer import (
     EXPLORATION_TOOLS,
+    TokenCostTracker as CostTracker,
     TrajectoryAnalyzer,
     TrajectoryMetrics,
     compute_ccsr,
@@ -1757,6 +1758,8 @@ class CommitChroniclesRunner:
         turn: int = 1,
     ) -> Optional[Dict[str, Any]]:
         """Send chat completion request to LLM provider."""
+        if getattr(self, "dry_run", False) or os.getenv("AIVC_DRY_RUN", "0") == "1":
+            return self._simulate_dry_run_turn(instance or {}, turn)
         if (
             self.client.provider not in ("ollama", "local")
             and (not self.api_key or self.api_key.startswith("mock") or self.api_key.startswith("dry_run"))
@@ -1979,12 +1982,11 @@ class CommitChroniclesRunner:
         status = "resolved" if resolved else "unresolved"
 
         # Trajectory metrics computation
-        episode_analyzer = TrajectoryAnalyzer(
-            cost_tracker=CostTracker(
-                model_name=self.model_name,
-                prompt_price_per_1m=self.prompt_price_per_1m,
-                completion_price_per_1m=self.completion_price_per_1m,
-            )
+        episode_analyzer = TrajectoryAnalyzer(model_name=self.model_name)
+        episode_analyzer.tracker = CostTracker(
+            model_name=self.model_name,
+            prompt_price_per_1m=self.prompt_price_per_1m,
+            completion_price_per_1m=self.completion_price_per_1m,
         )
         is_free_local = (self.prompt_price_per_1m == 0.0 and self.completion_price_per_1m == 0.0)
         total_tokens = total_prompt_tokens + total_completion_tokens
@@ -1996,7 +1998,7 @@ class CommitChroniclesRunner:
             baseline_rec = None
             if baseline_ckpt.exists():
                 b_mgr = CheckpointManager(baseline_ckpt)
-                for rec in b_mgr.records:
+                for rec in b_mgr.load_all_records():
                     if rec.get("commit_id") == commit_id:
                         baseline_rec = rec
                         break

@@ -19,19 +19,6 @@ stages:
     deps: [eval/scripts/prep_benchmark.py, .dvc-viewer/hashes/prep_commit_chronicles.hash]
     outs:
     - eval/setup/commit_chronicles_ready.flag: {cache: false}
-  eval_devbench_aivc:
-    cmd: python eval/benchmarks/devbench_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit} --max-turns
-      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
-      --arm aivc --metrics-path eval/metrics/devbench_aivc_metrics.json --plots-path
-      eval/plots/devbench_aivc_curves.csv --checkpoint-path eval/checkpoints/devbench_aivc_checkpoint.jsonl
-    params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/setup/devbench_ready.flag, eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench_aivc.hash]
-    outs:
-    - eval/metrics/devbench_aivc_tool_interactions.jsonl: {cache: false}
-    metrics:
-    - eval/metrics/devbench_aivc_metrics.json: {cache: false}
-    plots:
-    - eval/plots/devbench_aivc_curves.csv: {cache: false}
   eval_devbench_baseline:
     cmd: python eval/benchmarks/devbench_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit} --max-turns
       ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
@@ -40,25 +27,26 @@ stages:
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
     deps: [eval/setup/devbench_ready.flag, eval/benchmarks/devbench_runner.py, .dvc-viewer/hashes/eval_devbench_baseline.hash]
     outs:
+    - eval/checkpoints/devbench_baseline_checkpoint.jsonl: {cache: false, persist: true}
     - eval/metrics/devbench_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/devbench_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/devbench_baseline_curves.csv: {cache: false}
-  eval_swebench_cl_aivc:
-    cmd: python eval/benchmarks/swebench_cl_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit} --max-turns
+  eval_devbench_aivc:
+    cmd: python eval/benchmarks/devbench_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit} --max-turns
       ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
-      --arm aivc --metrics-file eval/metrics/swebench_cl_aivc_metrics.json --curves-file
-      eval/plots/swebench_cl_aivc_curves.csv --checkpoint-file eval/checkpoints/swebench_cl_aivc_checkpoint.jsonl
+      --arm aivc --metrics-path eval/metrics/devbench_aivc_metrics.json --plots-path
+      eval/plots/devbench_aivc_curves.csv --checkpoint-path eval/checkpoints/devbench_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/setup/swebench_cl_ready.flag, eval/benchmarks/swebench_cl_runner.py,
-      .dvc-viewer/hashes/eval_swebench_cl_aivc.hash]
+    deps: [eval/setup/devbench_ready.flag, eval/benchmarks/devbench_runner.py, eval/checkpoints/devbench_baseline_checkpoint.jsonl,
+      .dvc-viewer/hashes/eval_devbench_aivc.hash]
     outs:
-    - eval/metrics/swebench_cl_aivc_tool_interactions.jsonl: {cache: false}
+    - eval/metrics/devbench_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
-    - eval/metrics/swebench_cl_aivc_metrics.json: {cache: false}
+    - eval/metrics/devbench_aivc_metrics.json: {cache: false}
     plots:
-    - eval/plots/swebench_cl_aivc_curves.csv: {cache: false}
+    - eval/plots/devbench_aivc_curves.csv: {cache: false}
   eval_swebench_cl_baseline:
     cmd: python eval/benchmarks/swebench_cl_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit} --max-turns
       ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
@@ -68,25 +56,26 @@ stages:
     deps: [eval/setup/swebench_cl_ready.flag, eval/benchmarks/swebench_cl_runner.py,
       .dvc-viewer/hashes/eval_swebench_cl_baseline.hash]
     outs:
+    - eval/checkpoints/swebench_cl_baseline_checkpoint.jsonl: {cache: false, persist: true}
     - eval/metrics/swebench_cl_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/swebench_cl_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/swebench_cl_baseline_curves.csv: {cache: false}
-  eval_commit_chronicles_aivc:
-    cmd: python eval/benchmarks/commit_chronicles_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit}
-      --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
-      --arm aivc --metrics-path eval/metrics/commit_chronicles_aivc_metrics.json --plots-path
-      eval/plots/commit_chronicles_aivc_curves.csv --checkpoint-path eval/checkpoints/commit_chronicles_aivc_checkpoint.jsonl
+  eval_swebench_cl_aivc:
+    cmd: python eval/benchmarks/swebench_cl_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit} --max-turns
+      ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --arm aivc --metrics-file eval/metrics/swebench_cl_aivc_metrics.json --curves-file
+      eval/plots/swebench_cl_aivc_curves.csv --checkpoint-file eval/checkpoints/swebench_cl_aivc_checkpoint.jsonl
     params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
-    deps: [eval/setup/commit_chronicles_ready.flag, eval/benchmarks/commit_chronicles_runner.py,
-      .dvc-viewer/hashes/eval_commit_chronicles_aivc.hash]
+    deps: [eval/setup/swebench_cl_ready.flag, eval/benchmarks/swebench_cl_runner.py,
+      eval/checkpoints/swebench_cl_baseline_checkpoint.jsonl, .dvc-viewer/hashes/eval_swebench_cl_aivc.hash]
     outs:
-    - eval/metrics/commit_chronicles_aivc_tool_interactions.jsonl: {cache: false}
+    - eval/metrics/swebench_cl_aivc_tool_interactions.jsonl: {cache: false}
     metrics:
-    - eval/metrics/commit_chronicles_aivc_metrics.json: {cache: false}
+    - eval/metrics/swebench_cl_aivc_metrics.json: {cache: false}
     plots:
-    - eval/plots/commit_chronicles_aivc_curves.csv: {cache: false}
+    - eval/plots/swebench_cl_aivc_curves.csv: {cache: false}
   eval_commit_chronicles_baseline:
     cmd: python eval/benchmarks/commit_chronicles_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit}
       --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
@@ -97,11 +86,26 @@ stages:
     deps: [eval/setup/commit_chronicles_ready.flag, eval/benchmarks/commit_chronicles_runner.py,
       .dvc-viewer/hashes/eval_commit_chronicles_baseline.hash]
     outs:
+    - eval/checkpoints/commit_chronicles_baseline_checkpoint.jsonl: {cache: false, persist: true}
     - eval/metrics/commit_chronicles_baseline_tool_interactions.jsonl: {cache: false}
     metrics:
     - eval/metrics/commit_chronicles_baseline_metrics.json: {cache: false}
     plots:
     - eval/plots/commit_chronicles_baseline_curves.csv: {cache: false}
+  eval_commit_chronicles_aivc:
+    cmd: python eval/benchmarks/commit_chronicles_runner.py --model ollama/qwen2.5-coder:7b --limit ${eval.limit}
+      --max-turns ${eval.max_turns} --max-tokens ${eval.max_tokens} --max-cost ${eval.max_cost_per_instance_usd}
+      --arm aivc --metrics-path eval/metrics/commit_chronicles_aivc_metrics.json --plots-path
+      eval/plots/commit_chronicles_aivc_curves.csv --checkpoint-path eval/checkpoints/commit_chronicles_aivc_checkpoint.jsonl
+    params: [eval.limit, eval.max_turns, eval.max_tokens, eval.max_cost_per_instance_usd]
+    deps: [eval/setup/commit_chronicles_ready.flag, eval/benchmarks/commit_chronicles_runner.py,
+      eval/checkpoints/commit_chronicles_baseline_checkpoint.jsonl, .dvc-viewer/hashes/eval_commit_chronicles_aivc.hash]
+    outs:
+    - eval/metrics/commit_chronicles_aivc_tool_interactions.jsonl: {cache: false}
+    metrics:
+    - eval/metrics/commit_chronicles_aivc_metrics.json: {cache: false}
+    plots:
+    - eval/plots/commit_chronicles_aivc_curves.csv: {cache: false}
   aggregate_metrics:
     cmd: python eval/scripts/aggregate_metrics.py
     deps: [eval/scripts/aggregate_metrics.py, eval/metrics/devbench_aivc_metrics.json,
